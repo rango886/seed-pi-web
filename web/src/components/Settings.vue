@@ -144,7 +144,7 @@ const layoutSliders = [
                 <input v-model="UI.toolsOpen" type="checkbox" class="switch" />
               </label>
               <label class="item">
-                <span class="label">始终显示模型和用量（默认悬停才显示）</span>
+                <span class="label">显示模型与用量（默认关；也可以点消息右上角“⋯”开）</span>
                 <input v-model="UI.showMeta" type="checkbox" class="switch" />
               </label>
             </div>

@@ -94,6 +94,23 @@ export const samePath = (a, b) => {
   return process.platform === 'win32' ? n(a).toLowerCase() === n(b).toLowerCase() : n(a) === n(b);
 };
 
+/** 读会话文件里的消息（目录已消失时，网页只能只读展示） */
+export async function readSessionMessages(file) {
+  const raw = await fs.readFile(file, 'utf8');
+  const out = [];
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let e;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (e.type === 'message' && e.message) out.push(e.message);
+  }
+  return out;
+}
+
 export async function listSessions({ cwd, roots }) {
   const files = [];
   for (const r of roots) await walk(r, 1, files);

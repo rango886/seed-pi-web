@@ -187,6 +187,7 @@ watch(menu, (v) => !v && nextTick(() => ta.value?.focus()));
 
 const sendHint = computed(() => (UI.sendKey === 'ctrlEnter' ? 'Ctrl+Enter 发送 · Enter 换行' : 'Enter 发送 · Shift+Enter 换行'));
 const placeholder = computed(() => {
+  if (S.detached) return '这个会话只读：先选个新目录才能继续聊';
   if (busy.value) return view.mobile ? '继续输入，发送 = 插话' : '继续输入：发送 = 插话，Alt+Enter = 等它做完再发';
   return view.mobile ? '给 pi 发消息…' : '给 pi 发消息…  输入 / 查看命令，! 执行 shell';
 });

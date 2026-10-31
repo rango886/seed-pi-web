@@ -16,7 +16,7 @@ import {
   quitAgent,
   BUILTINS,
 } from './store.js';
-import { view, toggleSide } from './settings.js';
+import { view, toggleSide, UI } from './settings.js';
 import { levelName } from './util.js';
 
 const hotkeys = () => BUILTINS.find((b) => b.name === 'hotkeys').run();
@@ -71,6 +71,12 @@ export function mainMenu(extra = []) {
     { label: '切换工作目录…', icon: 'folder', run: () => (S.dirPicker = true) },
     { label: '侧栏', icon: 'sidebar', key: 'Ctrl+B', check: view.mobile ? view.drawer : view.side, run: () => toggleSide() },
     { label: '终端', icon: 'terminal', key: 'Ctrl+`', check: S.showTerm, run: () => (S.showTerm = !S.showTerm) },
+    {
+      label: UI.showMeta ? '隐藏每条回复的模型与用量' : '显示每条回复的模型与用量',
+      icon: 'info',
+      check: UI.showMeta,
+      run: () => (UI.showMeta = !UI.showMeta),
+    },
     '-',
     { label: '界面设置', icon: 'settings', key: 'Ctrl+,', run: () => (view.settingsOpen = true) },
     { label: '快捷键', icon: 'keyboard', run: hotkeys },

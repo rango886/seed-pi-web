@@ -68,6 +68,16 @@ const model = computed(() => S.state?.model);
   <div class="chat">
     <div ref="scroller" class="scroll" @scroll="onScroll" @click="onClick">
       <div ref="inner" class="inner">
+        <div v-if="S.detached" class="banner detach">
+          <div class="row">
+            <b class="warn">这个会话原来的目录已经不存在了</b>
+            <span class="dim ellipsis">{{ S.detached.cwd }}</span>
+            <div class="grow" />
+            <button class="btn" @click="S.dirPicker = true">选个新目录继续聊…</button>
+          </div>
+          <div class="detach-hint">现在只能看历史。换到一个新目录后会在那里开一个<b>新会话</b>（原来的对话还在这份历史里，随时能再打开看）。</div>
+        </div>
+
         <div v-if="S.agentExited" class="banner">
           <div class="row">
             <b class="err">pi 进程已退出</b>
@@ -142,6 +152,8 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
 @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-4px); opacity: 1; } }
 .banner { border: 1px solid color-mix(in srgb, var(--err) 40%, transparent); background: var(--err-bg); padding: 12px 16px; margin: 6px 0 16px; border-radius: var(--r-md); }
 .stderr { margin: 8px 0 0; max-height: 200px; overflow: auto; font-size: var(--fs-sm); white-space: pre-wrap; font-family: var(--font-code); }
+.detach { border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+.detach-hint { margin-top: 6px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.7; }
 .mw { content-visibility: auto; contain-intrinsic-size: auto 160px; }
 .mw.live { content-visibility: visible; }
 .tobottom { position: absolute; left: 50%; top: -52px; transform: translateX(-50%); width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 5; }

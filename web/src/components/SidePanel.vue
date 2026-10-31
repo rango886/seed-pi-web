@@ -37,12 +37,43 @@ const byName = (a, b) => (a.title || '').localeCompare(b.title || '', 'zh');
 
 // 显示全部目录时，每个目录像文件夹一样可以折叠（状态记下来）
 const collapsed = ref(new Set(JSON.parse(localStorage.getItem('pi-web-collapsed-dirs') || '[]')));
+function saveCollapsed(s) {
+  collapsed.value = s;
+  localStorage.setItem('pi-web-collapsed-dirs', JSON.stringify([...s]));
+}
 function toggleDir(key) {
   const s = new Set(collapsed.value);
   if (s.has(key)) s.delete(key);
   else s.add(key);
-  collapsed.value = s;
-  localStorage.setItem('pi-web-collapsed-dirs', JSON.stringify([...s]));
+  saveCollapsed(s);
+}
+function expandAll() {
+  saveCollapsed(new Set());
+}
+function collapseAll() {
+  saveCollapsed(new Set(groups.value.map((g) => g.path).filter(Boolean)));
+}
+// 目录列显示全路径还是只显示文件夹名
+const dirLabel = ref(localStorage.getItem('pi-web-dir-label') === 'path' ? 'path' : 'name');
+function setDirLabel(v) {
+  dirLabel.value = v;
+  localStorage.setItem('pi-web-dir-label', v);
+}
+function dirMenu(e) {
+  openMenu(e.clientX, e.clientY, [
+    { label: '全部展开', icon: 'expand', run: expandAll },
+    { label: '全部折叠', icon: 'collapse', run: collapseAll },
+    '-',
+    { label: '显示完整路径', icon: 'folder', check: dirLabel.value === 'path', run: () => setDirLabel('path') },
+    { label: '只显示文件夹名称', icon: 'folder', check: dirLabel.value === 'name', run: () => setDirLabel('name') },
+  ]);
+}
+// 列表空白处的右键：显示全部目录时接管，否则交回页面自己的菜单
+function listMenu(e) {
+  if (!S.showAllSessions) return;
+  e.preventDefault();
+  e.stopPropagation();
+  dirMenu(e);
 }
 
 // 会话分组：显示全部目录时按目录分组，只看当前目录时按时间分组；组内再按当前排序方式排
@@ -67,6 +98,7 @@ const groups = computed(() => {
       seen.add(n);
     }
     const label = (cwd) => {
+      if (dirLabel.value === 'path') return cwd || '(未知目录)';
       const parts = (cwd || '').split(/[\\/]/).filter(Boolean);
       const n = parts.pop() || '(未知目录)';
       return dup.has(n.toLowerCase()) && parts.length ? `${parts.pop()}/${n}` : n;
@@ -166,12 +198,12 @@ function focusSearch() {
         </button>
         <button class="sbtn" :title="`当前按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
       </div>
-      <div class="list">
+      <div class="list" @contextmenu="listMenu">
         <div v-if="!S.sessions.length" class="empty">{{ S.showAllSessions ? '还没有历史会话' : '这个目录还没有历史会话' }}</div>
         <div v-else-if="!groups.length" class="empty">没有匹配的会话</div>
         <template v-for="g in groups" :key="g.path || g.name">
-          <!-- 目录：像文件夹一样，点一下折叠/展开 -->
-          <div v-if="g.path" class="dirhead" :class="{ closed: collapsed.has(g.path) }" :title="g.path" @click="toggleDir(g.path)">
+          <!-- 目录：像文件夹一样，点一下折叠/展开；右键可以全部展开折叠、切路径显示 -->
+          <div v-if="g.path" class="dirhead" :class="{ closed: collapsed.has(g.path) }" :title="g.path" @click="toggleDir(g.path)" @contextmenu.prevent.stop="dirMenu($event)">
             <span class="arrow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg></span>
             <Icon name="folder" :size="15" />
             <span class="ellipsis grow">{{ g.name }}</span>
@@ -183,16 +215,13 @@ function focusSearch() {
               v-for="s in g.items"
               :key="s.file"
               class="sess"
-              :class="{ active: s.file === S.agent?.sessionFile, child: !!g.path }"
+              :class="{ active: s.file === (S.agent?.sessionFile || S.detached?.file), child: !!g.path }"
               :title="s.title"
               @click="open(s)"
               @contextmenu.prevent.stop="sessionMenu($event, s)"
             >
-              <div class="grow">
-                <div class="ellipsis stitle">{{ s.title }}</div>
-                <div class="meta ellipsis">{{ s.messages }} 条</div>
-              </div>
-              <span class="time">{{ timeOf(s.modified) }}</span>
+              <span class="ellipsis grow stitle">{{ s.title }}</span>
+              <span class="sinfo">{{ s.messages }} 条 · {{ timeOf(s.modified) }}</span>
               <button class="del" title="删除" @click.stop="deleteSession(s)"><Icon name="trash" :size="14" /></button>
             </div>
           </template>
@@ -274,18 +303,17 @@ function focusSearch() {
 .gcount { font-size: 10px; padding: 0 5px; border-radius: 7px; background: var(--active); color: var(--text-3); }
 .sbtn { height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
 .sbtn:hover { border-color: var(--accent); color: var(--accent-text); }
-.list > .sess, .list > .gname { content-visibility: auto; contain-intrinsic-size: auto 50px; }
-.sess { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; border-radius: 10px; cursor: pointer; position: relative; }
+.list > .sess, .list > .gname { content-visibility: auto; contain-intrinsic-size: auto 34px; }
+.sess { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border-radius: 9px; cursor: pointer; position: relative; }
 .sess:hover { background: var(--active); }
 .sess.active { background: var(--panel); box-shadow: var(--shadow-sm); }
 [data-theme='dark'] .sess.active { background: var(--elev); }
-.stitle { line-height: 1.45; }
+.stitle { line-height: 1.4; }
 .sess.active .stitle { font-weight: 600; color: var(--accent-text); }
-.meta { font-size: var(--fs-xs); color: var(--text-3); margin-top: 1px; }
-.time { font-size: 11px; color: var(--text-3); flex: none; align-self: flex-start; margin-top: 3px; }
-.del { display: none; width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
+.sinfo { font-size: var(--fs-xs); color: var(--text-3); flex: none; font-variant-numeric: tabular-nums; }
+.del { display: none; width: 24px; height: 24px; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
 .sess:hover .del { display: inline-flex; }
-.sess:hover .time { display: none; }
+.sess:hover .sinfo { display: none; }
 .del:hover { background: var(--err); color: #fff; }
 .sess .dot { margin: 0 4px; }
 .empty { padding: 32px 12px; text-align: center; font-size: var(--fs-sm); color: var(--text-3); }
@@ -295,6 +323,6 @@ function focusSearch() {
 /* 触屏上没有悬停，删除按钮一直显示会太乱：靠长按/右键菜单删除 */
 @media (hover: none) {
   .sess:hover .del { display: none; }
-  .sess:hover .time { display: inline; }
+  .sess:hover .sinfo { display: inline; }
 }
 </style>

@@ -1,9 +1,10 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { S } from '../store.js';
-import { UI } from '../settings.js';
+import { S, toast } from '../store.js';
+import { UI, openMenu } from '../settings.js';
 import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens } from '../util.js';
 import ToolCard from './ToolCard.vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({ m: Object });
 const role = computed(() => props.m.role);
@@ -28,12 +29,34 @@ const aiText = computed(() =>
     .join('\n\n'),
 );
 const customText = computed(() => (typeof props.m.content === 'string' ? props.m.content : textOf(props.m.content)));
+const copyText = computed(() => (role.value === 'user' ? userText.value : aiText.value));
 
-const copied = ref(false);
 function copy(text) {
   navigator.clipboard.writeText(text);
-  copied.value = true;
-  setTimeout(() => (copied.value = false), 1200);
+}
+
+// 消息右上角的“…”：复制、开关模型与用量（默认不显示、也不占位置）
+function msgMenu(e) {
+  const r = e.currentTarget.getBoundingClientRect();
+  const items = [
+    {
+      label: '复制这条消息',
+      icon: 'copy',
+      run: () => {
+        copy(copyText.value);
+        toast('已复制');
+      },
+    },
+  ];
+  if (role.value === 'assistant' && meta.value) {
+    items.push('-', {
+      label: UI.showMeta ? '隐藏模型与用量' : '显示模型与用量',
+      icon: 'info',
+      check: UI.showMeta,
+      run: () => (UI.showMeta = !UI.showMeta),
+    });
+  }
+  openMenu(Math.max(8, r.right - 220), r.bottom + 4, items);
 }
 </script>
 
@@ -48,10 +71,8 @@ function copy(text) {
           <img v-for="(im, i) in images" :key="i" :src="`data:${im.mimeType};base64,${im.data}`" />
         </div>
       </div>
-      <div class="actions">
-        <button class="act" @click="copy(userText)">{{ copied ? '已复制' : '复制' }}</button>
-      </div>
     </div>
+    <button class="more-btn" title="更多" @click.stop="msgMenu"><Icon name="more" :size="16" /></button>
   </div>
 
   <!-- 助手：靠左，文字是气泡，思考/工具是轻量的卡片 -->
@@ -76,11 +97,10 @@ function copy(text) {
       <div v-if="m.stopReason === 'error'" class="errbox">出错：{{ stripAnsi(m.errorMessage || '未知错误') }}</div>
       <div v-else-if="m.stopReason === 'aborted'" class="note-sm">已中断</div>
       <div v-else-if="m.stopReason === 'length'" class="note-sm warn">达到输出长度上限，回复被截断</div>
-      <div v-if="!streaming && (meta || aiText)" class="actions">
-        <button v-if="aiText" class="act" @click="copy(aiText)">{{ copied ? '已复制' : '复制' }}</button>
-        <span v-if="meta" class="meta" :class="{ pin: UI.showMeta }">{{ meta }}</span>
-      </div>
+      <!-- 模型/token/价格：默认不渲染，在“…”里手动打开才出现 -->
+      <div v-if="UI.showMeta && meta" class="meta">{{ meta }}</div>
     </div>
+    <button v-if="!streaming" class="more-btn" title="更多" @click.stop="msgMenu"><Icon name="more" :size="16" /></button>
   </div>
 
   <!-- ! 执行的 shell 命令 -->
@@ -124,7 +144,7 @@ function copy(text) {
 </template>
 
 <style scoped>
-.msg { display: flex; gap: var(--sp3); margin: 0 0 var(--sp5); align-items: flex-start; }
+.msg { display: flex; gap: var(--sp3); margin: 0 0 var(--sp5); align-items: flex-start; position: relative; }
 .me { flex-direction: row-reverse; }
 .col { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: var(--sp2); }
 .me .col { align-items: flex-end; }
@@ -145,14 +165,14 @@ function copy(text) {
 .errbox { background: var(--err-bg); color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--r-md); padding: 8px 12px; white-space: pre-wrap; font-size: var(--fs-sm); }
 .note-sm { font-size: var(--fs-xs); color: var(--text-3); }
 
-/* 悬停时出现的操作和用量：价格/模型默认不占眼力 */
-.actions { display: flex; align-items: center; gap: 10px; min-height: 18px; font-size: var(--fs-xs); color: var(--text-3); margin-top: -2px; }
-.act { border: 0; background: transparent; color: var(--text-3); cursor: pointer; padding: 0 2px; font-size: var(--fs-xs); opacity: 0; transition: opacity 0.15s; }
-.act:hover { color: var(--accent-text); }
-.msg:hover .act { opacity: 1; }
-.meta { opacity: 0; transition: opacity 0.15s; }
-.msg:hover .meta { opacity: 1; }
-.meta.pin { opacity: 1; }
+/* 悬停时出现的“…”：绝对定位，不占布局 */
+.more-btn { position: absolute; top: 2px; width: 26px; height: 26px; border: 1px solid var(--line); background: var(--chat-bg); border-radius: 8px; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s, color 0.15s; z-index: 2; }
+.ai .more-btn { right: 0; }
+.me .more-btn { left: 0; }
+.msg:hover .more-btn { opacity: 1; }
+.more-btn:hover { color: var(--text); }
+/* 打开后才显示的模型/用量 */
+.meta { font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
 
 /* 卡片类：shell、系统消息 */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
@@ -176,7 +196,6 @@ function copy(text) {
   .ai-bubble { padding: 10px 12px; }
 }
 @media (hover: none) {
-  .act { opacity: 1; }
-  .meta { opacity: 1; }
+  .more-btn { opacity: 1; }
 }
 </style>

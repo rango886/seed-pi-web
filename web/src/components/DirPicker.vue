@@ -3,7 +3,6 @@ import { ref, watch, nextTick } from 'vue';
 import { S, openDir } from '../store.js';
 import { http } from '../api.js';
 import { relTime } from '../util.js';
-
 const path = ref('');
 const list = ref({ path: '', parent: null, entries: [] });
 const error = ref('');

@@ -22,6 +22,7 @@ export const S = reactive({
   running: false,
   compacting: false,
   retry: null,
+  detached: null, // 目录已不存在的会话：{ file, cwd }，只读看历史，不能对话
   queue: { steering: [], followUp: [] },
   bashLive: null,
   // 扩展 UI
@@ -174,6 +175,7 @@ async function attachResult({ agent, uiPending, uiState }) {
   S.agentId = agent.id;
   S.agent = agent;
   S.agentExited = null;
+  S.detached = null;
   S.dialogs = S.dialogs.filter((d) => d._resolve).concat(uiPending || []);
   S.statusItems = {};
   S.widgets = {};
@@ -191,8 +193,37 @@ async function openDirRaw(cwd, force = false, sessionFile) {
 export const openDir = guard(openDirRaw);
 
 export const openSession = guard(async (file) => {
-  await attachResult(await call('open_session', { file }));
+  const res = await call('open_session', { file });
+  if (res?.detached) return openDetached(res.detached);
+  await attachResult(res);
 });
+
+/**
+ * 目录已经不存在的历史会话：只读打开，历史照看，想接着聊得先选个新目录
+ * （pi 自己不允许加载“记录目录不存在”的会话，所以换目录只会开新会话）
+ */
+function openDetached({ file, cwd, messages }) {
+  S.agentId = null;
+  S.agent = null;
+  S.agentExited = null;
+  S.detached = { file, cwd };
+  S.state = null;
+  S.stats = null;
+  S.thinkingLevels = [];
+  S.queue = { steering: [], followUp: [] };
+  S.running = false;
+  S.compacting = false;
+  S.retry = null;
+  S.statusItems = {};
+  S.widgets = {};
+  S.dialogs = S.dialogs.filter((d) => d._resolve);
+  S.cwd = cwd; // 不写 localStorage：这个目录已经不存在了
+  S.fsEpoch++;
+  setMessages(messages);
+  S.activeTab = 'chat';
+  syncTitle();
+}
+
 
 export const restartAgent = guard(async () => {
   if (S.running) return toast('正在运行，先停止再重新加载', 'warning');
@@ -207,23 +238,28 @@ export async function reload() {
 }
 
 // ---------------- 读取状态 ----------------
-async function loadMessages() {
-  const d = await rpc({ type: 'get_messages' }).catch(() => ({ messages: [] }));
+/** 把 pi 的 message 数组变成界面要的 S.messages + S.tools */
+function setMessages(list) {
   const tools = {};
-  const list = [];
-  for (const m of d.messages || []) {
+  const out = [];
+  for (const m of list || []) {
     if (m.role === 'system') continue;
     if (m.role === 'toolResult') {
       tools[m.toolCallId] = { status: m.isError ? 'error' : 'done', result: m };
       continue;
     }
-    list.push(withKey(m));
+    out.push(withKey(m));
   }
   S.tools = tools;
-  S.messages = list;
+  S.messages = out;
   liveIdx = -1;
   S.tick++;
   syncTitle();
+}
+
+async function loadMessages() {
+  const d = await rpc({ type: 'get_messages' }).catch(() => ({ messages: [] }));
+  setMessages(d.messages);
 }
 
 async function loadState() {
@@ -577,6 +613,8 @@ const requireIdle = () => {
 };
 
 export const newSession = guard(async () => {
+  // 只读会话（原目录已经没了）里点“新会话”，先去选个目录
+  if (S.detached) return (S.dirPicker = true);
   requireIdle();
   const d = await rpc({ type: 'new_session' });
   if (d?.cancelled) return toast('扩展取消了新建会话', 'warning');

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { PiAgent } from './pi-agent.js';
-import { listSessions, recentDirs, sessionRoots, isInside, samePath } from './sessions.js';
+import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionMessages } from './sessions.js';
 import { TerminalManager, terminalAvailable } from './terminal.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
@@ -110,6 +110,9 @@ async function getOrCreateAgent(cwd, sessionFile) {
 async function openSession(file) {
   const cwd = await readHeaderCwd(file);
   if (!cwd) throw new Error('无法读取会话文件');
+  // 会话原来的目录已经不存在了（删了、外置盘拔了）：不报错，交给前端只读打开
+  const dirOk = (await fsp.stat(cwd).catch(() => null))?.isDirectory();
+  if (!dirOk) return { detached: { file, cwd } };
   const a = findAgentByCwd(cwd);
   if (!a) return createAgent({ cwd, sessionFile: file });
   if (a.sessionFile && samePath(a.sessionFile, file)) return a;
@@ -262,7 +265,10 @@ wss.on('connection', (ws) => {
       return attach(await getOrCreateAgent(path.resolve(cwd), sessionFile));
     },
     async open_session({ file }) {
-      return attach(await openSession(file));
+      const r = await openSession(file);
+      // 目录不存在：把消息读出来给前端只读显示，不启动 pi
+      if (r.detached) return { detached: { ...r.detached, messages: await readSessionMessages(file) } };
+      return attach(r);
     },
     // 原样转发 RPC 命令：pi 新增的命令前端直接就能用，后端不用改
     async rpc({ agentId, cmd }) {
