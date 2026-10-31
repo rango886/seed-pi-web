@@ -1,6 +1,8 @@
 // 界面设置：保存在 localStorage，改了立刻生效（写到 <html> 的 CSS 变量上）
 import { reactive, watch } from 'vue';
 
+export const SYSTEM_FONT = "system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', sans-serif";
+
 export const DEFAULTS = {
   // 外观
   theme: 'light', // light | dark | auto
@@ -10,8 +12,8 @@ export const DEFAULTS = {
   avatars: true,
   chatWidth: 920, // 聊天内容最大宽度 px，0 = 铺满
   spacing: 1, // 间距倍率
-  // 文字
-  font: "'Sarasa Term SC'",
+  // 文字（默认系统字体：macOS / iOS 上是苹方，Windows 上是微软雅黑）
+  font: SYSTEM_FONT,
   codeFont: "'Sarasa Term SC'",
   fontSize: 14,
   codeFontSize: 13,
@@ -22,25 +24,31 @@ export const DEFAULTS = {
   sendKey: 'enter', // enter | ctrlEnter
   thinkingOpen: false,
   toolsOpen: false,
-  showMeta: true,
+  showMeta: false, // 默认不显示每条回复的模型/用量，鼠标悬停才显示
 };
 
 export const ACCENTS = ['#3b82f6', '#07c160', '#12b7f5', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#64748b'];
 
 export const FONT_PRESETS = [
+  { label: '系统默认（苹方 / 微软雅黑）', value: SYSTEM_FONT },
   { label: '更纱终端黑体 Sarasa Term SC', value: "'Sarasa Term SC'" },
   { label: '等距更纱黑体 Sarasa Mono SC', value: "'Sarasa Mono SC'" },
   { label: '更纱黑体 Sarasa Gothic SC', value: "'Sarasa Gothic SC'" },
   { label: '更纱黑体 UI Sarasa UI SC', value: "'Sarasa UI SC'" },
-  { label: '系统默认 (微软雅黑 / 苹方)', value: "system-ui, 'Microsoft YaHei UI', 'PingFang SC'" },
   { label: 'Cascadia Mono', value: "'Cascadia Mono'" },
 ];
 
 const KEY = 'pi-web-settings';
+const VER = 2; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体
 let saved = {};
 try {
   saved = JSON.parse(localStorage.getItem(KEY) || '{}');
 } catch {}
+if ((saved.__v || 1) < 2) {
+  if (saved.font === "'Sarasa Term SC'") delete saved.font; // 没改过的，直接用新默认值
+  delete saved.showMeta; // v2 起默认改成“悬停才显示”
+}
+delete saved.__v;
 
 export const UI = reactive({ ...DEFAULTS, ...saved });
 export const view = reactive({
@@ -80,7 +88,7 @@ export function resetSettings() {
   Object.assign(UI, DEFAULTS);
 }
 
-const FALLBACK = "'Sarasa Term SC', 'Microsoft YaHei UI', 'PingFang SC', 'Noto Sans CJK SC', sans-serif";
+const FALLBACK = "'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', sans-serif";
 const MONO_FALLBACK = "'Sarasa Term SC', 'Cascadia Mono', Consolas, monospace";
 const mql = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -92,8 +100,8 @@ function apply() {
   r.dataset.bubble = UI.userBubble;
   const set = (k, v) => r.style.setProperty(k, v);
   set('--accent', UI.accent);
-  set('--font', `${UI.font || "'Sarasa Term SC'"}, ${FALLBACK}`);
-  set('--font-code', `${UI.codeFont || UI.font || "'Sarasa Term SC'"}, ${MONO_FALLBACK}`);
+  set('--font', `${UI.font || SYSTEM_FONT}, ${FALLBACK}`);
+  set('--font-code', `${UI.codeFont || UI.font || SYSTEM_FONT}, ${MONO_FALLBACK}`);
   set('--fs', UI.fontSize + 'px');
   set('--fs-code', UI.codeFontSize + 'px');
   set('--lh', String(UI.lineHeight));
@@ -102,10 +110,24 @@ function apply() {
   set('--radius', UI.radius + 'px');
   set('--s', String(UI.spacing));
   set('--chat-w', UI.chatWidth ? UI.chatWidth + 'px' : '100%');
+  setFavicon();
+}
+
+/** 标签页图标：和左上角的 π 方块保持一致，跟着主题色变 */
+function setFavicon() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${UI.accent}"/><text x="16" y="24.5" font-size="22" font-weight="700" text-anchor="middle" fill="#fff" font-family="system-ui, 'Segoe UI', 'Helvetica Neue', sans-serif">π</text></svg>`;
+  let link = document.querySelector('link[rel="icon"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.type = 'image/svg+xml';
+  link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 
 watch(UI, () => {
-  localStorage.setItem(KEY, JSON.stringify(UI));
+  localStorage.setItem(KEY, JSON.stringify({ ...UI, __v: VER }));
   apply();
 });
 mql.addEventListener('change', apply);

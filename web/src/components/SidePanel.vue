@@ -35,6 +35,16 @@ function toggleSort() {
 const byTime = (a, b) => new Date(b.modified) - new Date(a.modified);
 const byName = (a, b) => (a.title || '').localeCompare(b.title || '', 'zh');
 
+// 显示全部目录时，每个目录像文件夹一样可以折叠（状态记下来）
+const collapsed = ref(new Set(JSON.parse(localStorage.getItem('pi-web-collapsed-dirs') || '[]')));
+function toggleDir(key) {
+  const s = new Set(collapsed.value);
+  if (s.has(key)) s.delete(key);
+  else s.add(key);
+  collapsed.value = s;
+  localStorage.setItem('pi-web-collapsed-dirs', JSON.stringify([...s]));
+}
+
 // 会话分组：显示全部目录时按目录分组，只看当前目录时按时间分组；组内再按当前排序方式排
 const groups = computed(() => {
   const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
@@ -160,23 +170,32 @@ function focusSearch() {
         <div v-if="!S.sessions.length" class="empty">{{ S.showAllSessions ? '还没有历史会话' : '这个目录还没有历史会话' }}</div>
         <div v-else-if="!groups.length" class="empty">没有匹配的会话</div>
         <template v-for="g in groups" :key="g.path || g.name">
-          <div v-if="g.name" class="gname" :title="g.path">{{ g.name }}<span v-if="g.path" class="gcount">{{ g.items.length }}</span></div>
-          <div
-            v-for="s in g.items"
-            :key="s.file"
-            class="sess"
-            :class="{ active: s.file === S.agent?.sessionFile }"
-            :title="s.title"
-            @click="open(s)"
-            @contextmenu.prevent.stop="sessionMenu($event, s)"
-          >
-            <div class="grow">
-              <div class="ellipsis stitle">{{ s.title }}</div>
-              <div class="meta ellipsis">{{ s.messages }} 条</div>
-            </div>
-            <span class="time">{{ timeOf(s.modified) }}</span>
-            <button class="del" title="删除" @click.stop="deleteSession(s)"><Icon name="trash" :size="14" /></button>
+          <!-- 目录：像文件夹一样，点一下折叠/展开 -->
+          <div v-if="g.path" class="dirhead" :class="{ closed: collapsed.has(g.path) }" :title="g.path" @click="toggleDir(g.path)">
+            <span class="arrow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg></span>
+            <Icon name="folder" :size="15" />
+            <span class="ellipsis grow">{{ g.name }}</span>
+            <span class="gcount">{{ g.items.length }}</span>
           </div>
+          <div v-else-if="g.name" class="gname">{{ g.name }}</div>
+          <template v-if="!g.path || !collapsed.has(g.path)">
+            <div
+              v-for="s in g.items"
+              :key="s.file"
+              class="sess"
+              :class="{ active: s.file === S.agent?.sessionFile, child: !!g.path }"
+              :title="s.title"
+              @click="open(s)"
+              @contextmenu.prevent.stop="sessionMenu($event, s)"
+            >
+              <div class="grow">
+                <div class="ellipsis stitle">{{ s.title }}</div>
+                <div class="meta ellipsis">{{ s.messages }} 条</div>
+              </div>
+              <span class="time">{{ timeOf(s.modified) }}</span>
+              <button class="del" title="删除" @click.stop="deleteSession(s)"><Icon name="trash" :size="14" /></button>
+            </div>
+          </template>
         </template>
       </div>
     </div>
@@ -245,6 +264,13 @@ function focusSearch() {
 .list { flex: 1; overflow-y: auto; padding: 2px 8px 12px; }
 .tree { padding: 2px 6px 12px; }
 .gname { font-size: var(--fs-xs); color: var(--text-3); padding: 12px 10px 4px; display: flex; align-items: center; gap: 6px; }
+.dirhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 6px; border-radius: 8px; cursor: pointer; color: var(--text); font-size: var(--fs-sm); margin-top: 4px; }
+.dirhead:hover { background: var(--active); }
+.dirhead .arrow { width: 16px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); transition: transform 0.15s; }
+.dirhead.closed .arrow { transform: rotate(-90deg); }
+.dirhead :deep(.icon) { color: var(--accent-text); opacity: 0.85; }
+.dirhead .gcount { margin-left: auto; }
+.sess.child { padding-left: 26px; }
 .gcount { font-size: 10px; padding: 0 5px; border-radius: 7px; background: var(--active); color: var(--text-3); }
 .sbtn { height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
 .sbtn:hover { border-color: var(--accent); color: var(--accent-text); }

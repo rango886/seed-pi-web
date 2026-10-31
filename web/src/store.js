@@ -148,9 +148,26 @@ function onServerMsg(msg) {
 function setCwd(cwd) {
   S.cwd = cwd;
   localStorage.setItem('pi-web-cwd', cwd);
-  document.title = `pi · ${cwd.split(/[\\/]/).filter(Boolean).pop() || cwd}`;
+  syncTitle();
   if (S.agent?.sessionFile) localStorage.setItem('pi-web-session', S.agent.sessionFile);
   S.fsEpoch++;
+}
+
+/** 顶栏 / 浏览器标签页显示的会话名：自定义名 > 第一条用户消息 > 目录名 */
+export function sessionTitle() {
+  if (S.state?.sessionName) return S.state.sessionName;
+  const first = S.messages.find((m) => m.role === 'user');
+  const c = first?.content;
+  const text = typeof c === 'string' ? c : Array.isArray(c) ? c.find((b) => b.type === 'text')?.text || '' : '';
+  const line = text.replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (line) return line;
+  return (S.cwd || '').split(/[\\/]/).filter(Boolean).pop() || '新会话';
+}
+
+/** 开多个标签页时，靠标签标题区分是哪个会话（太长就截一下，不然标签挤成一坨） */
+export function syncTitle() {
+  const t = sessionTitle();
+  document.title = t.length > 28 ? t.slice(0, 28) + '…' : t;
 }
 
 async function attachResult({ agent, uiPending, uiState }) {
@@ -206,6 +223,7 @@ async function loadMessages() {
   S.messages = list;
   liveIdx = -1;
   S.tick++;
+  syncTitle();
 }
 
 async function loadState() {
@@ -215,6 +233,7 @@ async function loadState() {
     S.compacting = !!S.state.isCompacting;
     const t = await rpc({ type: 'get_available_thinking_levels' });
     S.thinkingLevels = t.levels || [];
+    syncTitle();
   } catch {}
 }
 
@@ -382,6 +401,7 @@ function onRec(rec) {
       break;
     case 'session_info_changed':
       if (S.state) S.state.sessionName = rec.name;
+      syncTitle();
       loadSessions();
       break;
     case 'thinking_level_changed':
@@ -623,6 +643,7 @@ export const renameSession = guard(async (arg) => {
   }
   await rpc({ type: 'set_session_name', name });
   if (S.state) S.state.sessionName = name;
+  syncTitle();
   loadSessions();
 });
 

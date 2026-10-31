@@ -59,13 +59,16 @@ function copy(text) {
     <div v-if="UI.avatars" class="avatar ai-av">π</div>
     <div class="col">
       <template v-for="(b, i) in blocks" :key="i">
-        <details v-if="b.type === 'thinking'" class="think" :open="UI.thinkingOpen || (streaming && i === blocks.length - 1)">
-          <summary>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" /></svg>
-            <span>思考过程{{ b.redacted ? '（已隐藏）' : '' }}</span>
+        <!-- 思考过程：和工具调用用同一套 .blk 卡片样式 -->
+        <details v-if="b.type === 'thinking'" class="blk" :open="UI.thinkingOpen || (streaming && i === blocks.length - 1)">
+          <summary class="blk-head">
+            <span class="blk-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" /></svg></span>
+            <span class="blk-chip soft">思考过程{{ b.redacted ? '（已隐藏）' : '' }}</span>
+            <span class="grow" />
             <span v-if="streaming && i === blocks.length - 1" class="spin" />
+            <svg class="blk-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
           </summary>
-          <div class="think-body">{{ b.thinking }}</div>
+          <div class="blk-body prose dim">{{ b.thinking }}</div>
         </details>
         <div v-else-if="b.type === 'text' && b.text" class="bubble ai-bubble md" v-html="renderMarkdown(b.text)" />
         <ToolCard v-else-if="b.type === 'toolCall'" :call="b" :exec="S.tools[b.id]" :streaming="streaming" />
@@ -75,7 +78,7 @@ function copy(text) {
       <div v-else-if="m.stopReason === 'length'" class="note-sm warn">达到输出长度上限，回复被截断</div>
       <div v-if="!streaming && (meta || aiText)" class="actions">
         <button v-if="aiText" class="act" @click="copy(aiText)">{{ copied ? '已复制' : '复制' }}</button>
-        <span v-if="UI.showMeta && meta" class="meta">{{ meta }}</span>
+        <span v-if="meta" class="meta" :class="{ pin: UI.showMeta }">{{ meta }}</span>
       </div>
     </div>
   </div>
@@ -139,23 +142,17 @@ function copy(text) {
 .imgs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .imgs img { max-height: 160px; max-width: 260px; border-radius: 8px; display: block; }
 
-/* 思考过程 */
-.think { max-width: 100%; }
-.think summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-size: var(--fs-sm); color: var(--text-3); padding: 3px 10px; border-radius: 14px; background: var(--hover); list-style: none; transition: color 0.15s; }
-.think summary::-webkit-details-marker { display: none; }
-.think summary:hover { color: var(--text-2); }
-.think .spin { width: 10px; height: 10px; }
-.think-body { margin-top: 8px; padding: 2px 0 2px 14px; border-left: 2px solid var(--line); color: var(--text-3); font-size: var(--fs-sm); line-height: var(--lh); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
-
 .errbox { background: var(--err-bg); color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--r-md); padding: 8px 12px; white-space: pre-wrap; font-size: var(--fs-sm); }
 .note-sm { font-size: var(--fs-xs); color: var(--text-3); }
 
-/* 悬停时出现的操作和用量 */
+/* 悬停时出现的操作和用量：价格/模型默认不占眼力 */
 .actions { display: flex; align-items: center; gap: 10px; min-height: 18px; font-size: var(--fs-xs); color: var(--text-3); margin-top: -2px; }
 .act { border: 0; background: transparent; color: var(--text-3); cursor: pointer; padding: 0 2px; font-size: var(--fs-xs); opacity: 0; transition: opacity 0.15s; }
 .act:hover { color: var(--accent-text); }
 .msg:hover .act { opacity: 1; }
-.meta { opacity: 0.8; }
+.meta { opacity: 0; transition: opacity 0.15s; }
+.msg:hover .meta { opacity: 1; }
+.meta.pin { opacity: 1; }
 
 /* 卡片类：shell、系统消息 */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
@@ -180,5 +177,6 @@ function copy(text) {
 }
 @media (hover: none) {
   .act { opacity: 1; }
+  .meta { opacity: 1; }
 }
 </style>

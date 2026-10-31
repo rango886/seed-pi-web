@@ -224,7 +224,7 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
 
     <div class="box" :class="{ focused, dragging, disabled, big }">
       <button class="expand" :class="{ on: big }" :title="big ? '还原输入框高度' : '放大输入框（写长消息用）'" @click="toggleBig">
-        <Icon :name="big ? 'collapse' : 'expand'" :size="15" />
+        <Icon :name="big ? 'collapse' : 'expand'" :size="14" />
       </button>
       <div v-if="S.composer.images.length" class="thumbs">
         <div v-for="(im, i) in S.composer.images" :key="i" class="thumb">
@@ -296,9 +296,6 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
     </div>
 
     <div class="usage">
-      <span class="u" :title="S.agentExited ? '已退出' : S.running ? '运行中' : '空闲'">
-        <span class="dot" :class="S.agentExited ? '' : S.running ? 'busy' : 'on'" />
-      </span>
       <template v-if="usage">
         <span class="u click" title="本会话花费，点击看详情" @click="showSessionInfo">{{ usage.cost }}</span>
         <span v-if="usage.hit != null" class="u" title="缓存命中率（缓存读 / 全部输入）">缓存 {{ usage.hit }}%</span>
@@ -316,9 +313,10 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
 <style scoped>
 .composer { position: relative; flex: none; }
 .box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 10px 10px 8px 14px; transition: border-color 0.15s, box-shadow 0.15s; }
-.expand { position: absolute; top: 6px; right: 8px; width: 26px; height: 26px; border: 0; background: transparent; border-radius: 7px; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; }
-.expand:hover { background: var(--hover); color: var(--text); }
-.expand.on { color: var(--accent-text); background: var(--accent-soft); }
+.expand { position: absolute; top: 8px; right: 10px; width: 28px; height: 28px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 9px; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; opacity: 0; box-shadow: var(--shadow-sm); transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s; }
+.box:hover .expand, .box.focused .expand, .expand.on { opacity: 1; }
+.expand:hover { color: var(--text); border-color: var(--text-3); }
+.expand.on { color: var(--accent-text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .box.focused { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: var(--shadow), 0 0 0 4px var(--accent-softer); }
 .box.dragging { border-style: dashed; border-color: var(--accent); background: var(--accent-softer); }
 .box.disabled { opacity: 0.6; }
@@ -340,7 +338,6 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
 .usage { display: flex; align-items: center; gap: 2px; padding: 6px 8px 0; font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
 .u { padding: 1px 6px; border-radius: 5px; display: inline-flex; align-items: center; }
 .u + .u:not(.hint)::before { content: ''; }
-.u .dot { width: 6px; height: 6px; }
 .u.click { cursor: pointer; }
 .u.click:hover { background: var(--active); color: var(--text-2); }
 .u.ext { max-width: 240px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
@@ -384,5 +381,9 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
   .ring span { display: none; }
   .ring { padding: 0 4px; }
   .box { border-radius: 16px; padding: 8px 8px 6px 12px; }
+}
+/* 触屏没有悬停，放大按钮得一直看得到 */
+@media (hover: none) {
+  .expand { opacity: 1; }
 }
 </style>

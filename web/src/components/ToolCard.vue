@@ -77,35 +77,35 @@ const dur = computed(() => {
 </script>
 
 <template>
-  <div class="tool" :class="[status, { open }]">
-    <div class="head" @click="open = !open">
+  <div class="blk" :class="[status, { open }]">
+    <div class="blk-head" @click="open = !open">
       <span class="st">
         <span v-if="status === 'running' || status === 'pending'" class="spin" />
         <svg v-else-if="status === 'done'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
         <svg v-else-if="status === 'error'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
         <span v-else class="dot" />
       </span>
-      <span class="name">{{ call.name }}</span>
-      <span class="ellipsis grow sum" :title="summary">
+      <span class="blk-chip">{{ call.name }}</span>
+      <span class="ellipsis grow blk-sum" :title="summary">
         <a v-if="path" href="#" @click.prevent.stop="openPath">{{ summary }}</a>
         <template v-else>{{ summary }}</template>
       </span>
-      <span v-if="dur" class="dur">{{ dur }}</span>
-      <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
+      <span v-if="dur" class="blk-meta">{{ dur }}</span>
+      <svg class="blk-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
     </div>
-    <pre v-if="!open && preview" class="out preview">{{ preview }}</pre>
+    <pre v-if="!open && preview" class="blk-body out preview">{{ preview }}</pre>
     <div v-if="open" class="body">
-      <div v-if="edits" class="diff">
+      <div v-if="edits" class="blk-body diff">
         <template v-for="(e, i) in edits" :key="i">
           <div v-if="i" class="hunk-sep" />
           <div v-for="(l, j) in lines(e.oldText)" :key="'o' + j" class="del">- {{ l }}</div>
           <div v-for="(l, j) in lines(e.newText)" :key="'n' + j" class="add">+ {{ l }}</div>
         </template>
       </div>
-      <pre v-else-if="writeContent != null" class="out args">{{ writeContent }}</pre>
-      <pre v-else-if="showArgs" class="out args">{{ showArgs }}</pre>
+      <pre v-else-if="writeContent != null" class="blk-body out args">{{ writeContent }}</pre>
+      <pre v-else-if="showArgs" class="blk-body out args">{{ showArgs }}</pre>
       <template v-if="result">
-        <pre v-if="resultText" class="out" :class="{ errout: status === 'error' }">{{ shownResult }}</pre>
+        <pre v-if="resultText" class="blk-body out" :class="{ errout: status === 'error' }">{{ shownResult }}</pre>
         <div v-if="hiddenLines && !showAll" class="more">
           <button class="btn sm flat" @click="showAll = true">还有 {{ hiddenLines }} 行，全部显示</button>
         </div>
@@ -118,27 +118,17 @@ const dur = computed(() => {
 </template>
 
 <style scoped>
-.tool { align-self: stretch; border: 1px solid var(--line); background: var(--panel); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-sm); transition: border-color 0.15s; }
-.tool:hover { border-color: color-mix(in srgb, var(--text-3) 50%, var(--line)); }
-.tool.error { border-color: color-mix(in srgb, var(--err) 40%, transparent); }
-.head { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; user-select: none; }
-.head:hover { background: var(--hover); }
+/* 卡片框、头部、展开箭头的样式在 style.css 的 .blk-* 里，这里只管工具特有的部分 */
+.error { border-color: color-mix(in srgb, var(--err) 40%, transparent); }
 .st { width: 18px; height: 18px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
 .done .st { color: var(--ok); }
 .error .st { color: var(--err); }
-.st .spin { width: 11px; height: 11px; }
-.name { flex: none; font-family: var(--font-code); font-size: var(--fs-xs); background: var(--accent-soft); color: var(--accent-text); padding: 1px 8px; border-radius: 6px; }
-.sum { color: var(--text-2); font-family: var(--font-code); font-size: var(--fs-sm); }
-.sum a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
-.sum a:hover { color: var(--accent-text); text-decoration-color: currentColor; }
-.dur { color: var(--text-3); font-size: var(--fs-xs); flex: none; }
-.chev { color: var(--text-3); flex: none; transition: transform 0.15s; }
-.open .chev { transform: rotate(90deg); }
-.out { margin: 0; padding: 10px 14px; max-height: 380px; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: var(--fs-code); font-family: var(--font-code); line-height: 1.55; border-top: 1px solid var(--line-2); background: var(--code-bg); }
-.out.args { background: var(--panel-2); }
+.blk-sum a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.blk-sum a:hover { color: var(--accent-text); text-decoration-color: currentColor; }
 .out.preview { max-height: none; color: var(--text-3); }
+.out.args { background: var(--panel-2); }
 .errout { color: var(--err); }
-.diff { font-size: var(--fs-code); font-family: var(--font-code); line-height: 1.55; max-height: 440px; overflow: auto; border-top: 1px solid var(--line-2); padding: 6px 0; background: var(--code-bg); }
+.diff { padding: 6px 0; max-height: 440px; }
 .diff > div { white-space: pre-wrap; word-break: break-all; padding: 0 14px; }
 .hunk-sep { height: 1px; background: var(--line); margin: 6px 0; padding: 0 !important; }
 .del { background: var(--del-bg); color: var(--del-fg); }

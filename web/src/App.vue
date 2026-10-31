@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { S, closeTab, pickSession, pickModel, stop, renameSession, newSession } from './store.js';
+import { S, closeTab, pickSession, pickModel, stop, renameSession, newSession, sessionTitle } from './store.js';
 import { view, toggleSide, openMenu } from './settings.js';
 import { mainMenu, contextExtras, openModelMenu } from './menus.js';
 import SidePanel from './components/SidePanel.vue';
@@ -48,13 +48,7 @@ function drag(e, kind) {
 }
 
 const sideOpen = computed(() => (view.mobile ? view.drawer : view.side));
-const title = computed(() => S.state?.sessionName || (S.messages.length ? firstUserLine() : '新会话'));
-function firstUserLine() {
-  const m = S.messages.find((x) => x.role === 'user');
-  const c = m?.content;
-  const t = typeof c === 'string' ? c : Array.isArray(c) ? c.find((b) => b.type === 'text')?.text : '';
-  return (t || '对话').replace(/\s+/g, ' ').slice(0, 60);
-}
+const title = computed(() => sessionTitle());
 const subtitle = computed(() => {
   const dir = (S.cwd || '').split(/[\\/]/).filter(Boolean).pop() || S.cwd;
   const m = S.state?.model;
