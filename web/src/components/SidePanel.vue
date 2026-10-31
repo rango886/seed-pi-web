@@ -25,10 +25,56 @@ watch(
 const base = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
 const others = computed(() => S.agents.filter((a) => a.running && a.id !== S.agentId).length);
 
-// 会话按时间分组：今天 / 昨天 / 7 天内 / 30 天内 / 更早
+// 排序方式：时间 / 名称，存 localStorage
+const sortBy = ref(localStorage.getItem('pi-web-sort') || 'time');
+const sortLabel = computed(() => (sortBy.value === 'time' ? '时间' : '名称'));
+function toggleSort() {
+  sortBy.value = sortBy.value === 'time' ? 'name' : 'time';
+  localStorage.setItem('pi-web-sort', sortBy.value);
+}
+const byTime = (a, b) => new Date(b.modified) - new Date(a.modified);
+const byName = (a, b) => (a.title || '').localeCompare(b.title || '', 'zh');
+
+// 会话分组：显示全部目录时按目录分组，只看当前目录时按时间分组；组内再按当前排序方式排
 const groups = computed(() => {
   const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
   const list = S.sessions.filter((s) => words.every((w) => `${s.title} ${s.cwd || ''}`.toLowerCase().includes(w)));
+  const cmp = sortBy.value === 'name' ? byName : byTime;
+
+  if (S.showAllSessions) {
+    const by = new Map();
+    for (const s of list) {
+      const k = s.cwd || '';
+      if (!by.has(k)) by.set(k, []);
+      by.get(k).push(s);
+    }
+    // 不同路径重名（比如两个 switch）时，用上一级目录区分
+    const seen = new Set();
+    const dup = new Set();
+    for (const cwd of by.keys()) {
+      const n = (base(cwd) || '').toLowerCase();
+      if (seen.has(n)) dup.add(n);
+      seen.add(n);
+    }
+    const label = (cwd) => {
+      const parts = (cwd || '').split(/[\\/]/).filter(Boolean);
+      const n = parts.pop() || '(未知目录)';
+      return dup.has(n.toLowerCase()) && parts.length ? `${parts.pop()}/${n}` : n;
+    };
+    return [...by.entries()]
+      .map(([cwd, items]) => ({
+        name: label(cwd),
+        path: cwd,
+        // 目录之间按“最近一次会话”排，和当前用什么方式排序无关
+        last: items.reduce((m, s) => Math.max(m, new Date(s.modified).getTime()), 0),
+        items: items.sort(cmp),
+      }))
+      .sort((a, b) => b.last - a.last);
+  }
+
+  if (sortBy.value === 'name') return [{ name: '', items: list.sort(byName) }];
+
+  // 当前目录：按时间分桶，今天 / 昨天 / 7 天内 / 30 天内 / 更早
   const d0 = new Date();
   d0.setHours(0, 0, 0, 0);
   const t0 = d0.getTime();
@@ -87,9 +133,6 @@ function focusSearch() {
 
     <div class="nav">
       <div class="nv" :class="{ dis: S.running }" @click="!S.running && onNew()"><Icon name="newchat" /><span>新会话</span></div>
-      <div class="nv" :title="S.cwd" @click="(S.dirPicker = true), closeDrawer()">
-        <Icon name="folder" /><span class="ellipsis grow">{{ base(S.cwd || '…') }}</span><span class="dim small">切换</span>
-      </div>
       <div v-if="S.info.terminal" class="nv" @click="S.showTerm ? (S.showTerm = false) : openTerminal()">
         <Icon name="terminal" /><span class="grow">终端</span><span v-if="S.terms.length" class="cnt">{{ S.terms.length }}</span>
       </div>
@@ -108,15 +151,16 @@ function focusSearch() {
       <div class="search">
         <Icon name="search" :size="15" />
         <input ref="searchEl" v-model="q" placeholder="搜索会话" @keydown.esc="q = ''" />
-        <button class="ib sm" :class="{ on: S.showAllSessions }" :title="S.showAllSessions ? '正在显示所有目录的会话' : '只显示当前目录，点击显示全部目录'" @click="S.showAllSessions = !S.showAllSessions">
+        <button class="ib sm" :class="{ on: S.showAllSessions }" :title="S.showAllSessions ? '正在显示所有目录的会话（按目录分组）' : '只显示当前目录，点击显示全部目录'" @click="S.showAllSessions = !S.showAllSessions">
           <Icon name="globe" :size="15" />
         </button>
+        <button class="sbtn" :title="`当前按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
       </div>
       <div class="list">
-        <div v-if="!S.sessions.length" class="empty">这个目录还没有历史会话</div>
+        <div v-if="!S.sessions.length" class="empty">{{ S.showAllSessions ? '还没有历史会话' : '这个目录还没有历史会话' }}</div>
         <div v-else-if="!groups.length" class="empty">没有匹配的会话</div>
-        <template v-for="g in groups" :key="g.name">
-          <div class="gname">{{ g.name }}</div>
+        <template v-for="g in groups" :key="g.path || g.name">
+          <div v-if="g.name" class="gname" :title="g.path">{{ g.name }}<span v-if="g.path" class="gcount">{{ g.items.length }}</span></div>
           <div
             v-for="s in g.items"
             :key="s.file"
@@ -128,7 +172,7 @@ function focusSearch() {
           >
             <div class="grow">
               <div class="ellipsis stitle">{{ s.title }}</div>
-              <div class="meta ellipsis">{{ s.messages }} 条<template v-if="S.showAllSessions"> · {{ base(s.cwd) }}</template></div>
+              <div class="meta ellipsis">{{ s.messages }} 条</div>
             </div>
             <span class="time">{{ timeOf(s.modified) }}</span>
             <button class="del" title="删除" @click.stop="deleteSession(s)"><Icon name="trash" :size="14" /></button>
@@ -200,7 +244,10 @@ function focusSearch() {
 .search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-size: var(--fs-sm); }
 .list { flex: 1; overflow-y: auto; padding: 2px 8px 12px; }
 .tree { padding: 2px 6px 12px; }
-.gname { font-size: var(--fs-xs); color: var(--text-3); padding: 12px 10px 4px; }
+.gname { font-size: var(--fs-xs); color: var(--text-3); padding: 12px 10px 4px; display: flex; align-items: center; gap: 6px; }
+.gcount { font-size: 10px; padding: 0 5px; border-radius: 7px; background: var(--active); color: var(--text-3); }
+.sbtn { height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
+.sbtn:hover { border-color: var(--accent); color: var(--accent-text); }
 .list > .sess, .list > .gname { content-visibility: auto; contain-intrinsic-size: auto 50px; }
 .sess { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; border-radius: 10px; cursor: pointer; position: relative; }
 .sess:hover { background: var(--active); }

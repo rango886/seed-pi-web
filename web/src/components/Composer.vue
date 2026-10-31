@@ -4,6 +4,7 @@ import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, compact, sh
 import { UI, view } from '../settings.js';
 import { fmtTokens, levelName } from '../util.js';
 import ModelMenu from './ModelMenu.vue';
+import Icon from './Icon.vue';
 
 const ta = ref(null);
 const fileInput = ref(null);
@@ -124,15 +125,22 @@ function onPickFiles(e) {
 }
 
 // 自动长高
+// big：把输入框变高（右上角按钮切），适合写长提示词
+const big = ref(localStorage.getItem('pi-web-composer-big') === '1');
+function toggleBig() {
+  big.value = !big.value;
+  localStorage.setItem('pi-web-composer-big', big.value ? '1' : '0');
+  nextTick(autosize);
+}
 function autosize() {
   const el = ta.value;
   if (!el) return;
   el.style.height = 'auto';
-  const max = window.innerHeight * 0.4;
+  const max = window.innerHeight * (big.value ? 0.72 : 0.4);
   el.style.height = Math.min(el.scrollHeight, max) + 'px';
   el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
 }
-watch(() => [S.composer.text, UI.fontSize, UI.lineHeight], () => nextTick(autosize));
+watch(() => [S.composer.text, UI.fontSize, UI.lineHeight, big.value], () => nextTick(autosize));
 watch(
   () => S.activeTab,
   (t) => t === 'chat' && nextTick(() => ta.value?.focus()),
@@ -140,6 +148,7 @@ watch(
 
 // ---- 下方工具栏 ----
 const model = computed(() => S.state?.model);
+const dirName = computed(() => (S.cwd || '').split(/[\\/]/).filter(Boolean).pop() || S.cwd || '选择目录');
 const modelLabel = computed(() => (model.value ? model.value.name || model.value.id : '选择模型'));
 const thinking = computed(() => S.state?.thinkingLevel);
 const ctx = computed(() => S.stats?.contextUsage);
@@ -213,7 +222,10 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
       </div>
     </div>
 
-    <div class="box" :class="{ focused, dragging, disabled }">
+    <div class="box" :class="{ focused, dragging, disabled, big }">
+      <button class="expand" :class="{ on: big }" :title="big ? '还原输入框高度' : '放大输入框（写长消息用）'" @click="toggleBig">
+        <Icon :name="big ? 'collapse' : 'expand'" :size="15" />
+      </button>
       <div v-if="S.composer.images.length" class="thumbs">
         <div v-for="(im, i) in S.composer.images" :key="i" class="thumb">
           <img :src="im.url || `data:${im.mimeType};base64,${im.data}`" />
@@ -238,6 +250,11 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3" /><circle cx="9" cy="10" r="2" /><path d="M21 16l-5-5-9 9" /></svg>
         </button>
         <input ref="fileInput" type="file" accept="image/*" multiple hidden @change="onPickFiles" />
+
+        <button class="chip dir" :title="`工作目录：${S.cwd}\n点击切换`" @click="S.dirPicker = true">
+          <Icon name="folder" :size="14" />
+          <span class="ellipsis">{{ dirName }}</span>
+        </button>
 
         <button class="chip" :class="{ on: menu === 'model' }" title="切换模型 (Ctrl+L)" :disabled="disabled" @click="toggleMenu('model')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" /></svg>
@@ -298,12 +315,16 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
 
 <style scoped>
 .composer { position: relative; flex: none; }
-.box { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 10px 10px 8px 14px; transition: border-color 0.15s, box-shadow 0.15s; }
+.box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 10px 10px 8px 14px; transition: border-color 0.15s, box-shadow 0.15s; }
+.expand { position: absolute; top: 6px; right: 8px; width: 26px; height: 26px; border: 0; background: transparent; border-radius: 7px; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; }
+.expand:hover { background: var(--hover); color: var(--text); }
+.expand.on { color: var(--accent-text); background: var(--accent-soft); }
 .box.focused { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: var(--shadow), 0 0 0 4px var(--accent-softer); }
 .box.dragging { border-style: dashed; border-color: var(--accent); background: var(--accent-softer); }
 .box.disabled { opacity: 0.6; }
-.ta { display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 4px 4px 6px 0; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 10px); max-height: 40vh; overflow-y: hidden; }
+.ta { display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 4px 32px 6px 0; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 10px); max-height: 40vh; overflow-y: hidden; }
 .ta::placeholder { color: var(--text-3); }
+.box.big .ta { min-height: 32vh; max-height: 72vh; }
 
 .bar { display: flex; align-items: center; gap: 6px; margin-left: -6px; min-width: 0; }
 .bar > * { flex-shrink: 0; }
@@ -312,6 +333,7 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
 .ibtn:hover { background: var(--hover); color: var(--text); }
 .chip { height: 30px; max-width: 260px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 15px; color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); transition: all 0.15s; }
 .chip svg { flex: none; }
+.chip.dir { max-width: 220px; }
 .chip:hover, .chip.on { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
 .chip:disabled { opacity: 0.5; pointer-events: none; }
 .caret { font-size: 10px; opacity: 0.6; }
@@ -358,6 +380,7 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
   .think-pop { left: auto; right: 0; }
   .bar { gap: 4px; }
   .chip { max-width: none; min-width: 0; flex-shrink: 1; padding: 0 9px; }
+  .chip.dir { max-width: 34vw; }
   .ring span { display: none; }
   .ring { padding: 0 4px; }
   .box { border-radius: 16px; padding: 8px 8px 6px 12px; }

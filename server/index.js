@@ -151,7 +151,11 @@ app.get(
   '/api/sessions',
   wrap(async (req, res) => {
     const roots = await liveRoots();
-    res.json(await listSessions({ cwd: req.query.all ? null : req.query.cwd, roots }));
+    // all=1 表示“所有目录”；否则按 cwd 过滤（注意 query 里是字符串，'0' 也是真值）
+    const all = req.query.all === '1' || req.query.all === 'true';
+    const cwd = all ? null : String(req.query.cwd || '');
+    if (!all && !cwd) throw new Error('缺少 cwd 参数');
+    res.json(await listSessions({ cwd, roots }));
   }),
 );
 

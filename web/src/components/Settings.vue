@@ -26,8 +26,10 @@ const layoutSliders = [
 
 <template>
   <Transition name="drawer">
-    <div v-if="view.settingsOpen" class="mask" @mousedown.self="close" @keydown="onKey">
-      <aside class="drawer" tabindex="-1">
+    <!-- 类名刻意和 App.vue 的 .mask 区分开：子组件根元素会同时带上父组件的 scoped 标记，
+         两处同名 class 的样式会互相覆盖（同名时后编译的那条赢），之前就是这样把抽屉弄成透明的 -->
+    <div v-if="view.settingsOpen" class="settings-mask" @mousedown.self="close" @keydown="onKey">
+      <aside class="settings-drawer" tabindex="-1">
         <header class="head">
           <div class="title">界面设置</div>
           <span class="dim hint">改动立即生效</span>
@@ -155,8 +157,8 @@ const layoutSliders = [
 </template>
 
 <style scoped>
-.mask { position: fixed; inset: 0; z-index: 55; background: rgba(15, 23, 42, 0.12); display: flex; justify-content: flex-end; }
-.drawer { width: 420px; max-width: 94vw; height: 100%; background: var(--panel-2); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; outline: none; }
+.settings-mask { position: fixed; inset: 0; z-index: 55; background: rgba(15, 23, 42, 0.12); display: flex; justify-content: flex-end; }
+.settings-drawer { width: 420px; max-width: 94vw; height: 100%; background: var(--panel-2); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; outline: none; }
 .head { display: flex; align-items: center; gap: 8px; padding: 16px 16px 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .title { font-size: calc(var(--fs) + 3px); font-weight: 600; }
 .hint { font-size: var(--fs-xs); }
@@ -192,7 +194,7 @@ select.input { cursor: pointer; }
 .tip b { font-weight: 600; color: var(--text-2); }
 
 .drawer-enter-active, .drawer-leave-active { transition: background 0.2s; }
-.drawer-enter-active .drawer, .drawer-leave-active .drawer { transition: transform 0.22s ease; }
+.drawer-enter-active .settings-drawer, .drawer-leave-active .settings-drawer { transition: transform 0.22s ease; }
 .drawer-enter-from, .drawer-leave-to { background: transparent; }
-.drawer-enter-from .drawer, .drawer-leave-to .drawer { transform: translateX(100%); }
+.drawer-enter-from .settings-drawer, .drawer-leave-to .settings-drawer { transform: translateX(100%); }
 </style>

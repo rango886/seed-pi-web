@@ -229,7 +229,9 @@ async function loadCommands() {
 
 export async function loadSessions() {
   if (!S.cwd) return;
-  S.sessions = await http.get('/api/sessions', { cwd: S.cwd, all: S.showAllSessions ? 1 : 0 }).catch(() => []);
+  // 只看当前目录时带 cwd；看全部目录时只传 all，后端才不会按 cwd 过滤
+  const query = S.showAllSessions ? { all: 1 } : { cwd: S.cwd };
+  S.sessions = await http.get('/api/sessions', query).catch(() => []);
 }
 
 export async function loadModels() {
