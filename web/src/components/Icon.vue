@@ -32,8 +32,8 @@ const P = {
   history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
   cpu: 'M7 7h10v10H7zM9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3',
   down: 'M12 5v14M5 12l7 7 7-7',
-  expand: 'M9 3H4v5M15 3h5v5M15 21h5v-5M9 21H4v-5',
-  collapse: 'M9 8H4V3M15 8h5V3M15 16h5v5M9 16H4v5',
+  expand: 'M15 3h6v6M9 21H3v-15M21 3l-7 7M3 21l7-7',
+  collapse: 'M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7',
   globe: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20',
 };
 </script>

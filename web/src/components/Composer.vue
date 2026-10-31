@@ -294,19 +294,20 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
         </button>
       </div>
-    </div>
 
-    <div class="usage">
-      <template v-if="usage">
-        <span class="u click" title="本会话花费，点击看详情" @click="showSessionInfo">{{ usage.cost }}</span>
-        <span v-if="usage.hit != null" class="u" title="缓存命中率（缓存读 / 全部输入）">缓存 {{ usage.hit }}%</span>
-        <span class="u" title="累计输入 / 输出 tokens">↑{{ usage.inTok }} ↓{{ usage.outTok }}</span>
-      </template>
-      <span v-if="ctx" class="u" title="当前上下文占用">上下文 {{ fmtTokens(ctx.tokens) }}/{{ fmtTokens(ctx.contextWindow) }}</span>
-      <span v-for="(v, k) in S.statusItems" :key="k" class="u ext" :title="k">{{ v }}</span>
-      <span v-if="others" class="u">后台 {{ others }} 个在跑</span>
-      <span class="grow" />
-      <span class="u hint">{{ sendHint }}</span>
+      <!-- 底部的花费/token/上下文：放在输入框里面，不再另占一行 -->
+      <div class="usage">
+        <template v-if="usage">
+          <span class="u click" title="本会话花费，点击看详情" @click="showSessionInfo">{{ usage.cost }}</span>
+          <span v-if="usage.hit != null" class="u" title="缓存命中率（缓存读 / 全部输入）">缓存 {{ usage.hit }}%</span>
+          <span class="u" title="累计输入 / 输出 tokens">↑{{ usage.inTok }} ↓{{ usage.outTok }}</span>
+        </template>
+        <span v-if="ctx" class="u" title="当前上下文占用">上下文 {{ fmtTokens(ctx.tokens) }}/{{ fmtTokens(ctx.contextWindow) }}</span>
+        <span v-for="(v, k) in S.statusItems" :key="k" class="u ext" :title="k">{{ v }}</span>
+        <span v-if="others" class="u">后台 {{ others }} 个在跑</span>
+        <span class="grow" />
+        <span class="u hint">{{ sendHint }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -314,7 +315,7 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
 <style scoped>
 .composer { position: relative; flex: none; }
 .box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 10px 10px 8px 14px; transition: border-color 0.15s, box-shadow 0.15s; }
-.expand { position: absolute; top: 8px; right: 10px; width: 28px; height: 28px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 9px; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; opacity: 0; box-shadow: var(--shadow-sm); transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s; }
+.expand { position: absolute; top: 8px; right: 10px; width: 26px; height: 26px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 7px; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; opacity: 0; box-shadow: var(--shadow-sm); transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s; }
 .box:hover .expand, .box.focused .expand, .expand.on { opacity: 1; }
 .expand:hover { color: var(--text); border-color: var(--text-3); }
 .expand.on { color: var(--accent-text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
@@ -336,7 +337,7 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
 .chip:hover, .chip.on { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
 .chip:disabled { opacity: 0.5; pointer-events: none; }
 .caret { font-size: 10px; opacity: 0.6; }
-.usage { display: flex; align-items: center; gap: 2px; padding: 6px 8px 0; font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.usage { display: flex; align-items: center; gap: 2px; padding: 4px 2px 0; font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
 .u { padding: 1px 6px; border-radius: 5px; display: inline-flex; align-items: center; }
 .u + .u:not(.hint)::before { content: ''; }
 .u.click { cursor: pointer; }

@@ -49,11 +49,7 @@ function drag(e, kind) {
 
 const sideOpen = computed(() => (view.mobile ? view.drawer : view.side));
 const title = computed(() => sessionTitle());
-const subtitle = computed(() => {
-  const dir = (S.cwd || '').split(/[\\/]/).filter(Boolean).pop() || S.cwd;
-  const m = S.state?.model;
-  return [dir, m ? m.name || m.id : ''].filter(Boolean).join(' · ');
-});
+const subtitle = computed(() => S.cwd || '');
 
 // 右键菜单：输入框、终端里保留浏览器自己的菜单（方便粘贴）；按住 Shift 也是原生菜单
 function onContext(e) {

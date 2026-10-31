@@ -241,7 +241,7 @@ a:hover { text-decoration: underline; }
 /* ---- 折叠块：思考过程、工具调用共用同一套外观，改这里两边一起变 ---- */
 .blk { border: 1px solid var(--line); background: var(--panel); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-sm); align-self: stretch; max-width: 100%; transition: border-color 0.15s; }
 .blk:hover { border-color: color-mix(in srgb, var(--text-3) 45%, var(--line)); }
-.blk-head { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; user-select: none; }
+.blk-head { display: flex; align-items: center; gap: 8px; padding: 7px 14px; cursor: pointer; user-select: none; }
 .blk-head:hover { background: var(--hover); }
 .blk > summary { list-style: none; }
 .blk > summary::-webkit-details-marker { display: none; }

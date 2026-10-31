@@ -144,13 +144,16 @@ function msgMenu(e) {
 </template>
 
 <style scoped>
-.msg { display: flex; gap: var(--sp3); margin: 0 0 var(--sp5); align-items: flex-start; position: relative; }
-.me { flex-direction: row-reverse; }
+.msg { display: flex; margin: 0 0 var(--sp5); align-items: flex-start; position: relative; }
+/* 头像绝对定位在内容区外面（内层容器留了 48px 空隙）：这样气泡和思考/工具卡片
+   与输入框左右对齐、宽度完全一致 */
+.ai .avatar { left: calc(-1 * (36px + var(--sp3))); top: 0; }
+.me .avatar { right: calc(-1 * (36px + var(--sp3))); top: 0; }
 .col { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: var(--sp2); }
 .me .col { align-items: flex-end; }
 .ai .col { align-items: flex-start; }
 
-.avatar { width: 36px; height: 36px; border-radius: 10px; flex: none; display: flex; align-items: center; justify-content: center; font-weight: 700; user-select: none; font-size: var(--fs-sm); }
+.avatar { position: absolute; width: 36px; height: 36px; border-radius: 10px; flex: none; display: flex; align-items: center; justify-content: center; font-weight: 700; user-select: none; font-size: var(--fs-sm); }
 .ai-av { background: var(--accent); color: #fff; font-size: 18px; }
 .me-av { background: var(--panel); color: var(--text-2); border: 1px solid var(--line); }
 
@@ -189,11 +192,9 @@ function msgMenu(e) {
 .sys-card.out { padding: 10px 14px; }
 .sys-tag { font-size: var(--fs-xs); color: var(--text-3); margin-bottom: 6px; }
 @media (max-width: 768px) {
-  .msg { gap: 8px; margin-bottom: 18px; }
-  .avatar { width: 30px; height: 30px; border-radius: 8px; }
-  .ai-av { font-size: 15px; }
-  .me-bubble { max-width: 88%; }
+  .msg { margin-bottom: 18px; }
   .ai-bubble { padding: 10px 12px; }
+  .me-bubble { max-width: 88%; }
 }
 @media (hover: none) {
   .more-btn { opacity: 1; }

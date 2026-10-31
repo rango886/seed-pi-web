@@ -8,6 +8,7 @@ import Icon from './Icon.vue';
 
 const scroller = ref(null);
 const inner = ref(null);
+const sbw = ref(0); // 滚动条占的宽度：输入框那栏也要让出同样宽度，两边才对得齐
 let stick = true;
 const away = ref(false); // 离底部比较远时显示回到底部按钮
 let ro;
@@ -27,10 +28,18 @@ const toBottom = () => {
   if (el) el.scrollTop = el.scrollHeight;
 };
 onMounted(() => {
-  // 内容变高时，如果用户本来就在底部，就跟着滚到底
-  ro = new ResizeObserver(() => stick && toBottom());
+  // 内容变高时，如果用户本来就在底部，就跟着滚到底；顺便重新量一次滚动条宽度
+  ro = new ResizeObserver(() => {
+    measureSb();
+    stick && toBottom();
+  });
   ro.observe(inner.value);
+  measureSb();
 });
+function measureSb() {
+  const el = scroller.value;
+  if (el) sbw.value = el.offsetWidth - el.clientWidth;
+}
 onUnmounted(() => ro?.disconnect());
 // 后台标签页里 ResizeObserver 可能不触发，再用事件计数兜底
 watch(
@@ -104,7 +113,7 @@ const model = computed(() => S.state?.model);
 
         <div v-for="(m, i) in S.messages" :key="m._k" class="mw" :class="{ live: i >= S.messages.length - 2 }"><MessageItem :m="m" /></div>
 
-        <div v-if="S.running || S.compacting || S.retry" :class="['working', { av: UI.avatars }]">
+        <div v-if="S.running || S.compacting || S.retry" class="working">
           <span class="typing"><i /><i /><i /></span>
           <span v-if="S.retry">第 {{ S.retry.attempt }}/{{ S.retry.maxAttempts }} 次重试：{{ S.retry.errorMessage }}</span>
           <span v-else-if="S.compacting">正在压缩上下文…</span>
@@ -114,7 +123,7 @@ const model = computed(() => S.state?.model);
       </div>
     </div>
 
-    <div class="dock">
+    <div class="dock" :style="{ '--sb': sbw + 'px' }">
       <button v-show="away" class="tobottom" title="回到底部" @click="jumpBottom"><Icon name="down" :size="18" /></button>
       <div v-for="[k, w] in widgetsAbove" :key="k" class="widget">
         <div v-for="(l, i) in w.lines" :key="i">{{ l }}</div>
@@ -135,7 +144,7 @@ const model = computed(() => S.state?.model);
 <style scoped>
 .chat { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--chat-bg); }
 .scroll { flex: 1; overflow-y: auto; }
-.inner { padding: var(--sp5) var(--sp5) var(--sp4); max-width: calc(var(--chat-w) + 48px); margin: 0 auto; }
+.inner { padding: var(--sp5) calc(var(--sp5) + 48px) var(--sp4); max-width: calc(var(--chat-w) + 144px); margin: 0 auto; }
 .welcome { text-align: center; padding: 12vh 0 20px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .welcome .big { width: 64px; height: 64px; border-radius: 18px; background: var(--accent); color: #fff; font-size: 34px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px var(--accent-soft); margin-bottom: 10px; }
 .wtitle { font-size: calc(var(--fs) + 6px); font-weight: 600; }
@@ -144,7 +153,6 @@ const model = computed(() => S.state?.model);
 .tip { display: flex; align-items: center; gap: 8px; }
 kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 7px; color: var(--text); min-width: 24px; text-align: center; }
 .working { display: flex; align-items: center; gap: 8px; padding: 6px 0; color: var(--text-2); font-size: var(--fs-sm); }
-.working.av { padding-left: calc(36px + var(--sp3)); }
 .typing { display: inline-flex; gap: 3px; background: var(--bubble-ai); padding: 8px 10px; border-radius: 12px; box-shadow: var(--shadow-sm); }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: bounce 1.2s infinite; }
 .typing i:nth-child(2) { animation-delay: 0.15s; }
@@ -158,7 +166,7 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
 .mw.live { content-visibility: visible; }
 .tobottom { position: absolute; left: 50%; top: -52px; transform: translateX(-50%); width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 5; }
 .tobottom:hover { color: var(--accent-text); }
-.dock { position: relative; flex: none; max-width: calc(var(--chat-w) + 48px); width: 100%; margin: 0 auto; padding: 0 var(--sp5) var(--sp4); }
+.dock { position: relative; flex: none; max-width: calc(var(--chat-w) + 144px + var(--sb, 0px)); width: 100%; margin: 0 auto; padding: 0 calc(var(--sp5) + 48px) var(--sp4); padding-right: calc(var(--sp5) + 48px + var(--sb, 0px)); }
 .widget { background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border: 1px solid var(--line); border-radius: var(--r-md); padding: 8px 12px; margin-bottom: 8px; white-space: pre-wrap; font-size: var(--fs-sm); font-family: var(--font-code); }
 .queue { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .qitem { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); background: var(--panel); border: 1px dashed var(--line); border-radius: var(--r-sm); padding: 5px 10px; color: var(--text-2); }
@@ -167,8 +175,10 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
 
 <style>
 @media (max-width: 768px) {
-  .chat .inner { padding: 16px 12px 12px; }
-  .chat .dock { padding: 0 8px max(8px, env(safe-area-inset-bottom)); }
+  .chat .inner { padding: 16px 12px 12px; max-width: none; }
+  .chat .dock { padding: 0 12px max(8px, env(safe-area-inset-bottom)); max-width: none; }
+  /* 手机上横向空间金贵，头像就不摆了 */
+  .chat .msg .avatar { display: none; }
   .chat .welcome { padding-top: 8vh; }
   .chat .tips { grid-template-columns: repeat(2, auto); gap: 10px 18px; }
 }
