@@ -1,9 +1,12 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted, nextTick, markRaw } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, markRaw } from 'vue';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { S, termListeners, termInput, termResize, termAttach, termClose, openTerminal } from '../store.js';
+import { S, termListeners, termInput, termResize, termAttach, termIdOf } from '../store.js';
 import { UI, view } from '../settings.js';
+
+// 终端显示成顶部的标签页：这个组件一直挂着，只显示当前标签对应的那个终端
+const activeId = computed(() => termIdOf(S.activeTab));
 
 const host = ref(null);
 const inst = new Map(); // id -> { term, fit, el, attached }
@@ -94,45 +97,32 @@ function sync() {
 }
 
 function show() {
-  for (const [id, x] of inst) x.el.style.display = id === S.activeTerm ? 'block' : 'none';
+  for (const [id, x] of inst) x.el.style.display = id === activeId.value ? 'block' : 'none';
   nextTick(fitActive);
 }
 function fitActive() {
-  const x = inst.get(S.activeTerm);
+  const id = activeId.value;
+  const x = inst.get(id);
   if (!x || !host.value?.offsetHeight) return;
   try {
     x.fit.fit();
-    termResize(S.activeTerm, x.term.cols, x.term.rows);
+    termResize(id, x.term.cols, x.term.rows);
   } catch {}
 }
 
 let ro;
 onMounted(() => {
   sync();
-  if (!S.terms.length && S.info.terminal) openTerminal();
   ro = new ResizeObserver(() => fitActive());
   ro.observe(host.value);
 });
 onUnmounted(() => ro?.disconnect());
 watch(() => S.terms, sync, { deep: true });
-watch(
-  () => S.activeTerm,
-  () => {
-    show();
-    nextTick(() => inst.get(S.activeTerm)?.term.focus());
-  },
-);
-watch(
-  () => S.showTerm,
-  (v) => {
-    if (!v) return;
-    if (!S.terms.length && S.info.terminal) openTerminal();
-    nextTick(() => {
-      fitActive();
-      inst.get(S.activeTerm)?.term.focus();
-    });
-  },
-);
+watch(activeId, (id) => {
+  if (id) S.activeTerm = id;
+  show();
+  nextTick(() => inst.get(id)?.term.focus());
+});
 // 断线重连后重新挂上终端，补回错过的输出
 watch(
   () => S.connEpoch,
@@ -142,27 +132,12 @@ watch(
 
 <template>
   <div class="win termwin">
-    <div class="tabbar">
-      <div v-for="t in S.terms" :key="t.id" class="tab" :class="{ active: t.id === S.activeTerm }" :title="t.cwd" @click="S.activeTerm = t.id">
-        <span class="ellipsis">{{ t.title }}</span>
-        <span class="x" @click.stop="termClose(t.id)">×</span>
-      </div>
-      <div class="tab" title="在当前目录开新终端" @click="openTerminal()">＋</div>
-      <div class="grow" />
-      <div class="tab" title="隐藏终端（Ctrl+`）" @click="S.showTerm = false">▾</div>
-    </div>
-    <div ref="host" class="hosts">
-      <div v-if="!S.info.terminal" class="dim pad">后端没有可用的 node-pty，终端不可用。</div>
-      <div v-else-if="!S.terms.length" class="dim pad">没有终端。<a href="#" @click.prevent="openTerminal()">新建一个</a></div>
-    </div>
+    <div ref="host" class="hosts" />
   </div>
 </template>
 
 <style scoped>
-.termwin { flex: none; }
-.termwin .tabbar { padding: 6px 10px; }
-.termwin .tab { height: 26px; font-size: var(--fs-sm); }
+.termwin { flex: 1; }
 .hosts { flex: 1; min-height: 0; position: relative; background: var(--term-bg); }
-.hosts :deep(.term-host) { position: absolute; inset: 6px 4px 4px 12px; }
-.pad { padding: 12px; }
+.hosts :deep(.term-host) { position: absolute; inset: 8px 4px 4px 12px; }
 </style>

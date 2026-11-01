@@ -1,6 +1,14 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/common';
+// common 只带了 36 种常用语言，代码块里翻出来一堆认不出来的（powershell、dockerfile、nginx…），
+// 认不出来就会退到“猜语言”，猜错的颜色比没有颜色还难看。常用的补齐
+import powershell from 'highlight.js/lib/languages/powershell';
+import dockerfile from 'highlight.js/lib/languages/dockerfile';
+import nginx from 'highlight.js/lib/languages/nginx';
+import protobuf from 'highlight.js/lib/languages/protobuf';
+import http from 'highlight.js/lib/languages/http';
+for (const [name, lang] of Object.entries({ powershell, dockerfile, nginx, protobuf, http })) hljs.registerLanguage(name, lang);
 
 // eslint-disable-next-line no-control-regex
 const ANSI = /[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
@@ -28,7 +36,7 @@ export function fmtTokens(n) {
   if (n == null) return '-';
   if (n < 1000) return String(n);
   if (n < 1e6) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + 'k';
-  return (n / 1e6).toFixed(2) + 'M';
+  return (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M';
 }
 
 export function relTime(iso) {
@@ -50,6 +58,11 @@ export function textOf(content) {
 }
 export const imagesOf = (content) => (Array.isArray(content) ? content.filter((c) => c.type === 'image') : []);
 
+/** 消息文本登记表：右键菜单统一在 App 层弹，靠 DOM 上的消息 key 回来取要复制的内容 */
+const msgTexts = new Map();
+export const setMsgText = (k, text) => k != null && msgTexts.set(String(k), text || '');
+export const getMsgText = (k) => msgTexts.get(String(k)) || '';
+
 /** 工具卡片标题里显示的一行摘要：不认识的工具也能显示个大概 */
 const SUMMARY_KEYS = ['command', 'path', 'file_path', 'filePath', 'file', 'pattern', 'query', 'url', 'name', 'prompt'];
 export function toolSummary(args) {
@@ -64,21 +77,53 @@ export function toolPath(args) {
   return null;
 }
 
+// ---------- 代码高亮 ----------
+// 代码块里标的语言名五花八门（js / jsx / vue / ps1 …），先翻译成 highlight.js 认的名字
+const LANG_ALIAS = {
+  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript', node: 'javascript',
+  ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
+  sh: 'bash', shell: 'bash', zsh: 'bash', console: 'shell', terminal: 'shell', shellsession: 'shell',
+  py: 'python', py3: 'python', python3: 'python',
+  rs: 'rust', golang: 'go',
+  html: 'xml', vue: 'xml', svelte: 'xml', svg: 'xml', xhtml: 'xml', htm: 'xml',
+  yml: 'yaml', toml: 'ini', cfg: 'ini', conf: 'ini', env: 'ini', dotenv: 'ini', properties: 'ini', editorconfig: 'ini',
+  ps1: 'powershell', ps: 'powershell', pwsh: 'powershell', psd1: 'powershell', psm1: 'powershell',
+  cxx: 'cpp', 'c++': 'cpp', cc: 'cpp', hpp: 'cpp', hxx: 'cpp', h: 'c', 'c#': 'csharp', cs: 'csharp',
+  'objective-c': 'objectivec', objc: 'objectivec',
+  md: 'markdown', mdx: 'markdown',
+  kt: 'kotlin', kts: 'kotlin', rb: 'ruby',
+  docker: 'dockerfile', containerfile: 'dockerfile',
+  postgres: 'sql', postgresql: 'sql', mysql: 'sql', sqlite: 'sql',
+  jsonc: 'json', json5: 'json', ndjson: 'json', jsonl: 'json',
+  make: 'makefile', mk: 'makefile', patch: 'diff',
+  txt: 'plaintext', text: 'plaintext', plain: 'plaintext', plaintext: 'plaintext',
+  tex: 'latex', ex: 'elixir', exs: 'elixir', hs: 'haskell', clj: 'clojure', vim: 'vim',
+};
+const langName = (raw) => {
+  const l = (raw || '').split(/\s/)[0].toLowerCase();
+  const name = LANG_ALIAS[l] || l;
+  return name && hljs.getLanguage(name) ? name : '';
+};
+/** 高亮一段代码。返回 { html, label }，label 是实际用上的语言名（给代码块标题栏显示） */
+export function highlightCode(text, lang) {
+  const raw = (lang || '').split(/\s/)[0].toLowerCase();
+  const name = langName(raw);
+  try {
+    if (name && name !== 'plaintext') return { html: hljs.highlight(text, { language: name, ignoreIllegals: true }).value, label: name };
+    // 没标语言：只在确实像代码的时候才猜（纯文字被猜成 CSS / 正则的情况太常见了）
+    if (!raw && text.length >= 40 && text.length < 4000 && /[{}()\[\];=<>]/.test(text)) {
+      return { html: hljs.highlightAuto(text).value, label: '' };
+    }
+  } catch {}
+  return { html: escapeHtml(text), label: name };
+}
+
 // ---------- Markdown ----------
 marked.setOptions({ gfm: true, breaks: true });
 const renderer = new marked.Renderer();
 renderer.code = ({ text, lang }) => {
-  const l = (lang || '').split(/\s/)[0];
-  let html;
-  try {
-    // 自动识别语言很慢，长代码块直接不猜
-    if (l && hljs.getLanguage(l)) html = hljs.highlight(text, { language: l }).value;
-    else if (text.length < 3000) html = hljs.highlightAuto(text).value;
-    else html = escapeHtml(text);
-  } catch {
-    html = escapeHtml(text);
-  }
-  return `<pre class="code"><div class="code-bar"><span>${escapeHtml(l)}</span><button class="copy-btn" data-copy>复制</button></div><code class="hljs">${html}</code></pre>`;
+  const { html, label } = highlightCode(text, lang);
+  return `<pre class="code"><div class="code-bar"><span>${escapeHtml(label)}</span><button class="copy-btn" data-copy>复制</button></div><code class="hljs">${html}</code></pre>`;
 };
 renderer.link = ({ href, text }) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
 marked.use({ renderer });
@@ -102,15 +147,11 @@ export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
-const EXT_LANG = { js: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', tsx: 'typescript', jsx: 'javascript', py: 'python', rs: 'rust', go: 'go', md: 'markdown', json: 'json', jsonl: 'json', yml: 'yaml', yaml: 'yaml', sh: 'bash', ps1: 'powershell', vue: 'xml', html: 'xml', xml: 'xml', css: 'css', scss: 'scss', c: 'c', h: 'c', cpp: 'cpp', java: 'java', sql: 'sql', toml: 'ini', ini: 'ini', lua: 'lua', rb: 'ruby', php: 'php', kt: 'kotlin', swift: 'swift', cs: 'csharp' };
 export function highlightFile(name, text) {
-  const ext = name.split('.').pop().toLowerCase();
-  const lang = EXT_LANG[ext];
   if (text.length > 400_000) return escapeHtml(text);
-  try {
-    if (lang && hljs.getLanguage(lang)) return hljs.highlight(text, { language: lang }).value;
-  } catch {}
-  return escapeHtml(text);
+  const ext = name.split('.').pop().toLowerCase();
+  // 扩展名走同一张别名表（md → markdown、ps1 → powershell、vue → xml …）
+  return highlightCode(text, ext).html;
 }
 
 export const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i;

@@ -32,9 +32,11 @@ const P = {
   history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
   cpu: 'M7 7h10v10H7zM9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3',
   down: 'M12 5v14M5 12l7 7 7-7',
-  expand: 'M15 3h6v6M9 21H3v-15M21 3l-7 7M3 21l7-7',
+  expand: 'M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7',
   collapse: 'M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7',
   globe: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20',
+  chart: 'M4 20h16M7 16v-4M12 16V7M17 16v-7',
+  closeall: 'M8 8h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM4 16V5a1 1 0 0 1 1-1h11M11 12l5 5M16 12l-5 5',
 };
 </script>
 

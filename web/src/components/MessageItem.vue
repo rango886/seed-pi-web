@@ -1,10 +1,9 @@
 <script setup>
-import { computed, ref } from 'vue';
-import { S, toast } from '../store.js';
-import { UI, openMenu } from '../settings.js';
-import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens } from '../util.js';
+import { computed, ref, watchEffect } from 'vue';
+import { S } from '../store.js';
+import { UI } from '../settings.js';
+import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText } from '../util.js';
 import ToolCard from './ToolCard.vue';
-import Icon from './Icon.vue';
 
 const props = defineProps({ m: Object });
 const role = computed(() => props.m.role);
@@ -13,6 +12,9 @@ const open = ref(false);
 const userText = computed(() => textOf(props.m.content));
 const images = computed(() => imagesOf(props.m.content));
 const blocks = computed(() => (Array.isArray(props.m.content) ? props.m.content.filter(Boolean) : []));
+// 空内容的思考块直接不画（有的模型只会发一个空的 thinking 块，比如 opus 系列），
+// 留个空框在那里没意义，还占地方
+const showThinking = (b) => b.type === 'thinking' && (!!b.redacted || !!(b.thinking || '').trim());
 const streaming = computed(() => props.m.stopReason === 'pending');
 const meta = computed(() => {
   const m = props.m;
@@ -30,40 +32,13 @@ const aiText = computed(() =>
 );
 const customText = computed(() => (typeof props.m.content === 'string' ? props.m.content : textOf(props.m.content)));
 const copyText = computed(() => (role.value === 'user' ? userText.value : aiText.value));
-
-function copy(text) {
-  navigator.clipboard.writeText(text);
-}
-
-// 消息右上角的“…”：复制、开关模型与用量（默认不显示、也不占位置）
-function msgMenu(e) {
-  const r = e.currentTarget.getBoundingClientRect();
-  const items = [
-    {
-      label: '复制这条消息',
-      icon: 'copy',
-      run: () => {
-        copy(copyText.value);
-        toast('已复制');
-      },
-    },
-  ];
-  if (role.value === 'assistant' && meta.value) {
-    items.push('-', {
-      label: UI.showMeta ? '隐藏模型与用量' : '显示模型与用量',
-      icon: 'info',
-      check: UI.showMeta,
-      run: () => (UI.showMeta = !UI.showMeta),
-    });
-  }
-  openMenu(Math.max(8, r.right - 220), r.bottom + 4, items);
-}
+// 右键菜单统一在 App 层弹，所以只能把文本先存下来，菜单里按 DOM 上的 key 回来取
+watchEffect(() => setMsgText(props.m._k, copyText.value));
 </script>
 
 <template>
   <!-- 用户：靠右的气泡 -->
-  <div v-if="role === 'user'" class="msg me">
-    <div v-if="UI.avatars" class="avatar me-av">我</div>
+  <div v-if="role === 'user'" class="msg me" :data-msg="m._k" data-role="user">
     <div class="col">
       <div class="bubble me-bubble">
         <div class="pre">{{ userText }}</div>
@@ -72,18 +47,16 @@ function msgMenu(e) {
         </div>
       </div>
     </div>
-    <button class="more-btn" title="更多" @click.stop="msgMenu"><Icon name="more" :size="16" /></button>
   </div>
 
-  <!-- 助手：靠左，文字是气泡，思考/工具是轻量的卡片 -->
-  <div v-else-if="role === 'assistant'" class="msg ai">
-    <div v-if="UI.avatars" class="avatar ai-av">π</div>
+  <!-- 助手：靠左，直接铺在背景上（不带头像、没有气泡底），思考/工具是轻量的卡片 -->
+  <div v-else-if="role === 'assistant'" class="msg ai" :data-msg="m._k" data-role="assistant">
     <div class="col">
       <template v-for="(b, i) in blocks" :key="i">
         <!-- 思考过程：和工具调用用同一套 .blk 卡片样式 -->
-        <details v-if="b.type === 'thinking'" class="blk" :open="UI.thinkingOpen || (streaming && i === blocks.length - 1)">
+        <details v-if="showThinking(b)" class="blk" :open="UI.thinkingOpen || (streaming && i === blocks.length - 1)">
           <summary class="blk-head">
-            <span class="blk-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" /></svg></span>
+            <span class="blk-ic accent"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" /></svg></span>
             <span class="blk-chip soft">思考过程{{ b.redacted ? '（已隐藏）' : '' }}</span>
             <span class="grow" />
             <span v-if="streaming && i === blocks.length - 1" class="spin" />
@@ -97,10 +70,9 @@ function msgMenu(e) {
       <div v-if="m.stopReason === 'error'" class="errbox">出错：{{ stripAnsi(m.errorMessage || '未知错误') }}</div>
       <div v-else-if="m.stopReason === 'aborted'" class="note-sm">已中断</div>
       <div v-else-if="m.stopReason === 'length'" class="note-sm warn">达到输出长度上限，回复被截断</div>
-      <!-- 模型/token/价格：默认不渲染，在“…”里手动打开才出现 -->
+      <!-- 模型/token/价格：默认不显示，右键菜单里手动打开才出现 -->
       <div v-if="UI.showMeta && meta" class="meta">{{ meta }}</div>
     </div>
-    <button v-if="!streaming" class="more-btn" title="更多" @click.stop="msgMenu"><Icon name="more" :size="16" /></button>
   </div>
 
   <!-- ! 执行的 shell 命令 -->
@@ -145,58 +117,42 @@ function msgMenu(e) {
 
 <style scoped>
 .msg { display: flex; margin: 0 0 var(--sp5); align-items: flex-start; position: relative; }
-/* 头像绝对定位在内容区外面（内层容器留了 48px 空隙）：这样气泡和思考/工具卡片
-   与输入框左右对齐、宽度完全一致 */
-.ai .avatar { left: calc(-1 * (36px + var(--sp3))); top: 0; }
-.me .avatar { right: calc(-1 * (36px + var(--sp3))); top: 0; }
+/* 助手回答直接铺在背景上，没有头像也没有气泡底；思考/工具是轻量卡片。
+   卡片的左右内边距和正文一致（都是 --pad-x），文字左边缘能对成一条线 */
 .col { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: var(--sp2); }
 .me .col { align-items: flex-end; }
 .ai .col { align-items: flex-start; }
 
-.avatar { position: absolute; width: 36px; height: 36px; border-radius: 10px; flex: none; display: flex; align-items: center; justify-content: center; font-weight: 700; user-select: none; font-size: var(--fs-sm); }
-.ai-av { background: var(--accent); color: #fff; font-size: 18px; }
-.me-av { background: var(--panel); color: var(--text-2); border: 1px solid var(--line); }
-
-.bubble { border-radius: var(--radius); padding: calc(var(--sp2) + 2px) calc(var(--sp3) + 2px); line-height: var(--lh); max-width: 100%; }
+.bubble { border-radius: var(--radius); padding: calc(var(--sp2) + 2px) var(--pad-x); line-height: var(--lh); max-width: 100%; }
 .me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); max-width: min(80%, 720px); border-top-right-radius: min(var(--radius), 4px); }
-.ai-bubble { background: var(--bubble-ai); box-shadow: var(--shadow-sm); border: 1px solid var(--line-2); border-top-left-radius: min(var(--radius), 4px); }
-.ai-bubble + .ai-bubble { border-top-left-radius: var(--radius); }
+.ai-bubble { background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); }
 .pre { white-space: pre-wrap; word-break: break-word; }
 .imgs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .imgs img { max-height: 160px; max-width: 260px; border-radius: 8px; display: block; }
 
-.errbox { background: var(--err-bg); color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--r-md); padding: 8px 12px; white-space: pre-wrap; font-size: var(--fs-sm); }
-.note-sm { font-size: var(--fs-xs); color: var(--text-3); }
-
-/* 悬停时出现的“…”：绝对定位，不占布局 */
-.more-btn { position: absolute; top: 2px; width: 26px; height: 26px; border: 1px solid var(--line); background: var(--chat-bg); border-radius: 8px; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s, color 0.15s; z-index: 2; }
-.ai .more-btn { right: 0; }
-.me .more-btn { left: 0; }
-.msg:hover .more-btn { opacity: 1; }
-.more-btn:hover { color: var(--text); }
+.errbox { margin: 0 var(--pad-x); background: var(--err-bg); color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--r-md); padding: 8px var(--pad-x); white-space: pre-wrap; font-size: var(--fs-sm); }
+.note-sm { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); }
 /* 打开后才显示的模型/用量 */
-.meta { font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.meta { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
+/* 思考过程的灯泡图标跟工具卡片一样用主题色，一眼能看出这是同一种“过程块” */
+.blk-ic.accent { color: var(--accent-text); }
 
 /* 卡片类：shell、系统消息 */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
 .shell { margin: 0 0 var(--sp5); }
-.card-head { padding: 8px 12px; font-size: var(--fs-sm); }
+.card-head { padding: var(--sp2) var(--pad-x); font-size: var(--fs-sm); }
 .dollar { color: var(--accent-text); font-weight: 700; font-family: var(--font-code); }
 .badge { font-size: var(--fs-xs); padding: 0 8px; border-radius: 10px; background: var(--hover); line-height: 20px; flex: none; }
-.out { margin: 0; padding: 10px 14px; max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: var(--fs-code); font-family: var(--font-code); background: var(--code-bg); border-top: 1px solid var(--line); line-height: 1.55; }
+.out { margin: 0; padding: var(--sp2) var(--pad-x); max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: var(--fs-code); font-family: var(--font-code); background: var(--code-bg); border-top: 1px solid var(--line); line-height: 1.55; }
 .sys { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0 0 var(--sp5); }
 .sys-pill { border: 0; cursor: pointer; background: var(--active); color: var(--text-2); font-size: var(--fs-xs); padding: 4px 12px; border-radius: 12px; display: inline-flex; gap: 8px; }
 .sys-pill:hover { color: var(--text); }
 .caret { color: var(--accent-text); }
-.sys-card { width: 100%; padding: 12px 16px; }
-.sys-card.out { padding: 10px 14px; }
+.sys-card { width: 100%; padding: var(--sp3) var(--pad-x); }
+.sys-card.out { padding: var(--sp2) var(--pad-x); }
 .sys-tag { font-size: var(--fs-xs); color: var(--text-3); margin-bottom: 6px; }
 @media (max-width: 768px) {
   .msg { margin-bottom: 18px; }
-  .ai-bubble { padding: 10px 12px; }
   .me-bubble { max-width: 88%; }
-}
-@media (hover: none) {
-  .more-btn { opacity: 1; }
 }
 </style>

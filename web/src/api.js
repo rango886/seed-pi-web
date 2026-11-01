@@ -2,7 +2,10 @@
 const params = new URLSearchParams(location.search);
 if (params.get('token')) {
   localStorage.setItem('pi-web-token', params.get('token'));
-  history.replaceState(null, '', location.pathname);
+  // 只把 token 从地址栏去掉，cwd 之类的参数留给 store.js 读
+  params.delete('token');
+  const rest = params.toString();
+  history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : ''));
 }
 const token = localStorage.getItem('pi-web-token') || '';
 

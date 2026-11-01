@@ -121,7 +121,7 @@ const dur = computed(() => {
 /* 卡片框、头部、展开箭头的样式在 style.css 的 .blk-* 里，这里只管工具特有的部分 */
 .error { border-color: color-mix(in srgb, var(--err) 40%, transparent); }
 .st { width: 18px; height: 18px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
-.done .st { color: var(--ok); }
+.done .st { color: var(--accent-text); }
 .error .st { color: var(--err); }
 .blk-sum a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
 .blk-sum a:hover { color: var(--accent-text); text-decoration-color: currentColor; }
@@ -129,11 +129,11 @@ const dur = computed(() => {
 .out.args { background: var(--panel-2); }
 .errout { color: var(--err); }
 .diff { padding: 6px 0; max-height: 440px; }
-.diff > div { white-space: pre-wrap; word-break: break-all; padding: 0 14px; }
+.diff > div { white-space: pre-wrap; word-break: break-all; padding: 0 var(--pad-x); }
 .hunk-sep { height: 1px; background: var(--line); margin: 6px 0; padding: 0 !important; }
 .del { background: var(--del-bg); color: var(--del-fg); }
 .add { background: var(--add-bg); color: var(--add-fg); }
 .more { padding: 4px 10px; border-top: 1px solid var(--line-2); }
-.imgs { padding: 10px 14px; border-top: 1px solid var(--line-2); }
+.imgs { padding: var(--sp2) var(--pad-x); border-top: 1px solid var(--line-2); }
 .imgs img { max-width: 100%; max-height: 320px; border-radius: 6px; }
 </style>

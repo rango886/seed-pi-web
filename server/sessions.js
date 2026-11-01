@@ -1,6 +1,13 @@
 // 读取 pi 的会话文件（JSONL），给历史面板用。
 // 只依赖文档里的会话文件格式：第一行是 header，后面是 entry。
+//
+// 性能要点（会话文件加起来可能上 GB）：
+// 1. 先只读每个文件的第一行（header）拿到 cwd，按目录过滤，只深入扫描需要的文件
+// 2. 深入扫描时按字节流式读，只看每行开头几百字节判断类型，不对大行做 JSON.parse
+// 3. 会话文件只会往后追加：记住扫到的字节位置，下次只读新增部分
+// 4. 扫描结果存到磁盘缓存，后端重启后不用重新扫一遍
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -23,7 +30,27 @@ export async function sessionRoots(extra = []) {
   return [...roots];
 }
 
-const cache = new Map(); // file -> {mtimeMs, size, info}
+// ---------- 缓存：file -> { size, mtimeMs, head, body } ----------
+// head: { id, cwd, created, parentSession }（header 不会变）
+// body: { offset, name, firstUser, messages }（offset = 已扫描到的字节位置，总在换行符之后）
+const CACHE_FILE = path.join(os.tmpdir(), 'pi-web-sessions-cache-v1.json');
+const cache = new Map();
+try {
+  const saved = JSON.parse(fsSync.readFileSync(CACHE_FILE, 'utf8'));
+  for (const [k, v] of Object.entries(saved)) cache.set(k, v);
+} catch {}
+
+let saveTimer = null;
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(async () => {
+    saveTimer = null;
+    try {
+      await fs.writeFile(CACHE_FILE, JSON.stringify(Object.fromEntries(cache)));
+    } catch {}
+  }, 2000);
+  saveTimer.unref?.();
+}
 
 function textOf(content) {
   if (typeof content === 'string') return content;
@@ -31,48 +58,144 @@ function textOf(content) {
   return '';
 }
 
-async function parseSession(file, st) {
-  const hit = cache.get(file);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.info;
-  const raw = await fs.readFile(file, 'utf8');
-  const lines = raw.split('\n');
-  let header = null;
-  let firstUser = '';
-  let name = null;
-  let messages = 0;
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    let e;
-    try {
-      e = JSON.parse(line);
-    } catch {
-      continue;
+/** 限制并发：同时打开太多大文件会把内存和磁盘都挤爆 */
+async function mapLimit(items, limit, fn) {
+  let i = 0;
+  const worker = async () => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx], idx);
     }
-    if (!header && e.type === 'session') {
-      header = e;
-      continue;
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+async function readHead(file) {
+  const fh = await fs.open(file, 'r');
+  try {
+    const { buffer, bytesRead } = await fh.read(Buffer.alloc(64 * 1024), 0, 64 * 1024, 0);
+    const buf = buffer.subarray(0, bytesRead);
+    const nl = buf.indexOf(10);
+    const e = JSON.parse(buf.subarray(0, nl < 0 ? buf.length : nl).toString('utf8'));
+    if (e.type !== 'session') return null;
+    return { id: e.id, cwd: e.cwd || '', created: e.timestamp, parentSession: e.parentSession || null };
+  } catch {
+    return null;
+  } finally {
+    await fh.close();
+  }
+}
+
+const TYPE_RE = /^\{"type":"([^"]+)"/;
+const ROLE_RE = /"message":\{"role":"([^"]+)"/;
+
+/** 处理一行（Buffer）。只看开头判断类型，需要内容时才完整解析 */
+function scanLine(line, body) {
+  if (line.length < 2) return;
+  const head = line.subarray(0, 600).toString('utf8');
+  let type = TYPE_RE.exec(head)?.[1];
+  let parsed = null;
+  const parse = () => {
+    if (parsed === null) {
+      try {
+        parsed = JSON.parse(line.toString('utf8'));
+      } catch {
+        parsed = false;
+      }
     }
-    if (e.type === 'session_info') name = e.name || null;
-    if (e.type === 'message' && e.message) {
-      const role = e.message.role;
-      if (role === 'user' || role === 'assistant') messages++;
-      if (!firstUser && role === 'user') firstUser = textOf(e.message.content).slice(0, 200);
+    return parsed;
+  };
+  if (!type) type = parse()?.type; // 字段顺序和预期不一样：老老实实解析
+  if (type === 'session_info') {
+    const e = parse();
+    if (e) body.name = e.name || null;
+  } else if (type === 'message') {
+    let role = ROLE_RE.exec(head)?.[1];
+    if (!role) role = parse()?.message?.role;
+    if (role === 'user' || role === 'assistant') body.messages++;
+    if (role === 'user' && !body.firstUser) {
+      const e = parse();
+      if (e) body.firstUser = textOf(e.message?.content).slice(0, 200);
     }
   }
-  if (!header) return null;
-  const info = {
+}
+
+const CHUNK = 4 * 1024 * 1024;
+/** 从 body.offset 开始往后扫，扫到最后一个完整的行为止 */
+async function scanBody(file, size, prev) {
+  const body = prev ? { ...prev } : { offset: 0, name: null, firstUser: '', messages: 0 };
+  const fh = await fs.open(file, 'r');
+  try {
+    let pos = body.offset;
+    let parts = []; // 跨块的未完整行
+    const buf = Buffer.alloc(CHUNK);
+    while (pos < size) {
+      const { bytesRead } = await fh.read(buf, 0, Math.min(CHUNK, size - pos), pos);
+      if (!bytesRead) break;
+      const chunk = buf.subarray(0, bytesRead);
+      let start = 0;
+      let nl;
+      while ((nl = chunk.indexOf(10, start)) !== -1) {
+        const piece = chunk.subarray(start, nl);
+        const line = parts.length ? Buffer.concat([...parts, piece]) : piece;
+        parts = [];
+        scanLine(line, body);
+        start = nl + 1;
+        body.offset = pos + start;
+      }
+      if (start < bytesRead) parts.push(Buffer.from(chunk.subarray(start))); // 复制一份，buf 会被复用
+      pos += bytesRead;
+    }
+  } finally {
+    await fh.close();
+  }
+  return body;
+}
+
+/** 拿到文件的缓存记录，必要时更新 head；deep=true 时连 body 一起更新 */
+const inflight = new Map();
+async function getEntry(file, deep) {
+  const key = `${file}|${deep ? 1 : 0}`;
+  if (inflight.has(key)) return inflight.get(key);
+  const p = (async () => {
+    const st = await fs.stat(file);
+    let e = cache.get(file);
+    if (e && st.size < (e.body?.offset ?? e.size)) e = null; // 文件变小了：被重写过，从头来
+    if (!e || !e.head) {
+      const head = await readHead(file);
+      if (!head) return null;
+      e = { size: st.size, mtimeMs: st.mtimeMs, head, body: null };
+      cache.set(file, e);
+      scheduleSave();
+    }
+    if (e.size !== st.size || e.mtimeMs !== st.mtimeMs) {
+      e.size = st.size;
+      e.mtimeMs = st.mtimeMs;
+      scheduleSave();
+    }
+    if (deep && (!e.body || e.body.offset < st.size)) {
+      e.body = await scanBody(file, st.size, e.body);
+      scheduleSave();
+    }
+    return e;
+  })().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
+function toInfo(file, e) {
+  const b = e.body || { name: null, firstUser: '', messages: 0 };
+  return {
     file,
-    id: header.id,
-    cwd: header.cwd || '',
-    created: header.timestamp,
-    modified: new Date(st.mtimeMs).toISOString(),
-    name,
-    title: name || firstUser || '(空会话)',
-    messages,
-    parentSession: header.parentSession || null,
+    id: e.head.id,
+    cwd: e.head.cwd,
+    created: e.head.created,
+    modified: new Date(e.mtimeMs).toISOString(),
+    name: b.name,
+    title: b.name || b.firstUser || '(空会话)',
+    messages: b.messages,
+    parentSession: e.head.parentSession,
   };
-  cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, info });
-  return info;
 }
 
 async function walk(dir, depth, out) {
@@ -82,11 +205,23 @@ async function walk(dir, depth, out) {
   } catch {
     return;
   }
-  for (const ent of ents) {
-    const p = path.join(dir, ent.name);
-    if (ent.isDirectory() && depth > 0) await walk(p, depth - 1, out);
-    else if (ent.isFile() && ent.name.endsWith('.jsonl')) out.push(p);
-  }
+  await Promise.all(
+    ents.map(async (ent) => {
+      const p = path.join(dir, ent.name);
+      if (ent.isDirectory() && depth > 0) await walk(p, depth - 1, out);
+      else if (ent.isFile() && ent.name.endsWith('.jsonl')) out.push(p);
+    }),
+  );
+}
+
+async function allFiles(roots) {
+  const files = [];
+  for (const r of roots) await walk(r, 1, files);
+  const uniq = [...new Set(files)];
+  // 已经不存在的文件从缓存里清掉
+  const set = new Set(uniq);
+  for (const k of cache.keys()) if (!set.has(k) && roots.some((r) => k.startsWith(r))) cache.delete(k);
+  return uniq;
 }
 
 export const samePath = (a, b) => {
@@ -112,29 +247,43 @@ export async function readSessionMessages(file) {
 }
 
 export async function listSessions({ cwd, roots }) {
-  const files = [];
-  for (const r of roots) await walk(r, 1, files);
+  const files = await allFiles(roots);
+  // 第一步：只读 header，按目录过滤
+  const heads = [];
+  await mapLimit(files, 32, async (f) => {
+    try {
+      const e = await getEntry(f, false);
+      if (e && (!cwd || samePath(e.head.cwd, cwd))) heads.push(f);
+    } catch {}
+  });
+  // 第二步：只扫描需要的文件（大多命中缓存，只读新增的部分）
   const list = [];
-  await Promise.all(
-    [...new Set(files)].map(async (f) => {
-      try {
-        const st = await fs.stat(f);
-        const info = await parseSession(f, st);
-        if (info && (!cwd || samePath(info.cwd, cwd))) list.push(info);
-      } catch {}
-    }),
-  );
+  await mapLimit(heads, 4, async (f) => {
+    try {
+      const e = await getEntry(f, true);
+      if (e) list.push(toInfo(f, e));
+    } catch {}
+  });
   list.sort((a, b) => (a.modified < b.modified ? 1 : -1));
   return list;
 }
 
+/** 最近用过的目录：只需要 header 和修改时间，不用扫描内容 */
 export async function recentDirs(roots) {
-  const all = await listSessions({ roots });
+  const files = await allFiles(roots);
+  const all = [];
+  await mapLimit(files, 32, async (f) => {
+    try {
+      const e = await getEntry(f, false);
+      if (e?.head.cwd) all.push(e);
+    } catch {}
+  });
+  all.sort((a, b) => b.mtimeMs - a.mtimeMs);
   const seen = new Map();
-  for (const s of all) {
-    if (!s.cwd) continue;
-    const key = process.platform === 'win32' ? s.cwd.toLowerCase() : s.cwd;
-    if (!seen.has(key)) seen.set(key, { cwd: s.cwd, modified: s.modified, count: 0 });
+  for (const e of all) {
+    const cwd = e.head.cwd;
+    const key = process.platform === 'win32' ? cwd.toLowerCase() : cwd;
+    if (!seen.has(key)) seen.set(key, { cwd, modified: new Date(e.mtimeMs).toISOString(), count: 0 });
     seen.get(key).count++;
   }
   return [...seen.values()].slice(0, 30);

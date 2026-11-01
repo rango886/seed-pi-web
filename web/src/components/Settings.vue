@@ -1,7 +1,23 @@
 <script setup>
 import { UI, DEFAULTS, ACCENTS, FONT_PRESETS, view, resetSettings } from '../settings.js';
+import { toast } from '../store.js';
 
 const close = () => (view.settingsOpen = false);
+
+// 把设置导出成 JSON 文件（只导设置抽屉里那几项，内部字段不导）
+function exportSettings() {
+  const settings = {};
+  for (const k of Object.keys(DEFAULTS)) settings[k] = UI[k];
+  const name = `pi-web-settings-${new Date().toISOString().slice(0, 10)}.json`;
+  const data = { app: 'pi-web', kind: 'settings', version: 1, exportedAt: new Date().toISOString(), settings };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast(`已导出 ${name}`);
+}
 const isPreset = (v) => FONT_PRESETS.some((f) => f.value === v);
 function onKey(e) {
   if (e.key === 'Escape') {
@@ -34,6 +50,7 @@ const layoutSliders = [
           <div class="title">界面设置</div>
           <span class="dim hint">改动立即生效</span>
           <div class="grow" />
+          <button class="btn sm flat" title="把当前设置导出成 JSON 文件" @click="exportSettings">导出</button>
           <button class="btn sm flat" @click="resetSettings">恢复默认</button>
           <button class="btn icon sm flat" title="关闭 (Esc)" @click="close">✕</button>
         </header>
@@ -73,10 +90,6 @@ const layoutSliders = [
                   <button v-for="[v, l] in [['accent', '主题色'], ['soft', '浅色调'], ['green', '微信绿']]" :key="v" :class="{ on: UI.userBubble === v }" @click="UI.userBubble = v">{{ l }}</button>
                 </div>
               </div>
-              <label class="item">
-                <span class="label">显示头像</span>
-                <input v-model="UI.avatars" type="checkbox" class="switch" />
-              </label>
             </div>
           </section>
 
@@ -144,7 +157,7 @@ const layoutSliders = [
                 <input v-model="UI.toolsOpen" type="checkbox" class="switch" />
               </label>
               <label class="item">
-                <span class="label">显示模型与用量（默认关；也可以点消息右上角“⋯”开）</span>
+                <span class="label">显示模型与用量（默认关；也可以右键消息打开）</span>
                 <input v-model="UI.showMeta" type="checkbox" class="switch" />
               </label>
             </div>

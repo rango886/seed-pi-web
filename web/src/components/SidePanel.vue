@@ -1,23 +1,12 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { S, loadSessions, openSession, newSession, deleteSession, openDir, openTerminal, renameSession } from '../store.js';
-import { view, toggleSide, closeDrawer, openMenu } from '../settings.js';
-import TreeNode from './TreeNode.vue';
+import { S, loadSessions, openSession, newSession, deleteSession, renameSession } from '../store.js';
+import { view, toggleSide, closeDrawer, openMenu, togglePanel } from '../settings.js';
 import Icon from './Icon.vue';
 
 const q = ref('');
 const searchEl = ref(null);
 
-let lastLoad = 0;
-function setTab(t) {
-  S.leftTab = t;
-  localStorage.setItem('pi-web-left', t);
-  // 切回来不用每次都重新拉列表：运行结束、切会话时 store 会自己刷新
-  if (t === 'history' && Date.now() - lastLoad > 10000) {
-    lastLoad = Date.now();
-    loadSessions();
-  }
-}
 watch(
   () => S.showAllSessions,
   () => loadSessions(),
@@ -145,7 +134,7 @@ function open(s) {
   closeDrawer();
 }
 function onNew() {
-  newSession();
+  newSession(); // 现在会先弹目录选择窗口，选完才建会话
   closeDrawer();
 }
 function sessionMenu(e, s) {
@@ -158,7 +147,6 @@ function sessionMenu(e, s) {
   ].filter(Boolean));
 }
 function focusSearch() {
-  setTab('history');
   setTimeout(() => searchEl.value?.focus(), 0);
 }
 </script>
@@ -175,21 +163,10 @@ function focusSearch() {
 
     <div class="nav">
       <div class="nv" :class="{ dis: S.running }" @click="!S.running && onNew()"><Icon name="newchat" /><span>新会话</span></div>
-      <div v-if="S.info.terminal" class="nv" @click="S.showTerm ? (S.showTerm = false) : openTerminal()">
-        <Icon name="terminal" /><span class="grow">终端</span><span v-if="S.terms.length" class="cnt">{{ S.terms.length }}</span>
-      </div>
     </div>
 
-    <div class="seg">
-      <div class="st" :class="{ on: S.leftTab === 'history' }" @click="setTab('history')">会话</div>
-      <div class="st" :class="{ on: S.leftTab === 'files' }" @click="setTab('files')">文件</div>
-      <div class="st" :class="{ on: S.leftTab === 'agents' }" @click="setTab('agents')">
-        进程<span v-if="S.agents.length > 1" class="cnt">{{ S.agents.length }}</span>
-      </div>
-    </div>
-
-    <!-- 三个面板都一直挂着，切换只是显示/隐藏，不会重新加载 -->
-    <div v-show="S.leftTab === 'history'" class="pane">
+    <!-- 左边只放会话；文件、进程在右边的浮动侧栏里（按钮在顶栏），终端在顶部标签页里 -->
+    <div class="pane">
       <div class="search">
         <Icon name="search" :size="15" />
         <input ref="searchEl" v-model="q" placeholder="搜索会话" @keydown.esc="q = ''" />
@@ -229,34 +206,10 @@ function focusSearch() {
       </div>
     </div>
 
-    <div v-show="S.leftTab === 'files'" class="pane">
-      <div class="search">
-        <span class="ellipsis grow dim small" :title="S.cwd">{{ S.cwd }}</span>
-        <button class="ib sm" title="刷新" @click="S.fsEpoch++"><Icon name="refresh" :size="15" /></button>
-      </div>
-      <div class="list tree">
-        <TreeNode v-if="S.cwd" :key="S.cwd" :entry="{ name: base(S.cwd), path: S.cwd, dir: true }" :depth="0" root />
-      </div>
-    </div>
-
-    <div v-show="S.leftTab === 'agents'" class="pane">
-      <div class="hint">每个目录一个 pi 进程，切走后会在后台继续跑</div>
-      <div class="list">
-        <div v-if="!S.agents.length" class="empty">没有运行中的 pi</div>
-        <div v-for="a in S.agents" :key="a.id" class="sess" :class="{ active: a.id === S.agentId }" :title="a.cwd" @click="openDir(a.cwd), closeDrawer()">
-          <span class="dot" :class="a.running ? 'busy' : 'on'" />
-          <div class="grow">
-            <div class="ellipsis stitle">{{ base(a.cwd) }}</div>
-            <div class="meta ellipsis">{{ a.running ? '运行中' : '空闲' }} · {{ a.sessionName || a.cwd }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="foot">
       <span class="dot" :class="{ on: S.connected }" />
       <span class="small">{{ S.connected ? '已连接' : '正在重连…' }}</span>
-      <span v-if="others" class="small dim">· {{ others }} 个后台运行</span>
+      <span v-if="others" class="small dim bg panel-btn" title="查看进程" @click="togglePanel('agents'), closeDrawer()">· {{ others }} 个后台运行</span>
       <div class="grow" />
       <button class="ib" title="界面设置 (Ctrl+,)" @click="(view.settingsOpen = true), closeDrawer()"><Icon name="settings" /></button>
     </div>
@@ -315,10 +268,12 @@ function focusSearch() {
 .sess:hover .del { display: inline-flex; }
 .sess:hover .sinfo { display: none; }
 .del:hover { background: var(--err); color: #fff; }
-.sess .dot { margin: 0 4px; }
+.sess .dot { margin: 0 4px; flex: none; }
 .empty { padding: 32px 12px; text-align: center; font-size: var(--fs-sm); color: var(--text-3); }
 .hint { font-size: var(--fs-xs); color: var(--text-3); padding: 4px 18px 6px; }
 .small { font-size: var(--fs-xs); }
+.bg { cursor: pointer; }
+.bg:hover { color: var(--accent-text); }
 .foot { display: flex; align-items: center; gap: 6px; height: 52px; padding: 0 8px 0 18px; border-top: 1px solid var(--line); flex: none; color: var(--text-2); }
 /* 触屏上没有悬停，删除按钮一直显示会太乱：靠长按/右键菜单删除 */
 @media (hover: none) {

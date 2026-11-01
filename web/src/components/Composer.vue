@@ -1,6 +1,6 @@
 <script setup>
 import { ref, toRef, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, compact, showSessionInfo } from '../store.js';
+import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, compact, showSessionInfo, hasStatus, otherAgents, openDirPicker } from '../store.js';
 import { UI, view } from '../settings.js';
 import { fmtTokens, levelName } from '../util.js';
 import ModelMenu from './ModelMenu.vue';
@@ -155,7 +155,7 @@ const ctx = computed(() => S.stats?.contextUsage);
 const ctxPct = computed(() => (ctx.value?.percent != null ? Math.min(100, Math.max(0, ctx.value.percent)) : null));
 const ctxColor = computed(() => (ctxPct.value == null ? 'var(--text-3)' : ctxPct.value > 85 ? 'var(--err)' : ctxPct.value > 65 ? 'var(--warn)' : 'var(--accent)'));
 const busy = computed(() => S.running || !!S.bashLive);
-// 输入框下面那一行小字：花费、缓存命中、token
+// 输入框上面那一行小字：花费、缓存命中、token
 const usage = computed(() => {
   const s = S.stats;
   if (!s?.tokens) return null;
@@ -168,7 +168,6 @@ const usage = computed(() => {
     outTok: fmtTokens(t.output || 0),
   };
 });
-const others = computed(() => S.agents.filter((a) => a.running && a.id !== S.agentId).length);
 
 function toggleMenu(name) {
   menu.value = menu.value === name ? null : name;
@@ -185,11 +184,10 @@ onMounted(() => window.addEventListener('mousedown', closeMenus));
 onUnmounted(() => window.removeEventListener('mousedown', closeMenus));
 watch(menu, (v) => !v && nextTick(() => ta.value?.focus()));
 
-const sendHint = computed(() => (UI.sendKey === 'ctrlEnter' ? 'Ctrl+Enter 发送 · Enter 换行' : 'Enter 发送 · Shift+Enter 换行'));
 const placeholder = computed(() => {
   if (S.detached) return '这个会话只读：先选个新目录才能继续聊';
   if (busy.value) return view.mobile ? '继续输入，发送 = 插话' : '继续输入：发送 = 插话，Alt+Enter = 等它做完再发';
-  return view.mobile ? '给 pi 发消息…' : '给 pi 发消息…  输入 / 查看命令，! 执行 shell';
+  return view.mobile ? '给 pi 发消息…' : '/ 查看命令 ! 执行 shell';
 });
 const disabled = computed(() => !S.agentId || !!S.agentExited);
 </script>
@@ -223,6 +221,19 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
       </div>
     </div>
 
+    <!-- 花费/token/上下文：放在输入框外面、上面一行（悬浮在对话上面的那块区域里），默认收起；
+         点顶部栏的状态按钮或右键菜单展开 -->
+    <div v-if="UI.showUsage && hasStatus" class="usage">
+      <template v-if="usage">
+        <span v-if="usage.cost" class="u click" title="本会话花费，点击看详情" @click="showSessionInfo"><i>花费</i>{{ usage.cost }}</span>
+        <span v-if="usage.hit != null" class="u" title="缓存命中率（缓存读 / 全部输入）"><i>缓存</i>{{ usage.hit }}%</span>
+        <span class="u" title="累计输入 / 输出 tokens"><i>输入</i>{{ usage.inTok }}<i class="gap">输出</i>{{ usage.outTok }}</span>
+      </template>
+      <span v-if="ctx" class="u" title="当前上下文占用"><i>上下文</i>{{ fmtTokens(ctx.tokens) }} / {{ fmtTokens(ctx.contextWindow) }}</span>
+      <span v-if="otherAgents" class="u"><i>后台</i>{{ otherAgents }} 个在跑</span>
+      <span v-for="(v, k) in S.statusItems" :key="k" class="u ext" :title="`${k}: ${v}`">{{ v }}</span>
+    </div>
+
     <div class="box" :class="{ focused, dragging, disabled, big }">
       <button class="expand" :class="{ on: big }" :title="big ? '还原输入框高度' : '放大输入框（写长消息用）'" @click="toggleBig">
         <Icon :name="big ? 'collapse' : 'expand'" :size="14" />
@@ -252,7 +263,7 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
         </button>
         <input ref="fileInput" type="file" accept="image/*" multiple hidden @change="onPickFiles" />
 
-        <button class="chip dir" :title="`工作目录：${S.cwd}\n点击切换`" @click="S.dirPicker = true">
+        <button class="chip dir" :title="`工作目录：${S.cwd}\n点击切换`" @click="openDirPicker('switch')">
           <Icon name="folder" :size="14" />
           <span class="ellipsis">{{ dirName }}</span>
         </button>
@@ -267,7 +278,6 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
           <span>{{ levelName(thinking) }}</span>
           <span class="caret">▾</span>
         </button>
-
         <div class="grow" />
 
         <button
@@ -294,35 +304,23 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
         </button>
       </div>
-
-      <!-- 底部的花费/token/上下文：放在输入框里面，不再另占一行 -->
-      <div class="usage">
-        <template v-if="usage">
-          <span class="u click" title="本会话花费，点击看详情" @click="showSessionInfo">{{ usage.cost }}</span>
-          <span v-if="usage.hit != null" class="u" title="缓存命中率（缓存读 / 全部输入）">缓存 {{ usage.hit }}%</span>
-          <span class="u" title="累计输入 / 输出 tokens">↑{{ usage.inTok }} ↓{{ usage.outTok }}</span>
-        </template>
-        <span v-if="ctx" class="u" title="当前上下文占用">上下文 {{ fmtTokens(ctx.tokens) }}/{{ fmtTokens(ctx.contextWindow) }}</span>
-        <span v-for="(v, k) in S.statusItems" :key="k" class="u ext" :title="k">{{ v }}</span>
-        <span v-if="others" class="u">后台 {{ others }} 个在跑</span>
-        <span class="grow" />
-        <span class="u hint">{{ sendHint }}</span>
-      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.composer { position: relative; flex: none; }
-.box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 10px 10px 8px 14px; transition: border-color 0.15s, box-shadow 0.15s; }
-.expand { position: absolute; top: 8px; right: 10px; width: 26px; height: 26px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 7px; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; opacity: 0; box-shadow: var(--shadow-sm); transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s; }
+.composer { position: relative; flex: none; pointer-events: none; }
+/* 输入框整个悬在对话上面，只有卡片本身（和弹出的菜单）接鼠标事件，中间空白处让滚轮穿透给下面的对话 */
+.box, .usage, .pop { pointer-events: auto; }
+.box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: var(--sp3) var(--sp3) calc(var(--sp2) + 2px); transition: border-color 0.15s, box-shadow 0.15s; }
+.expand { position: absolute; top: 10px; right: 10px; width: 26px; height: 26px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 7px; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; opacity: 0; box-shadow: var(--shadow-sm); transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s; }
 .box:hover .expand, .box.focused .expand, .expand.on { opacity: 1; }
 .expand:hover { color: var(--text); border-color: var(--text-3); }
 .expand.on { color: var(--accent-text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .box.focused { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: var(--shadow), 0 0 0 4px var(--accent-softer); }
 .box.dragging { border-style: dashed; border-color: var(--accent); background: var(--accent-softer); }
 .box.disabled { opacity: 0.6; }
-.ta { display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 4px 32px 6px 0; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 10px); max-height: 40vh; overflow-y: hidden; }
+.ta { display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 2px 34px 4px 2px; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 10px); max-height: 40vh; overflow-y: hidden; }
 .ta::placeholder { color: var(--text-3); }
 .box.big .ta { min-height: 32vh; max-height: 72vh; }
 
@@ -337,14 +335,14 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
 .chip:hover, .chip.on { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
 .chip:disabled { opacity: 0.5; pointer-events: none; }
 .caret { font-size: 10px; opacity: 0.6; }
-.usage { display: flex; align-items: center; gap: 2px; padding: 4px 2px 0; font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
-.u { padding: 1px 6px; border-radius: 5px; display: inline-flex; align-items: center; }
-.u + .u:not(.hint)::before { content: ''; }
+.usage { display: flex; align-items: center; gap: var(--sp2); padding: 0 0 var(--sp2); font-size: 11.5px; line-height: 16px; color: var(--text-2); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+/* 每一项都是个小胶囊：对话从下面淡过时，它还是一块看得清的 UI，不会跟背景文字混在一起 */
+.u { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 var(--pad-x); border-radius: 13px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-sm); flex: none; }
+.u i { font-style: normal; color: var(--text-3); }
+.u i.gap { margin-left: 4px; }
 .u.click { cursor: pointer; }
-.u.click:hover { background: var(--active); color: var(--text-2); }
-.u.ext { max-width: 240px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
-.hint { font-size: 11px; color: var(--text-3); }
-@media (max-width: 768px) { .hint { display: none; } }
+.u.click:hover { background: var(--hover); color: var(--text); }
+.u.ext { flex: 0 1 auto; min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 24px; color: var(--text-3); }
 .ring { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--text-3); cursor: pointer; font-size: var(--fs-xs); padding: 0 6px; height: 30px; border-radius: 8px; font-variant-numeric: tabular-nums; }
 .ring:hover { background: var(--hover); color: var(--text-2); }
 .round { width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background 0.15s, transform 0.1s; }
@@ -382,7 +380,7 @@ const disabled = computed(() => !S.agentId || !!S.agentExited);
   .chip.dir { max-width: 34vw; }
   .ring span { display: none; }
   .ring { padding: 0 4px; }
-  .box { border-radius: 16px; padding: 8px 8px 6px 12px; }
+  .box { border-radius: 16px; padding: 10px 10px 6px; }
 }
 /* 触屏没有悬停，放大按钮得一直看得到 */
 @media (hover: none) {

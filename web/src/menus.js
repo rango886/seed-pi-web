@@ -2,6 +2,7 @@
 import {
   S,
   newSession,
+  openDirPicker,
   pickSession,
   renameSession,
   pickFork,
@@ -13,11 +14,15 @@ import {
   setThinking,
   restartAgent,
   openTerminal,
+  toggleTerminal,
+  termIdOf,
+  closeAllTabs,
   quitAgent,
+  toast,
   BUILTINS,
 } from './store.js';
-import { view, toggleSide, UI } from './settings.js';
-import { levelName } from './util.js';
+import { view, toggleSide, togglePanel, UI } from './settings.js';
+import { levelName, getMsgText } from './util.js';
 
 const hotkeys = () => BUILTINS.find((b) => b.name === 'hotkeys').run();
 
@@ -68,9 +73,14 @@ export function mainMenu(extra = []) {
       ],
     },
     '-',
-    { label: '切换工作目录…', icon: 'folder', run: () => (S.dirPicker = true) },
-    { label: '侧栏', icon: 'sidebar', key: 'Ctrl+B', check: view.mobile ? view.drawer : view.side, run: () => toggleSide() },
-    { label: '终端', icon: 'terminal', key: 'Ctrl+`', check: S.showTerm, run: () => (S.showTerm = !S.showTerm) },
+    { label: '切换工作目录…', icon: 'folder', run: () => openDirPicker('switch') },
+    { label: '会话侧栏', icon: 'sidebar', key: 'Ctrl+B', check: view.mobile ? view.drawer : view.side, run: () => toggleSide() },
+    { label: '文件', icon: 'folder', key: 'Ctrl+E', check: view.panel === 'files', run: () => togglePanel('files') },
+    { label: '进程', icon: 'cpu', check: view.panel === 'agents', run: () => togglePanel('agents') },
+    S.info.terminal && { label: '终端', icon: 'terminal', key: 'Ctrl+`', check: !!termIdOf(S.activeTab), run: toggleTerminal },
+    (S.tabs.length || S.terms.length) && { label: '关闭全部标签页', icon: 'closeall', run: () => closeAllTabs() },
+    '-',
+    { label: UI.showUsage ? '收起状态信息' : '展开状态信息（花费/tokens/上下文）', icon: 'chart', check: UI.showUsage, run: () => (UI.showUsage = !UI.showUsage) },
     {
       label: UI.showMeta ? '隐藏每条回复的模型与用量' : '显示每条回复的模型与用量',
       icon: 'info',
@@ -88,6 +98,29 @@ export function contextExtras(target) {
   const out = [];
   const sel = String(window.getSelection?.() || '').trim();
   if (sel) out.push({ label: '复制选中文字', icon: 'copy', key: 'Ctrl+C', run: () => navigator.clipboard.writeText(sel) });
+  // 点在某条消息上：原来悬停出来的“⋯”里的东西，都收进右键菜单
+  const msgEl = target.closest?.('[data-msg]');
+  if (msgEl) {
+    const text = getMsgText(msgEl.dataset.msg);
+    if (text) {
+      out.push({
+        label: '复制这条消息',
+        icon: 'copy',
+        run: () => {
+          navigator.clipboard.writeText(text);
+          toast('已复制');
+        },
+      });
+    }
+    if (msgEl.dataset.role === 'assistant') {
+      out.push({
+        label: UI.showMeta ? '隐藏模型与用量' : '显示模型与用量',
+        icon: 'info',
+        check: UI.showMeta,
+        run: () => (UI.showMeta = !UI.showMeta),
+      });
+    }
+  }
   const a = target.closest?.('a[href]');
   if (a && /^https?:/.test(a.href)) {
     out.push({ label: '在新标签页打开链接', icon: 'link', run: () => window.open(a.href, '_blank', 'noopener') });

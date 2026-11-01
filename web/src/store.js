@@ -1,5 +1,5 @@
 // 全局状态 + 所有动作。组件只负责显示，逻辑都在这里，方便看懂。
-import { reactive } from 'vue';
+import { reactive, computed } from 'vue';
 import { connect, call, fire, http, rawUrl } from './api.js';
 import { stripAnsi, joinPath, normPath, isAbsPath } from './util.js';
 import { view, UI } from './settings.js';
@@ -34,18 +34,22 @@ export const S = reactive({
   toasts: [],
   picker: null,
   dirPicker: false,
-  leftTab: localStorage.getItem('pi-web-left') || 'files',
+  dirPickerMode: 'switch', // 'switch' 切工作目录 / 'new' 选个目录开新会话
   tabs: [], // 打开的文件
-  activeTab: 'chat',
+  activeTab: 'chat', // 'chat' | 文件路径 | 'term:<终端id>'
   fsEpoch: 0,
   sessions: [],
   showAllSessions: false,
   terms: [],
-  activeTerm: null,
-  showTerm: false,
+  activeTerm: null, // 最近一次看的终端（Ctrl+` 切回去用）
   connEpoch: 0,
   tick: 0, // 每来一个流式事件 +1，聊天区用它判断要不要滚到底
 });
+
+// 后台还有几个别的 pi 进程在跑（不含当前这个）
+export const otherAgents = computed(() => S.agents.filter((a) => a.running && a.id !== S.agentId).length);
+// 输入框上面那行状态信息有没有东西可显示：顶部栏的状态按钮靠它决定要不要出现
+export const hasStatus = computed(() => !!(S.stats?.tokens || S.stats?.contextUsage || otherAgents.value || Object.keys(S.statusItems).length));
 
 // ---------------- 小工具 ----------------
 let keySeq = 0;
@@ -91,24 +95,51 @@ export function start() {
       if (!ok) return;
       try {
         S.info = await http.get('/api/info');
-        let cwd = S.cwd;
+        // 别的标签页用 ?cwd=...&new=1 打开：只认第一次，之后重连（断线重连）走正常流程
+        const bootCwd = pendingCwd;
+        const bootNew = pendingNew;
+        pendingCwd = null;
+        pendingNew = false;
+        let cwd = bootCwd || S.cwd;
         if (!cwd) {
           const recent = await http.get('/api/recent-dirs').catch(() => []);
           cwd = recent[0]?.cwd || S.info.home;
         }
         S.connEpoch++;
+        // 会话列表不依赖 pi 进程，先拉，不用等 pi 启动完
+        if (S.cwd) loadSessions();
         try {
-          await openDirRaw(cwd, true, localStorage.getItem('pi-web-session'));
+          // 从别的标签页指定的目录：不恢复当前标签页记着的会话，那个还在原标签页用着
+          await openDirRaw(cwd, true, bootCwd ? undefined : localStorage.getItem('pi-web-session'));
         } catch (e) {
           toast(e.message, 'error');
           await openDirRaw(S.info.home, true);
         }
+        if (bootNew) await newSessionIn(cwd);
       } catch (e) {
         toast(e.message, 'error');
       }
     },
     message: onServerMsg,
   });
+}
+
+// 地址栏上的 ?cwd=<目录>&new=1：新标签页打开某个目录 / 直接在那里开个新会话
+const bootQuery = new URLSearchParams(location.search);
+let pendingCwd = bootQuery.get('cwd');
+let pendingNew = bootQuery.get('new') === '1';
+if (pendingCwd || pendingNew) history.replaceState(null, '', location.pathname);
+
+/** 用新标签页打开某个目录（newSession：到那里直接开新会话）。Ctrl+点击目录选择窗口的主按钮就是这个 */
+export function openInNewTab(cwd, { newSession: atNew = false } = {}) {
+  const u = new URL(location.href);
+  u.search = '';
+  u.hash = '';
+  u.searchParams.set('cwd', cwd);
+  if (atNew) u.searchParams.set('new', '1');
+  const token = localStorage.getItem('pi-web-token');
+  if (token) u.searchParams.set('token', token);
+  window.open(u.toString(), '_blank', 'noopener');
 }
 
 function onServerMsg(msg) {
@@ -138,6 +169,10 @@ function onServerMsg(msg) {
     case 'terms':
       S.terms = msg.list;
       if (S.activeTerm && !msg.list.some((t) => t.id === S.activeTerm)) S.activeTerm = msg.list[0]?.id || null;
+      // 正在看的终端没了（关掉、shell 退出）：切到另一个终端，没有就回对话
+      if (termIdOf(S.activeTab) && !msg.list.some((t) => t.id === termIdOf(S.activeTab))) {
+        S.activeTab = S.activeTerm ? termTab(S.activeTerm) : S.tabs[S.tabs.length - 1]?.path || 'chat';
+      }
       break;
     case 'term_data':
     case 'term_exit':
@@ -253,6 +288,7 @@ function setMessages(list) {
   S.tools = tools;
   S.messages = out;
   liveIdx = -1;
+  pendingDeltas.clear();
   S.tick++;
   syncTitle();
 }
@@ -311,6 +347,21 @@ export const setThinking = guard(async (level) => {
 
 // ---------------- 处理 pi 推过来的事件 ----------------
 let liveIdx = -1; // 正在流式输出的那条消息在 S.messages 里的位置
+const pendingDeltas = new Map(); // "contentIndex:field" -> { m, i, field, text }
+let flushTimer = null;
+
+function flushDeltas() {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = null;
+  if (!pendingDeltas.size) return;
+  for (const { m, i, field, text } of pendingDeltas.values()) {
+    const c = m.content;
+    if (!c[i]) c[i] = field === 'text' ? { type: 'text', text: '' } : { type: 'thinking', thinking: '' };
+    c[i][field] = (c[i][field] || '') + text;
+  }
+  pendingDeltas.clear();
+  S.tick++;
+}
 
 function liveAssistant() {
   let m = S.messages[liveIdx];
@@ -328,6 +379,25 @@ function liveAssistant() {
 }
 
 function onRec(rec) {
+  // 流式文字先攒着，定时一起写进状态：不然每来一个字就要重新解析 Markdown、高亮代码，回复一长就卡
+  if (rec.type === 'message_update') {
+    const ev = rec.assistantMessageEvent || {};
+    if ((ev.type === 'text_delta' || ev.type === 'thinking_delta') && typeof ev.delta === 'string') {
+      const m = liveAssistant();
+      if (rec.usage) m.usage = rec.usage;
+      const field = ev.type === 'text_delta' ? 'text' : 'thinking';
+      const k = `${ev.contentIndex}:${field}`;
+      const p = pendingDeltas.get(k);
+      if (p && p.m === m) p.text += ev.delta;
+      else {
+        if (p) flushDeltas();
+        pendingDeltas.set(k, { m, i: ev.contentIndex, field, text: ev.delta });
+      }
+      if (!flushTimer) flushTimer = setTimeout(flushDeltas, 50);
+      return;
+    }
+  }
+  flushDeltas();
   S.tick++;
   switch (rec.type) {
     case 'agent_start':
@@ -612,9 +682,17 @@ const requireIdle = () => {
   if (S.running) throw new Error('pi 正在运行，先停止或等它结束');
 };
 
-export const newSession = guard(async () => {
-  // 只读会话（原目录已经没了）里点“新会话”，先去选个目录
-  if (S.detached) return (S.dirPicker = true);
+export const newSession = guard(async () => openDirPicker('new'));
+
+/** 打开目录选择窗口。mode='new' 时选完目录就在那里开个新会话 */
+export function openDirPicker(mode = 'switch') {
+  S.dirPickerMode = mode;
+  S.dirPicker = true;
+}
+
+/** 在指定目录里开始一个新会话（当前标签页）；正在跑的话不让切，免得丢内容 */
+export const newSessionIn = guard(async (cwd) => {
+  if (cwd) await openDirRaw(cwd);
   requireIdle();
   const d = await rpc({ type: 'new_session' });
   if (d?.cancelled) return toast('扩展取消了新建会话', 'warning');
@@ -755,7 +833,7 @@ export const exportHtml = guard(async (arg) => {
 });
 
 export const changeDir = guard(async (arg) => {
-  if (!arg) return (S.dirPicker = true);
+  if (!arg) return openDirPicker('switch');
   const target = isAbsPath(arg) ? arg : joinPath(S.cwd, arg, S.info.sep);
   await openDir(target);
 });
@@ -780,10 +858,11 @@ function showHotkeys() {
       ['!命令', '直接执行 shell 命令（结果进上下文）'],
       ['!!命令', '执行 shell 命令（不进上下文）'],
       ['Ctrl+V', '粘贴图片'],
-      ['Ctrl+`', '显示/隐藏终端'],
+      ['Ctrl+`', '打开终端标签页 / 回到对话'],
+      ['Ctrl+E', '显示/隐藏文件侧栏'],
       ['Ctrl+P', '切换会话'],
       ['Ctrl+L', '切换模型'],
-      ['Ctrl+B', '显示/隐藏侧栏'],
+      ['Ctrl+B', '显示/隐藏会话侧栏'],
       ['Ctrl+,', '界面设置'],
     ],
   });
@@ -813,11 +892,30 @@ export async function loadFile(tab) {
 }
 
 export function closeTab(path) {
+  const tid = termIdOf(path);
+  if (tid) return termClose(tid); // 终端关掉以后由 'terms' 消息切换标签
   const i = S.tabs.findIndex((t) => t.path === path);
   if (i < 0) return;
   S.tabs.splice(i, 1);
   if (S.activeTab === path) S.activeTab = S.tabs[i]?.path || S.tabs[i - 1]?.path || 'chat';
 }
+
+/** 关闭顶部的标签页（对话标签除外）。keep：留下的那个；有终端会先问一句，关终端会结束里面跑的程序 */
+export const closeAllTabs = guard(async (keep = null) => {
+  const terms = S.terms.filter((t) => termTab(t.id) !== keep);
+  if (terms.length) {
+    const r = await ask({
+      method: 'select',
+      title: `还有 ${terms.length} 个终端`,
+      options: ['只关文件，终端留着', '终端也一起关掉（里面运行的程序会被结束）'],
+    });
+    if (r.cancelled) return;
+    if (r.value?.startsWith('终端')) terms.forEach((t) => termClose(t.id)); // 关掉以后 'terms' 消息会自己切换标签
+  }
+  S.tabs = S.tabs.filter((t) => t.path === keep);
+  // 正在看的是文件（已经关掉了）：切到留下的那个，没有就回对话
+  if (S.activeTab !== 'chat' && !termIdOf(S.activeTab) && S.activeTab !== keep) S.activeTab = keep || 'chat';
+});
 
 export function insertToComposer(text) {
   const t = S.composer.text;
@@ -833,12 +931,24 @@ export const deleteSession = guard(async (s) => {
 });
 
 // ---------------- 终端 ----------------
+// 终端和文件一样显示成顶部的标签页，标签名是 'term:<id>'
+export const termTab = (id) => `term:${id}`;
+export const termIdOf = (tab) => (typeof tab === 'string' && tab.startsWith('term:') ? tab.slice(5) : null);
+
 export const openTerminal = guard(async ({ command, title } = {}) => {
   if (!S.info.terminal) throw new Error('后端没有可用的 node-pty，终端不可用');
   const { term } = await call('term_open', { cwd: S.cwd, cols: 120, rows: 24, command, title });
-  S.showTerm = true;
   S.activeTerm = term.id;
+  S.activeTab = termTab(term.id);
 });
+
+/** Ctrl+` / 顶部终端按钮：在终端标签上就回对话；否则切到最近的终端，一个都没有就新建 */
+export function toggleTerminal() {
+  if (termIdOf(S.activeTab)) return (S.activeTab = 'chat');
+  const id = S.terms.some((t) => t.id === S.activeTerm) ? S.activeTerm : S.terms[0]?.id;
+  if (id) S.activeTab = termTab(id);
+  else openTerminal();
+}
 
 export const termInput = (id, data) => fire('term_in', { id, data });
 export const termResize = (id, cols, rows) => fire('term_resize', { id, cols, rows });

@@ -195,6 +195,23 @@ app.get(
   }),
 );
 
+app.get(
+  '/api/fs/roots',
+  wrap(async (req, res) => {
+    const roots = [];
+    if (process.platform === 'win32') {
+      // 逐个盘符试一下，存在的就当根目录（A/B 也试，插了软盘、映射盘也能看到）
+      for (const L of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+        const p = `${L}:\\`;
+        if ((await fsp.stat(p).catch(() => null))?.isDirectory()) roots.push({ name: `${L}:`, path: p });
+      }
+    } else {
+      roots.push({ name: '/', path: '/' });
+    }
+    res.json(roots);
+  }),
+);
+
 const TEXT_LIMIT = 2 * 1024 * 1024;
 app.get(
   '/api/fs/read',

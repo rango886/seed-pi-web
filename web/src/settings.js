@@ -9,7 +9,6 @@ export const DEFAULTS = {
   accent: '#3b82f6',
   userBubble: 'accent', // accent | soft | green
   radius: 12, // 气泡圆角 px
-  avatars: true,
   chatWidth: 920, // 聊天内容最大宽度 px，0 = 铺满
   spacing: 1, // 间距倍率
   // 文字（默认系统字体：macOS / iOS 上是苹方，Windows 上是微软雅黑）
@@ -25,6 +24,7 @@ export const DEFAULTS = {
   thinkingOpen: false,
   toolsOpen: false,
   showMeta: false, // 默认不显示每条回复的模型/用量，鼠标悬停才显示
+  showUsage: false, // 输入框上面的花费/token/上下文信息：默认收起，点顶部栏的状态按钮（或右键菜单）展开
 };
 
 export const ACCENTS = ['#3b82f6', '#07c160', '#12b7f5', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#64748b'];
@@ -39,7 +39,7 @@ export const FONT_PRESETS = [
 ];
 
 const KEY = 'pi-web-settings';
-const VER = 2; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体
+const VER = 3; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关
 let saved = {};
 try {
   saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -48,6 +48,7 @@ if ((saved.__v || 1) < 2) {
   if (saved.font === "'Sarasa Term SC'") delete saved.font; // 没改过的，直接用新默认值
   delete saved.showMeta; // v2 起默认改成“悬停才显示”
 }
+if ((saved.__v || 1) < 3) delete saved.avatars; // 头像去掉了，这个开关也没了
 delete saved.__v;
 
 export const UI = reactive({ ...DEFAULTS, ...saved });
@@ -59,7 +60,13 @@ export const view = reactive({
   drawer: false, // 窄屏：抽屉是否打开
   mobile: false,
   ctx: null, // 右键菜单 { x, y, items }
+  panel: null, // 右边的浮动侧栏：'files' | 'agents' | null
 });
+
+/** 右侧浮动侧栏（文件 / 进程）：再点一次同一个就关掉 */
+export function togglePanel(name) {
+  view.panel = view.panel === name ? null : name;
+}
 
 const narrow = window.matchMedia('(max-width: 768px)');
 const onNarrow = () => {
