@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { S, closeTab, closeAllTabs, pickSession, pickModel, stop, renameSession, newSession, sessionTitle, toggleTerminal, openTerminal, termTab, termIdOf, hasStatus } from './store.js';
+import { S, closeTab, closeAllTabs, pickSession, pickModel, stop, renameSession, newSession, sessionTitle, toggleTerminal, openTerminal, termTab, termIdOf } from './store.js';
 import { view, toggleSide, openMenu, togglePanel, UI } from './settings.js';
 import { mainMenu, contextExtras, openModelMenu } from './menus.js';
 import SidePanel from './components/SidePanel.vue';
@@ -41,10 +41,10 @@ const inTerm = computed(() => !!termIdOf(S.activeTab));
 const hasTabs = computed(() => S.tabs.length > 0 || S.terms.length > 0);
 function tabMenu(e, key) {
   openMenu(e.clientX, e.clientY, [
-    { label: '关闭', icon: 'close', run: () => closeTab(key) },
-    { label: '关闭其他标签页', icon: 'closeall', run: () => closeAllTabs(key) },
-    { label: '关闭全部标签页', icon: 'closeall', run: () => closeAllTabs() },
-    ...(S.info.terminal ? ['-', { label: '新终端', icon: 'terminal', run: () => openTerminal() }] : []),
+    { label: '关闭', run: () => closeTab(key) },
+    { label: '关闭其他标签页', run: () => closeAllTabs(key) },
+    { label: '关闭全部标签页', run: () => closeAllTabs() },
+    ...(S.info.terminal ? ['-', { label: '新终端', run: () => openTerminal() }] : []),
   ]);
 }
 
@@ -69,7 +69,8 @@ function onContext(e) {
 }
 function moreMenu(e) {
   const r = e.currentTarget.getBoundingClientRect();
-  openMenu(r.right - 260, r.bottom + 6, mainMenu());
+  // 菜单宽度随内容变，x 直接给按钮右边：ContextMenu 会拿实测宽度把它夹到窗口里，右边缘就和“⋯”对齐了
+  openMenu(r.right, r.bottom + 6, mainMenu());
 }
 
 function onKey(e) {
@@ -151,20 +152,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
         <div class="ttl" :title="`${S.cwd}\n点击重命名`" @click="renameSession()">
           <div class="t1 ellipsis">{{ title }}</div>
         </div>
+        <!-- 顶栏只留文件 / 终端 / ⋯；进程、状态信息都收在“⋯”菜单里 -->
         <template v-if="!compact">
           <button class="ib panel-btn" :class="{ on: view.panel === 'files' }" title="文件 (Ctrl+E)" @click="togglePanel('files')"><Icon name="folder" /></button>
-          <button class="ib panel-btn" :class="{ on: view.panel === 'agents' }" title="进程" @click="togglePanel('agents')">
-            <Icon name="cpu" />
-          </button>
-          <button
-            v-if="hasStatus"
-            class="ib"
-            :class="{ on: UI.showUsage }"
-            :title="UI.showUsage ? '收起状态信息' : '显示状态信息（花费、缓存、tokens、上下文）'"
-            @click="UI.showUsage = !UI.showUsage"
-          >
-            <Icon name="chart" />
-          </button>
           <button v-if="S.info.terminal" class="ib" :class="{ on: inTerm }" title="终端 (Ctrl+`)" @click="toggleTerminal"><Icon name="terminal" /></button>
         </template>
         <button class="ib" title="更多（也可以在页面上点右键）" @click.stop="moreMenu"><Icon name="more" /></button>

@@ -449,22 +449,20 @@ async function onTakeOver() {
       />
       <div class="bar">
         <button class="ibtn" title="添加图片或文件（也可以直接粘贴、拖进来，或输入 @ 引用项目里的文件）" :disabled="disabled" @click="fileInput.click()">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.6l-8.8 8.8a5.5 5.5 0 0 1-7.8-7.8l8.8-8.8a3.7 3.7 0 0 1 5.2 5.2l-8.8 8.8a1.8 1.8 0 0 1-2.6-2.6l8.1-8.1" /></svg>
+          <!-- 加号用实心路径而不是描边：横竖两笔刚好落在整像素上（2px 宽、端点是整数），不会出现发虚、边缘歪掉 -->
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M8 3h2v5h5v2h-5v5H8v-5H3V8h5z" /></svg>
         </button>
         <input ref="fileInput" type="file" multiple hidden @change="onPickFiles" />
 
         <button class="chip dir" :title="`工作目录：${S.cwd}\n点击切换`" @click="openDirPicker('switch')">
-          <Icon name="folder" :size="14" />
           <span class="ellipsis">{{ dirName }}</span>
         </button>
 
         <button class="chip" :class="{ on: menu === 'model' }" title="切换模型 (Ctrl+L)" :disabled="disabled" @click="toggleMenu('model')">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" /></svg>
           <span class="ellipsis">{{ modelLabel }}</span>
           <span class="caret">▾</span>
         </button>
         <button v-if="S.thinkingLevels.length > 1" class="chip" :class="{ on: menu === 'thinking' }" title="思考强度" :disabled="disabled" @click="toggleMenu('thinking')">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" /></svg>
           <span>{{ levelName(thinking) }}</span>
           <span class="caret">▾</span>
         </button>
@@ -516,13 +514,13 @@ async function onTakeOver() {
 .ta::placeholder { color: var(--text-3); }
 .box.big .ta { min-height: 32vh; max-height: 72vh; }
 
-.bar { display: flex; align-items: center; gap: 6px; margin-left: -6px; min-width: 0; }
+.bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .bar > * { flex-shrink: 0; }
 .bar > .chip { flex-shrink: 1; min-width: 0; }
-.ibtn { width: 32px; height: 32px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-.ibtn:hover { background: var(--hover); color: var(--text); }
+/* 和右边那几个 chip 一个观感：浅底 + 细边，悬停换成主题色 */
+.ibtn { width: 30px; height: 30px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-pill); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: border-color 0.15s, color 0.15s, background 0.15s; }
+.ibtn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
 .chip { height: 30px; max-width: 260px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-pill); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); transition: all 0.15s; }
-.chip svg { flex: none; }
 .chip.dir { max-width: 220px; }
 .chip:hover, .chip.on { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
 .chip:disabled { opacity: 0.5; pointer-events: none; }

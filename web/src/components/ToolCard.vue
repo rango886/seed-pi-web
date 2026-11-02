@@ -30,7 +30,7 @@ const summary = computed(() => {
 const path = computed(() => toolPath(args.value));
 
 const result = computed(() => props.exec?.result || props.exec?.partial || null);
-const resultText = computed(() => stripAnsi(textOf(result.value?.content)).replace(/\r\n/g, '\n'));
+const resultText = computed(() => stripAnsi(textOf(result.value?.content)).replace(/\r\n/g, '\n').replace(/\s+$/, ''));
 const resultImages = computed(() => imagesOf(result.value?.content));
 const preview = computed(() => {
   if (status.value !== 'running' || !resultText.value) return '';
@@ -79,12 +79,6 @@ const dur = computed(() => {
 <template>
   <div class="blk" :class="[status, { open }]">
     <div class="blk-head" @click="open = !open">
-      <span class="st">
-        <span v-if="status === 'running' || status === 'pending'" class="spin" />
-        <svg v-else-if="status === 'done'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-        <svg v-else-if="status === 'error'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-        <span v-else class="dot" />
-      </span>
       <span class="blk-chip">{{ call.name }}</span>
       <span class="ellipsis grow blk-sum" :title="summary">
         <a v-if="path" href="#" @click.prevent.stop="openPath">{{ summary }}</a>
@@ -119,10 +113,8 @@ const dur = computed(() => {
 
 <style scoped>
 /* 卡片框、头部、展开箭头的样式在 style.css 的 .blk-* 里，这里只管工具特有的部分 */
-.error { border-color: color-mix(in srgb, var(--err) 40%, transparent); }
-.st { width: 18px; height: 18px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
-.done .st { color: var(--accent-text); }
-.error .st { color: var(--err); }
+/* 出错：已经没有卡片边框可以染红了，把工具名和输出的头一行标红 */
+.error .blk-chip { color: var(--err); }
 .blk-sum a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
 .blk-sum a:hover { color: var(--accent-text); text-decoration-color: currentColor; }
 .out.preview { max-height: none; color: var(--text-3); }
@@ -133,7 +125,7 @@ const dur = computed(() => {
 .hunk-sep { height: 1px; background: var(--line); margin: 6px 0; padding: 0 !important; }
 .del { background: var(--del-bg); color: var(--del-fg); }
 .add { background: var(--add-bg); color: var(--add-fg); }
-.more { padding: 4px 10px; border-top: 1px solid var(--line-2); }
-.imgs { padding: var(--sp2) var(--pad-x); border-top: 1px solid var(--line-2); }
+.more { padding: 4px 10px; }
+.imgs { padding: var(--sp2) var(--pad-x); }
 .imgs img { max-width: 100%; max-height: 320px; border-radius: var(--r-sm); }
 </style>

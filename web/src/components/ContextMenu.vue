@@ -63,11 +63,10 @@ onUnmounted(() => {
       <div
         v-else
         class="mi"
-        :class="{ dis: it.disabled, danger: it.danger, open: sub === i }"
+        :class="{ dis: it.disabled, danger: it.danger, open: sub === i, cur: it.check }"
         @mouseenter="!view.mobile && (sub = it.children ? i : -1)"
         @click="run(it, i)"
       >
-        <span class="ic"><Icon v-if="it.check" name="check" :size="16" /><Icon v-else-if="it.icon" :name="it.icon" :size="16" /></span>
         <span class="grow ellipsis">{{ it.label }}</span>
         <span v-if="it.hint" class="key">{{ it.hint }}</span>
         <span v-if="it.key && !view.mobile" class="key">{{ it.key }}</span>
@@ -76,8 +75,7 @@ onUnmounted(() => {
         <div v-if="it.children && sub === i" class="ctxmenu submenu" :class="{ left: subLeft, inline: view.mobile }" @click.stop>
           <template v-for="(c, j) in it.children" :key="j">
             <div v-if="c === '-'" class="sep" />
-            <div v-else class="mi" :class="{ dis: c.disabled, danger: c.danger }" @click="run(c, j)">
-              <span class="ic"><Icon v-if="c.check" name="check" :size="16" /><Icon v-else-if="c.icon" :name="c.icon" :size="16" /></span>
+            <div v-else class="mi" :class="{ dis: c.disabled, danger: c.danger, cur: c.check }" @click="run(c, j)">
               <span class="grow ellipsis">{{ c.label }}</span>
               <span v-if="c.hint" class="key">{{ c.hint }}</span>
             </div>
@@ -89,19 +87,19 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.ctxmenu { position: fixed; z-index: 70; min-width: 240px; max-width: 340px; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 6px; user-select: none; animation: pop 0.1s ease-out; font-size: var(--fs-sm); }
-.submenu { position: absolute; left: calc(100% + 2px); top: -6px; }
+.ctxmenu { position: fixed; z-index: 70; min-width: 200px; max-width: 340px; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 5px; user-select: none; animation: pop 0.1s ease-out; font-size: var(--fs-sm); }
+.submenu { position: absolute; left: calc(100% + 2px); top: -5px; }
 .submenu.left { left: auto; right: calc(100% + 2px); }
 /* 窄屏：子菜单直接在下面展开 */
-.submenu.inline { position: static; box-shadow: none; border: 0; padding: 2px 0 2px 16px; min-width: 0; background: transparent; animation: none; width: 100%; }
-.mi { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 34px; padding: 0 10px 0 8px; border-radius: var(--r-sm); cursor: pointer; color: var(--text); }
+.submenu.inline { position: static; box-shadow: none; border: 0; padding: 2px 0 2px 12px; min-width: 0; background: transparent; animation: none; width: 100%; }
+.mi { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: var(--r-sm); cursor: pointer; color: var(--text); }
 .mi:hover, .mi.open { background: var(--hover); }
 .mi.dis { opacity: 0.4; cursor: default; }
 .mi.dis:hover { background: transparent; }
 .mi.danger { color: var(--err); }
-.ic { width: 18px; display: inline-flex; justify-content: center; color: var(--text-2); }
-.danger .ic { color: var(--err); }
+/* 勾选过的项（开关、当前选项）：不开头的 ✓ 图标，直接把这一项标成主题色 */
+.mi.cur { color: var(--accent-text); }
 .key { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
 .chev { color: var(--text-3); }
-.sep { margin: 5px 6px; }
+.sep { margin: 4px 4px; }
 </style>

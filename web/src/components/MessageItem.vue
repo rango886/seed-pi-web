@@ -24,11 +24,19 @@ const blocks = computed(() => (Array.isArray(props.m.content) ? props.m.content.
 // 留个空框在那里没意义，还占地方
 const showThinking = (b) => b.type === 'thinking' && (!!b.redacted || !!(b.thinking || '').trim());
 const streaming = computed(() => props.m.stopReason === 'pending');
+// 消息的时间：今天只显示 HH:MM，不是今天的再带上月/日
+const clock = (t) => {
+  const d = new Date(typeof t === 'number' ? t : Date.parse(t || ''));
+  if (isNaN(d.getTime())) return '';
+  const hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toDateString() === new Date().toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+};
+const time = computed(() => clock(props.m.timestamp));
 const meta = computed(() => {
   const m = props.m;
   if (role.value !== 'assistant' || streaming.value) return '';
   const u = m.usage;
-  return [m.model, u ? `↑${fmtTokens(u.input + (u.cacheRead || 0))} ↓${fmtTokens(u.output)}` : '', u?.cost?.total ? `$${u.cost.total.toFixed(4)}` : '']
+  return [m.model, u ? `↑${fmtTokens(u.input + (u.cacheRead || 0))} ↓${fmtTokens(u.output)}` : '', u?.cost?.total ? `$${u.cost.total.toFixed(4)}` : '', time.value]
     .filter(Boolean)
     .join(' · ');
 });
@@ -38,6 +46,8 @@ const aiText = computed(() =>
     .map((b) => b.text)
     .join('\n\n'),
 );
+// 折叠时的单行预览：把思考里的换行都抹平，只留一段（太长就交给 CSS 截断）
+const thinkPrev = (b) => (b.thinking || '').trim().replace(/\s+/g, ' ').slice(0, 200);
 const customText = computed(() => (typeof props.m.content === 'string' ? props.m.content : textOf(props.m.content)));
 const copyText = computed(() => (role.value === 'user' ? userText.value : aiText.value));
 // 右键菜单统一在 App 层弹，所以只能把文本先存下来，菜单里按 DOM 上的 key 回来取
@@ -62,6 +72,8 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
           <img v-for="(im, i) in images" :key="i" :src="`data:${im.mimeType};base64,${im.data}`" />
         </div>
       </div>
+      <!-- 消息底部的小字（模型/用量/时间）：默认不显示，右键菜单里手动打开才出现 -->
+      <div v-if="UI.showMeta && time" class="meta">{{ time }}</div>
     </div>
   </div>
 
@@ -72,21 +84,21 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
         <!-- 思考过程：和工具调用用同一套 .blk 卡片样式 -->
         <details v-if="showThinking(b)" class="blk" :open="UI.thinkingOpen || (streaming && i === blocks.length - 1)">
           <summary class="blk-head">
-            <span class="blk-ic accent"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" /></svg></span>
-            <span class="blk-chip soft">思考过程{{ b.redacted ? '（已隐藏）' : '' }}</span>
-            <span class="grow" />
+            <span class="blk-chip soft">Thinking{{ b.redacted ? ' (hidden)' : '' }}</span>
+            <!-- 折叠时像工具调用那样在后面跟一行灰字预览；展开了由 CSS 藏起来，免得和下面的内容重复 -->
+            <span v-if="thinkPrev(b)" class="ellipsis grow blk-sum think-prev" :title="thinkPrev(b)">{{ thinkPrev(b) }}</span>
             <span v-if="streaming && i === blocks.length - 1" class="spin" />
             <svg class="blk-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
           </summary>
-          <div class="blk-body prose dim">{{ b.thinking }}</div>
+          <div class="blk-body prose dim">{{ (b.thinking || '').trim() }}</div>
         </details>
-        <div v-else-if="b.type === 'text' && b.text" class="bubble ai-bubble md" v-html="renderMarkdown(b.text)" />
+        <div v-else-if="b.type === 'text' && b.text" class="bubble ai-bubble md" :class="{ boxed: UI.hoverBox }" v-html="renderMarkdown(b.text)" />
         <ToolCard v-else-if="b.type === 'toolCall'" :call="b" :exec="S.tools[b.id]" :streaming="streaming" />
       </template>
       <div v-if="m.stopReason === 'error'" class="errbox">出错：{{ stripAnsi(m.errorMessage || '未知错误') }}</div>
       <div v-else-if="m.stopReason === 'aborted'" class="note-sm">已中断</div>
       <div v-else-if="m.stopReason === 'length'" class="note-sm warn">达到输出长度上限，回复被截断</div>
-      <!-- 模型/token/价格：默认不显示，右键菜单里手动打开才出现 -->
+      <!-- 模型/token/价格/时间：默认不显示，右键菜单里手动打开才出现 -->
       <div v-if="UI.showMeta && meta" class="meta">{{ meta }}</div>
     </div>
   </div>
@@ -101,7 +113,7 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
       <span v-else class="badge" :class="m.exitCode === 0 ? 'ok' : 'err'">exit {{ m.exitCode ?? '?' }}</span>
       <span v-if="m.excludeFromContext" class="badge">不进上下文</span>
     </div>
-    <pre v-if="m.output" class="out">{{ stripAnsi(m.output) }}</pre>
+    <pre v-if="m.output" class="out">{{ stripAnsi(m.output).trimEnd() }}</pre>
   </div>
 
   <!-- 上下文压缩 / 分支摘要：像聊天软件里居中的系统提示 -->
@@ -142,6 +154,8 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
 .bubble { border-radius: var(--r-bubble); padding: calc(var(--sp2) + 2px) var(--pad-x); line-height: var(--lh); max-width: 100%; }
 .me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); }
 .ai-bubble { background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); }
+/* 正文一直带个框，和思考/工具卡片一个样子，一眼能看出这块属于哪条回复。设置里能关 */
+.ai-bubble.boxed { align-self: stretch; padding: calc(var(--sp2) - 1px) var(--pad-x); border: 1px solid color-mix(in srgb, var(--text-3) 45%, var(--line)); border-radius: var(--r-md); }
 .pre { white-space: pre-wrap; word-break: break-word; }
 .imgs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .imgs img { max-height: 160px; max-width: 260px; border-radius: var(--r-sm); display: block; }
@@ -160,8 +174,9 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
 .note-sm { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); }
 /* 打开后才显示的模型/用量 */
 .meta { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
-/* 思考过程的灯泡图标跟工具卡片一样用主题色，一眼能看出这是同一种“过程块” */
-.blk-ic.accent { color: var(--accent-text); }
+/* 思考折叠时那一行预览：跟工具调用的摘要同色，但用正文字体 */
+.think-prev { font-family: var(--font); }
+.blk[open] .think-prev { display: none; }
 
 /* 卡片类：shell、系统消息 */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }

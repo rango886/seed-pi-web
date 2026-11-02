@@ -2,7 +2,7 @@
 :root {
   /* 由 settings.js 覆盖的可调参数 */
   --accent: #3b82f6;
-  --font: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif;
   --font-code: 'Sarasa Term SC', Consolas, monospace;
   --fs: 14px;
   --fs-code: 13px;
@@ -79,74 +79,52 @@
   --err-c: var(--err);
 }
 
+/* 深色：纯黑底（不用蓝灰），层次的差异只靠一点点灰阶和描边 */
 [data-theme='dark'] {
-  --bg: #121316;
-  --panel: #1a1b1f;
-  --panel-2: #202127;
-  --chat-bg: #16171a;
-  --bubble-ai: #22242a;
-  --elev: #24262c;
-  --text: #e4e6eb;
-  --text-2: #a8adb6;
-  --text-3: #6f7580;
-  --line: #2c2f36;
-  --line-2: #25272d;
-  --hover: rgba(255, 255, 255, 0.05);
-  --active: rgba(255, 255, 255, 0.09);
-  --code-bg: #1b1d22;
+  --bg: #000000;
+  --panel: #0a0a0a;
+  --panel-2: #0f0f0f;
+  --chat-bg: #000000;
+  --bubble-ai: #101010;
+  --elev: #0d0d0d;
+  --text: #ededed;
+  --text-2: #a0a0a0;
+  --text-3: #6b6b6b;
+  --line: #242424;
+  --line-2: #1a1a1a;
+  --hover: rgba(255, 255, 255, 0.06);
+  --active: rgba(255, 255, 255, 0.1);
+  --code-bg: #0d0d0d;
   --inline-code: rgba(255, 255, 255, 0.08);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.8), 0 2px 8px rgba(0, 0, 0, 0.5);
   --accent-text: color-mix(in srgb, var(--accent) 70%, white);
   --accent-hover: color-mix(in srgb, var(--accent) 85%, white);
-  --ok: #4ade80;
-  --err: #f87171;
-  --warn: #fbbf24;
-  --err-bg: rgba(248, 113, 113, 0.1);
-  --add-bg: rgba(74, 222, 128, 0.1);
-  --add-fg: #86efac;
-  --del-bg: rgba(248, 113, 113, 0.1);
-  --del-fg: #fca5a5;
-  --scroll: rgba(255, 255, 255, 0.16);
-  --hl-comment: #7d8590;
+  --ok: #3fbf5f;
+  --err: #ff6b6b;
+  --warn: #e5a63b;
+  --err-bg: rgba(255, 107, 107, 0.12);
+  --add-bg: rgba(63, 191, 95, 0.12);
+  --add-fg: #7ee787;
+  --del-bg: rgba(255, 107, 107, 0.12);
+  --del-fg: #ffa198;
+  --scroll: rgba(255, 255, 255, 0.18);
+  --hl-comment: #7d7d7d;
   --hl-keyword: #ff7b72;
   --hl-string: #a5d6ff;
   --hl-number: #79c0ff;
   --hl-title: #d2a8ff;
   --hl-var: #ffa657;
-  --hl-meta: #8b949e;
+  --hl-meta: #8b8b8b;
   color-scheme: dark;
 }
 
-/* 用户气泡三种配色 */
-:root,
-[data-bubble='accent'] {
+/* 自己的气泡：颜色直接跟主题色走，文字用白色 */
+:root {
   --bubble-me: var(--accent);
   --bubble-me-text: #fff;
-}
-[data-bubble='soft'] {
-  --bubble-me: color-mix(in srgb, var(--accent) 16%, var(--panel));
-  --bubble-me-text: var(--text);
-}
-[data-bubble='green'] {
-  --bubble-me: #95ec69;
-  --bubble-me-text: #111;
-}
-[data-theme='dark'][data-bubble='green'] {
-  --bubble-me: #3eb575;
-  --bubble-me-text: #fff;
-}
-/* GitHub 风：像 GitHub 评论框那样，淡蓝底 + 细蓝边 */
-[data-bubble='github'] {
-  --bubble-me: #ddf4ff;
-  --bubble-me-text: #1f2328;
-  --bubble-me-border: #54aeff66;
-}
-[data-theme='dark'][data-bubble='github'] {
-  --bubble-me: #388bfd1a;
-  --bubble-me-text: #f0f6fc;
-  --bubble-me-border: #388bfd66;
+  --bubble-me-border: transparent;
 }
 
 * { box-sizing: border-box; }
@@ -255,25 +233,28 @@ a:hover { text-decoration: underline; }
 /* 弹出菜单（下拉） */
 .pop { position: absolute; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 6px; z-index: 40; animation: pop 0.12s ease-out; }
 
-/* ---- 折叠块：思考过程、工具调用共用同一套外观（框是灰的、小标签跟主题色），改这里两边一起变 ---- */
-.blk { border: 1px solid var(--line); background: var(--panel); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-sm); align-self: stretch; max-width: 100%; transition: border-color 0.15s; }
-.blk:hover { border-color: color-mix(in srgb, var(--text-3) 45%, var(--line)); }
-.blk-head { display: flex; align-items: center; gap: 8px; padding: calc(var(--sp2) - 1px) var(--pad-x); cursor: pointer; user-select: none; }
+/* ---- 过程块：思考过程、工具调用共用同一套外观。
+   不再是卡片：只有一行头部，鼠标移上去浮出一层浅底表示能点；展开的内容靠浅色面板拉出层次，不用描边。
+   头部和正文、正文内容都用同一个 --pad-x 左右内边距，跟对话正文的左边缘对成一条线 ---- */
+.blk { font-size: var(--fs-sm); align-self: stretch; max-width: 100%; margin: -2px 0; }
+.blk-head { display: flex; align-items: center; gap: 8px; padding: 3px var(--pad-x); border-radius: var(--r-sm); cursor: pointer; user-select: none; transition: background 0.12s; }
 .blk-head:hover { background: var(--hover); }
 .blk > summary { list-style: none; }
 .blk > summary::-webkit-details-marker { display: none; }
-.blk-ic { width: 16px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); }
-.blk-chip { flex: none; font-family: var(--font-code); font-size: var(--fs-xs); padding: 1px 8px; border-radius: var(--r-xs); background: var(--accent-soft); color: var(--accent-text); }
-.blk-chip.soft { font-family: var(--font); background: var(--accent-soft); color: var(--accent-text); }
+/* 没有卡片以后，头部这一行就是主体：标签跟摘要用同一个字号，只靠颜色分开 */
+.blk-chip { flex: none; font-family: var(--font-code); font-size: var(--fs-sm); color: var(--accent-text); }
+.blk-chip.soft { font-family: var(--font); }
 .blk-sum { color: var(--text-3); font-family: var(--font-code); font-size: var(--fs-sm); }
 .blk-meta { flex: none; color: var(--text-3); font-size: var(--fs-xs); }
-.blk-chev { margin-left: auto; flex: none; color: var(--text-3); transition: transform 0.15s; }
+.blk-chev { margin-left: auto; flex: none; color: var(--text-3); opacity: 0.45; transition: transform 0.15s, opacity 0.15s; }
+.blk-head:hover .blk-chev { opacity: 1; }
 .blk.open .blk-chev,
 .blk[open] .blk-chev { transform: rotate(90deg); }
 .blk-head .spin { width: 11px; height: 11px; }
-.blk-body { margin: 0; padding: var(--sp2) var(--pad-x); border-top: 1px solid var(--line-2); background: var(--code-bg); white-space: pre-wrap; word-break: break-word; font-size: var(--fs-code); font-family: var(--font-code); line-height: 1.6; max-height: 380px; overflow: auto; }
-/* 散文类内容（思考过程）不用等宽字体 */
-.blk-body.prose { font-family: var(--font); font-size: var(--fs-sm); line-height: var(--lh); }
+/* 展开后的内容跟头部同一字号（--fs-sm），思考过程那种散文和工具输出都是，只是字体不同 */
+.blk-body { margin: 2px 0; padding: var(--sp2) var(--pad-x); background: var(--code-bg); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; font-size: var(--fs-sm); font-family: var(--font-code); line-height: 1.6; max-height: 380px; overflow: auto; }
+/* 散文类内容（思考过程）不用等宽字体，也不用面板底色：缩进的一段灰字，和正文分开就够了 */
+.blk-body.prose { font-family: var(--font); line-height: var(--lh); background: none; }
 .blk-body.dim { color: var(--text-3); }
 
 /* spinner / 状态点 */
@@ -341,7 +322,7 @@ a:hover { text-decoration: underline; }
 .hljs-strong { font-weight: 600; }
 
 :root { --term-bg: #ffffff; }
-[data-theme='dark'] { --term-bg: #16171a; }
+[data-theme='dark'] { --term-bg: #000000; }
 
 @media (max-width: 768px) {
   .modal-mask { padding-top: 6vh; }

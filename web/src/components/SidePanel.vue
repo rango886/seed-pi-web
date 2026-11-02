@@ -70,11 +70,11 @@ function setDirLabel(v) {
 }
 function dirMenu(e) {
   openMenu(e.clientX, e.clientY, [
-    { label: '全部展开', icon: 'expand', run: expandAll },
-    { label: '全部折叠', icon: 'collapse', run: collapseAll },
+    { label: '全部展开', run: expandAll },
+    { label: '全部折叠', run: collapseAll },
     '-',
-    { label: '显示完整路径', icon: 'folder', check: dirLabel.value === 'path', run: () => setDirLabel('path') },
-    { label: '只显示文件夹名称', icon: 'folder', check: dirLabel.value === 'name', run: () => setDirLabel('name') },
+    { label: '显示完整路径', check: dirLabel.value === 'path', run: () => setDirLabel('path') },
+    { label: '只显示文件夹名称', check: dirLabel.value === 'name', run: () => setDirLabel('name') },
   ]);
 }
 // 列表空白处的右键：显示全部目录时接管，否则交回页面自己的菜单
@@ -159,10 +159,10 @@ function onNew() {
 }
 function sessionMenu(e, s) {
   openMenu(e.clientX, e.clientY, [
-    { label: '打开', icon: 'chat', run: () => open(s) },
-    s.file === S.agent?.sessionFile && { label: '重命名…', icon: 'edit', run: () => renameSession() },
-    { label: '复制文件路径', icon: 'copy', run: () => navigator.clipboard.writeText(s.file) },
-    ...(s.unsaved ? [] : ['-', { label: '删除', icon: 'trash', danger: true, run: () => deleteSession(s) }]),
+    { label: '打开', run: () => open(s) },
+    s.file === S.agent?.sessionFile && { label: '重命名…', run: () => renameSession() },
+    { label: '复制文件路径', run: () => navigator.clipboard.writeText(s.file) },
+    ...(s.unsaved ? [] : ['-', { label: '删除', danger: true, run: () => deleteSession(s) }]),
   ].filter(Boolean));
 }
 function focusSearch() {
@@ -216,7 +216,7 @@ function focusSearch() {
               @click="open(s)"
               @contextmenu.prevent.stop="sessionMenu($event, s)"
             >
-              <span class="st" :class="stat(s)?.cls" :title="stat(s)?.tip" />
+              <span v-if="stat(s)?.cls" class="st" :class="stat(s).cls" :title="stat(s).tip" />
               <span class="ellipsis grow stitle">{{ s.title }}</span>
               <span class="sinfo">{{ s.unsaved ? '未保存' : `${s.messages} 条 · ${timeOf(s.modified)}` }}</span>
               <button v-if="!s.unsaved" class="del" title="删除" @click.stop="deleteSession(s)"><Icon name="trash" :size="14" /></button>
@@ -289,7 +289,7 @@ function focusSearch() {
 .sess:hover .sinfo { display: none; }
 .del:hover { background: var(--err); color: #fff; }
 .sess .dot { margin: 0 4px; flex: none; }
-/* 会话前面的状态图标：没状态时只占位，标题对齐 */
+/* 会话前面的状态点：没状态时整个不画（见模板里的 v-if），标题直接顶到左边，不留一块空白 */
 .st { width: 8px; height: 8px; flex: none; margin-right: -2px; border-radius: 50%; position: relative; }
 .st.run { border: 2px solid var(--accent); border-right-color: transparent; width: 10px; height: 10px; margin: 0 -3px 0 -1px; animation: st-spin 0.8s linear infinite; }
 .st.new { background: var(--accent); }

@@ -155,7 +155,18 @@ const model = computed(() => S.state?.model);
           </div>
         </div>
 
-        <div v-for="(m, i) in S.messages" :key="m._k" class="mw" :class="{ live: i >= S.messages.length - 2 }"><MessageItem :m="m" /></div>
+        <div
+          v-for="(m, i) in S.messages"
+          :key="m._k"
+          class="mw"
+          :class="{
+            live: i >= S.messages.length - 2,
+            // 连着好几个助手消息（一次回复里做了好几步工具）算同一条，中间不要留整段间距
+            tight: i > 0 && m.role === 'assistant' && S.messages[i - 1]?.role === 'assistant',
+          }"
+        >
+          <MessageItem :m="m" />
+        </div>
 
         <div v-if="S.running || S.compacting || S.retry" class="working">
           <span class="typing"><i /><i /><i /></span>
@@ -210,6 +221,8 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
 .detach-hint { margin-top: 6px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.7; }
 .mw { content-visibility: auto; contain-intrinsic-size: auto 160px; }
 .mw.live { content-visibility: visible; }
+/* 连续的助手消息：上一条的尾巴里本来就带着 24px 的段间距，这里退回去，只留消息内部那种 8px */
+.mw.tight { margin-top: calc(var(--sp2) - var(--sp5)); }
 .tobottom { position: absolute; left: 50%; top: -52px; transform: translateX(-50%); width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 5; }
 .tobottom:hover { color: var(--accent-text); }
 /* --sb 是滚动条左右两边预留的总宽度（scrollbar-gutter: stable both-edges），输入框两边各让一半，和对话对齐。

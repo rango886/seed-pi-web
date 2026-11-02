@@ -1,110 +1,128 @@
-// 选目录的窗口：左边是最近用过 / 正在跑的目录（完整路径），右边两种看法
-//  - 多栏：像 mac 的 Finder，点一层右边多一栏，层数多了横向滚动
-//  - 树状：一层层展开的树
+// 选目录的窗口：左边是最近用过的目录，右边上面是地址栏、下面是目录树
+// 地址栏里输入还不存在的路径，回车就直接建出来；打字过程中树会跟着展开，
+// 并且会把“最近使用”里能接下去的路径灰着提示在后面（Tab / → 接受）
 // 选好以后要么在当前标签页打开 / 开新会话，要么丢到新标签页去（Ctrl+点击也行）
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
-import { S, openDir, newSessionIn, openInNewTab } from '../store.js';
+import { S, openDir, newSessionIn, openInNewTab, toast } from '../store.js';
+import { openMenu } from '../settings.js';
 import { http } from '../api.js';
 import { relTime } from '../util.js';
 import Icon from './Icon.vue';
 import DirTreeNode from './DirTreeNode.vue';
 
 const mode = computed(() => S.dirPickerMode || 'switch');
-const sep = computed(() => S.info.sep || '/');
-// 上次用的是多栏还是树状，记在 localStorage 里，下次打开还用它
-const VIEW_KEY = 'pi-web-dir-view';
-const viewMode = ref(localStorage.getItem(VIEW_KEY) === 'tree' ? 'tree' : 'cols');
-watch(viewMode, (v) => localStorage.setItem(VIEW_KEY, v));
+const norm = (p) => (p || '').replace(/[\\/]+$/, '').toLowerCase();
+const same = (a, b) => !!a && !!b && norm(a) === norm(b);
 
 const roots = ref([]);
-const cols = ref([]); // [{ path, parent, sep, entries }]，当前展开的每一层
 const current = ref(''); // 选中的目录（完整路径）
 const pathInput = ref('');
-const filter = ref('');
 const error = ref('');
 const recent = ref([]);
-const colsEl = ref(null);
 const inputEl = ref(null);
-
-const norm = (p) => (p || '').replace(/[\\/]+$/, '').toLowerCase();
-const join = (dir, name, s = sep.value) => (dir.endsWith(s) ? dir + name : dir + s + name);
-
-const list = (p) => http.get('/api/fs/list', { path: p, dirsOnly: 1 });
+const ghostEl = ref(null);
+// 右键菜单发下去的命令：{ mode: 'expand' | 'collapse', target: 节点路径（空 = 整棵树） }
+const cmd = ref(null);
+// 新建目录以后 +1：已经展开着的节点重新读一遍子目录，新目录才会出现在树里
+const ver = ref(0);
 
 function select(p) {
   current.value = p;
   pathInput.value = p;
+  cmd.value = null; // 手选了新目标：之前“展开所有”的惯性到此为止，别让它继续往新分支上滑
 }
-function pickInTree(p) {
-  select(p);
-}
-function scrollEnd() {
-  nextTick(() => {
-    const el = colsEl.value;
-    if (!el) return;
-    // 让最深的那一栏完整露出来（它右边缘贴齐可视区，前面更浅的栏自然往左收）
-    const last = [...el.querySelectorAll('.col')].pop();
-    if (!last) return;
-    el.scrollLeft = Math.max(0, last.offsetLeft + last.offsetWidth - el.clientWidth + 6);
-  });
-}
-const isCurrent = (p) => !!current.value && norm(p) === norm(current.value);
+const pickInTree = (p) => select(p);
 
-const filtered = (c) => (filter.value ? c.entries.filter((e) => e.name.toLowerCase().includes(filter.value.toLowerCase())) : c.entries);
-
-/** 打开某个目录：从磁盘根开始一层层把栏目铺出来 */
+/** 把树展开到 p 并选中它（p 得是已经存在的目录） */
 async function reveal(p) {
   if (!p) return;
   try {
     if (!roots.value.length) roots.value = await http.get('/api/fs/roots');
-    const root = roots.value.find((r) => norm(p).startsWith(norm(r.path)));
-    if (!root) throw new Error(`找不到 ${p} 所在的磁盘`);
-    const segs = p.slice(root.path.length).split(/[\\/]/).filter(Boolean);
-    const stack = [];
-    let cur = root.path;
-    for (const s of segs) {
-      stack.push(await list(cur));
-      cur = join(cur, s);
-    }
-    stack.push(await list(cur));
-    cols.value = stack;
-    select(cur);
-    error.value = '';
-    scrollEnd();
-  } catch (e) {
-    error.value = e.message;
-    cols.value = [];
+    if (!roots.value.some((r) => norm(p).startsWith(norm(r.path)))) throw new Error(`找不到 ${p} 所在的磁盘`);
     select(p);
-  }
-}
-
-/** 点某一栏里的目录：右边换成一栏新的（更深的层丢掉） */
-async function enter(i, entry) {
-  const p = join(cols.value[i].path, entry.name);
-  cols.value = cols.value.slice(0, i + 1);
-  try {
-    const d = await list(p);
-    cols.value = [...cols.value, d];
-    select(d.path);
     error.value = '';
-    scrollEnd();
   } catch (e) {
     error.value = e.message;
   }
 }
 
-async function clickRoot(r) {
-  cols.value = [];
+/** 这个路径是不是一个存在的目录（后端的 stat 很便宜，打字时也能一直问） */
+async function dirOf(p) {
   try {
-    const d = await list(r.path);
-    cols.value = [d];
-    select(d.path);
-    error.value = '';
-    scrollEnd();
+    const r = await http.get('/api/fs/stat', { path: p });
+    return r.exists && r.dir ? r.path : '';
+  } catch {
+    return '';
+  }
+}
+
+/** 地址栏回车：目录在就进去；不在就直接建出来（父目录一起建）再进去 */
+async function go() {
+  const p = pathInput.value.trim();
+  if (!p) return;
+  const dir = await dirOf(p);
+  if (dir) return reveal(dir);
+  try {
+    const r = await http.post('/api/fs/mkdir', { path: p });
+    ver.value++; // 已经展开着的父目录重新读一遍，新目录才会出现在树里
+    await reveal(r.path);
+    if (r.created) toast(`已新建目录 ${r.path}`);
   } catch (e) {
     error.value = e.message;
   }
+}
+
+// 打字过程中同步树：输入到一半、又刚好是个存在的目录，就先把树展开过去（不存在的等回车再说）
+let syncTimer = 0;
+watch(pathInput, (v) => {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    const p = (v || '').trim();
+    if (!p || same(p, current.value)) return;
+    const dir = await dirOf(p);
+    if (dir && !same(dir, current.value)) reveal(dir);
+  }, 260);
+});
+
+// 灰色补全：从“最近使用”里找一条以当前输入开头的路径，把剩下的部分灰着显示在后面
+const ghost = computed(() => {
+  const v = pathInput.value;
+  // 框里的内容和选中的目录正好一样（刚点了最近使用、或者刚同步过去）：不用提示
+  if (!v || same(v, current.value)) return '';
+  const n = norm(v);
+  const hit = recent.value
+    .map((r) => r.cwd)
+    .filter((p) => p && norm(p) !== n && norm(p).startsWith(n))
+    .sort((a, b) => a.length - b.length)[0];
+  return hit ? hit.slice(v.length) : '';
+});
+function acceptGhost() {
+  if (!ghost.value) return false;
+  pathInput.value += ghost.value;
+  return true;
+}
+// 路径很长时输入框内部会横向滚动，灰字得跟着滚，不然就对不上了
+function syncGhostScroll() {
+  if (inputEl.value && ghostEl.value) ghostEl.value.scrollLeft = inputEl.value.scrollLeft;
+}
+watch(pathInput, () => nextTick(syncGhostScroll));
+function onPathKey(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    return go();
+  }
+  const atEnd = inputEl.value?.selectionStart === pathInput.value.length;
+  if (atEnd && (e.key === 'Tab' || e.key === 'ArrowRight') && acceptGhost()) e.preventDefault();
+}
+
+/** 树上的右键：展开/折叠这一棵子树；“展开所有”这种就是整棵树 */
+function treeMenu(e, path) {
+  const all = !path;
+  openMenu(e.clientX, e.clientY, [
+    { label: all ? '全部展开' : '展开所有子目录', run: () => (cmd.value = { mode: 'expand', target: path }) },
+    { label: all ? '全部折叠' : '折叠所有子目录', run: () => (cmd.value = { mode: 'collapse', target: path }) },
+  ]);
 }
 
 // ---- 打开 / 新建 ----
@@ -138,7 +156,6 @@ watch(
   () => S.dirPicker,
   async (v) => {
     if (!v) return;
-    filter.value = '';
     error.value = '';
     recent.value = await http.get('/api/recent-dirs').catch(() => []);
     await reveal(S.cwd || S.info.home);
@@ -163,59 +180,26 @@ function onKey(e) {
       </div>
 
       <div class="modal-body">
-        <div class="top">
-          <input ref="inputEl" v-model="pathInput" class="input grow mono" placeholder="输入完整路径后回车" @keydown.enter="reveal(pathInput)" />
-          <input v-if="viewMode === 'cols'" v-model="filter" class="input filter" placeholder="过滤目录" />
-          <div class="seg">
-            <button :class="{ on: viewMode === 'cols' }" title="多栏（像 Finder）" @click="viewMode = 'cols'">多栏</button>
-            <button :class="{ on: viewMode === 'tree' }" title="树状" @click="viewMode = 'tree'">树状</button>
-          </div>
-        </div>
-        <div v-if="error" class="err small">{{ error }}</div>
-
         <div class="main">
           <aside class="left">
-            <div class="grp">运行中的 pi</div>
-            <div v-for="a in S.agents" :key="a.id" class="item" :class="{ active: isCurrent(a.cwd) }" :title="a.cwd" @click="reveal(a.cwd)" @dblclick="openNow(a.cwd)">
-              <span class="dot" :class="a.running ? 'busy' : 'on'" />
-              <span class="grow path">{{ a.cwd }}</span>
-            </div>
-            <div v-if="!S.agents.length" class="dim pad">无</div>
             <div class="grp">最近使用</div>
-            <div v-for="r in recent" :key="r.cwd" class="item" :class="{ active: isCurrent(r.cwd) }" :title="r.cwd" @click="reveal(r.cwd)" @dblclick="openNow(r.cwd)">
+            <div v-for="r in recent" :key="r.cwd" class="item" :class="{ active: same(r.cwd, current) }" :title="r.cwd" @click="reveal(r.cwd)" @dblclick="openNow(r.cwd)">
               <span class="grow path">{{ r.cwd }}</span>
               <span class="tiny dim">{{ relTime(r.modified) }}</span>
             </div>
+            <div v-if="!recent.length" class="dim pad">无</div>
           </aside>
 
-          <div class="right">
-            <!-- 多栏：最左边固定一列磁盘根目录（吸在左侧不跟着横滚），右边每进入一层多一栏 -->
-            <div v-if="viewMode === 'cols'" ref="colsEl" class="cols">
-              <div class="roots">
-                <div v-for="r in roots" :key="r.path" class="row" :class="{ active: norm(current).startsWith(norm(r.path)) }" :title="r.path" @click="clickRoot(r)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="9" rx="1.6" /><path d="M6 8V5.5h4l2 2.5" /></svg>
-                  <span class="ellipsis">{{ r.name }}</span>
-                </div>
-              </div>
-              <div v-for="(c, i) in cols" :key="c.path" class="col">
-                <div v-if="!filtered(c).length" class="pad dim tiny">没有子目录</div>
-                <div
-                  v-for="e in filtered(c)"
-                  :key="e.name"
-                  class="row"
-                  :class="{ active: isCurrent(join(c.path, e.name)), dim: e.name.startsWith('.') }"
-                  :title="join(c.path, e.name)"
-                  @click="enter(i, e)"
-                  @dblclick="openNow(join(c.path, e.name))"
-                >
-                  <Icon name="folder" :size="14" />
-                  <span class="ellipsis">{{ e.name }}</span>
-                </div>
+          <section class="right">
+            <div class="top">
+              <div class="pathbox">
+                <input ref="inputEl" v-model="pathInput" class="input path-input mono" placeholder="输入路径回车进入；不存在的会直接建出来" @keydown="onPathKey" @scroll="syncGhostScroll" />
+                <div v-if="ghost" ref="ghostEl" class="ghost" aria-hidden="true"><span class="ghost-typed">{{ pathInput }}</span><span class="ghost-rest">{{ ghost }}</span></div>
               </div>
             </div>
+            <div v-if="error" class="err small">{{ error }}</div>
 
-            <!-- 树状 -->
-            <div v-else class="tree">
+            <div class="tree" @contextmenu.prevent.stop="treeMenu($event, '')">
               <DirTreeNode
                 v-for="r in roots"
                 :key="r.path"
@@ -223,11 +207,14 @@ function onKey(e) {
                 :depth="0"
                 :selected="current"
                 :auto="current"
+                :cmd="cmd"
+                :ver="ver"
                 @pick="pickInTree"
                 @open="openNow"
+                @menu="treeMenu"
               />
             </div>
-          </div>
+          </section>
         </div>
       </div>
 
@@ -244,13 +231,7 @@ function onKey(e) {
 
 <style scoped>
 .dirs { width: min(1080px, 96vw); max-width: none; height: min(720px, 84vh); max-height: 84vh; }
-.dirs .modal-body { overflow: hidden; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
-.top { display: flex; align-items: center; gap: 8px; flex: none; }
-.filter { width: 160px; flex: none; font-size: var(--fs-sm); }
-.seg { display: flex; gap: 2px; padding: 3px; background: var(--active); border-radius: var(--r-md); flex: none; }
-.seg button { height: 26px; padding: 0 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
-.seg button:hover { color: var(--text); }
-.seg button.on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }
+.dirs .modal-body { overflow: hidden; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 .main { flex: 1; min-height: 0; display: flex; gap: 10px; }
 .left { width: 268px; flex: none; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); overflow-y: auto; padding: 4px 6px 10px; }
@@ -259,22 +240,21 @@ function onKey(e) {
 .item:hover { background: var(--hover); }
 .item.active { background: var(--accent-soft); }
 .item.active .path { color: var(--accent-text); }
-.item .dot { margin: 0 2px; }
 /* 左边一律显示完整路径，太长就换行显示，不截断 */
 .path { font-family: var(--font-code); font-size: var(--fs-xs); line-height: 1.35; white-space: normal; word-break: break-all; }
 .tiny { font-size: var(--fs-xs); }
 .pad { padding: 4px 10px; }
 .small { font-size: var(--fs-sm); }
 
-.right { flex: 1; min-width: 0; display: flex; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); overflow: hidden; }
-/* 左侧磁盘根目录：和右边每一栏长得一样（同样的卡片 / 内边距 / 圆角 / 行高），只是 sticky 吸在左边不跟着横滚 */
-.cols { display: flex; gap: 6px; align-items: stretch; overflow-x: auto; overflow-y: hidden; min-width: 0; flex: 1; padding: 6px; }
-.roots { width: 124px; flex: none; position: sticky; left: 0; z-index: 2; overflow-y: auto; padding: 4px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--panel-2); box-shadow: 3px 0 8px -4px rgba(15, 23, 42, 0.16); }
-.col { width: 218px; flex: none; overflow-y: auto; border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 4px; background: var(--panel-2); }
-.row { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-sm); white-space: nowrap; user-select: none; }
-.row:hover { background: var(--hover); }
-.row.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
-.tree { flex: 1; overflow: auto; padding: 6px; }
+.right { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); overflow: hidden; }
+.top { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
+.pathbox { position: relative; flex: 1; min-width: 0; }
+.path-input { width: 100%; }
+/* 灰色补全：和输入框同样的字体和内边距叠在它上面（1px 边框也算上），已经打出来的部分留空，剩下的灰字就接在光标后面 */
+.ghost { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 11px; font-family: var(--font-code); white-space: pre; overflow: hidden; pointer-events: none; color: var(--text-3); }
+.ghost-typed { visibility: hidden; }
+.err { padding: 0 8px 6px; color: var(--err); }
+.tree { flex: 1; min-height: 0; overflow: auto; padding: 6px; }
 
 .foot { align-items: center; gap: 8px; flex-wrap: wrap; }
 .pick { max-width: 100%; min-width: 0; flex: 0 1 auto; }
@@ -283,9 +263,7 @@ function onKey(e) {
 @media (max-width: 768px) {
   .dirs { width: 96vw; height: 86vh; }
   .main { flex-direction: column; }
-  .left { width: auto; max-height: 30%; }
-  .filter { display: none; }
+  .left { width: auto; flex: none; max-height: 30%; }
   .hint { display: none; }
-  .col { width: 70vw; }
 }
 </style>

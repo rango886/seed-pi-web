@@ -1,0 +1,80 @@
+/* 微信风格：聊天区浅灰底、面板纯白、绿色主色，圆角比现代风小一点
+   只换配色和几处控件外观，结构完全复用 style.css。
+   选择器都带 :root[data-ui='wechat']，比组件里的 scoped 样式多一级，稳稳盖过去 */
+
+:root[data-ui='wechat'] {
+  --bg: #ededed;
+  --panel: #ffffff;
+  --panel-2: #f7f7f7;
+  --chat-bg: #ededed;
+  --bubble-ai: #ffffff;
+  --elev: #ffffff;
+  --text: #191919;
+  --text-2: #5f5f5f;
+  --text-3: #9a9a9a;
+  --line: #e3e3e3;
+  --line-2: #ececec;
+  --hover: rgba(0, 0, 0, 0.045);
+  --active: rgba(0, 0, 0, 0.075);
+  --code-bg: #f6f6f6;
+  --inline-code: rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.05);
+  --ok: #07c160;
+  --err: #fa5151;
+  --warn: #ffb400;
+  --err-bg: #fdecec;
+  --add-bg: #e7f8ee;
+  --add-fg: #06893a;
+  --del-bg: #fdecec;
+  --del-fg: #a30f0f;
+  --scroll: rgba(0, 0, 0, 0.16);
+  --term-bg: #ffffff;
+  --r-bubble: calc(var(--r) * 0.9);
+}
+
+/* 深色：纯黑底，和另外两个样式保持一致 */
+:root[data-ui='wechat'][data-theme='dark'] {
+  --bg: #000000;
+  --panel: #0b0b0b;
+  --panel-2: #111111;
+  --chat-bg: #000000;
+  --bubble-ai: #101010;
+  --elev: #141414;
+  --text: #ededed;
+  --text-2: #a0a0a0;
+  --text-3: #6b6b6b;
+  --line: #242424;
+  --line-2: #1a1a1a;
+  --hover: rgba(255, 255, 255, 0.06);
+  --active: rgba(255, 255, 255, 0.1);
+  --code-bg: #0d0d0d;
+  --inline-code: rgba(255, 255, 255, 0.08);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.8), 0 2px 8px rgba(0, 0, 0, 0.5);
+  --ok: #3fbf5f;
+  --err: #ff6b6b;
+  --warn: #e5a63b;
+  --err-bg: rgba(255, 107, 107, 0.12);
+  --add-bg: rgba(63, 191, 95, 0.14);
+  --add-fg: #7ee787;
+  --del-bg: rgba(255, 107, 107, 0.12);
+  --del-fg: #ffa198;
+  --scroll: rgba(255, 255, 255, 0.18);
+  --term-bg: #000000;
+}
+
+/* 控件：微信风的主按钮是绿的、边角更方一点，输入框聚焦只描一圈细线 */
+:root[data-ui='wechat'] .btn.primary { background: var(--accent); border-color: var(--accent); }
+:root[data-ui='wechat'] .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+:root[data-ui='wechat'] .send { background: var(--accent); }
+:root[data-ui='wechat'] .send:hover { background: var(--accent-hover); }
+:root[data-ui='wechat'] .send:disabled { background: var(--line); color: var(--text-3); }
+:root[data-ui='wechat'] .box.focused { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); box-shadow: var(--shadow); }
+:root[data-ui='wechat'] .input:focus { border-color: var(--accent); box-shadow: none; }
+:root[data-ui='wechat'] .tab.active { background: var(--accent-soft); color: var(--accent-text); }
+:root[data-ui='wechat'] .sess.active { background: var(--panel); box-shadow: var(--shadow-sm); }
+:root[data-ui='wechat'] .sess.active .stitle { color: var(--accent-text); }
+:root[data-ui='wechat'] .blk-head:hover { background: var(--hover); }

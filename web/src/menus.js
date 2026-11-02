@@ -38,58 +38,54 @@ export function mainMenu(extra = []) {
   return [
     ...extra,
     ...(extra.length ? ['-'] : []),
-    { label: '新会话', icon: 'newchat', run: newSession },
-    { label: '切换会话…', icon: 'history', key: 'Ctrl+P', run: pickSession },
-    { label: '切换模型…', icon: 'model', key: 'Ctrl+L', run: openModelMenu },
+    { label: '新会话', run: newSession },
+    { label: '切换会话…', key: 'Ctrl+P', run: pickSession },
+    { label: '切换模型…', key: 'Ctrl+L', run: openModelMenu },
     S.thinkingLevels.length > 1 && {
       label: '思考强度',
-      icon: 'bulb',
       hint: levelName(cur),
       children: S.thinkingLevels.map((l) => ({ label: levelName(l), hint: l, check: l === cur, run: () => setThinking(l) })),
     },
     '-',
     {
       label: '当前会话',
-      icon: 'chat',
       children: [
-        { label: '重命名…', icon: 'edit', run: () => renameSession() },
-        { label: '从某条消息分叉…', icon: 'branch', run: pickFork, disabled: !idle },
-        { label: '复制为新会话', icon: 'copy', run: cloneSession, disabled: !idle },
-        { label: '压缩上下文', icon: 'compress', run: () => compact(), disabled: !idle },
+        { label: '重命名…', run: () => renameSession() },
+        { label: '从某条消息分叉…', run: pickFork, disabled: !idle },
+        { label: '复制为新会话', run: cloneSession, disabled: !idle },
+        { label: '压缩上下文', run: () => compact(), disabled: !idle },
         '-',
-        { label: '复制最后一条回复', icon: 'copy', run: copyLast },
-        { label: '导出 HTML', icon: 'export', run: () => exportHtml() },
-        { label: '会话信息', icon: 'info', run: showSessionInfo },
+        { label: '复制最后一条回复', run: copyLast },
+        { label: '导出 HTML', run: () => exportHtml() },
+        { label: '会话信息', run: showSessionInfo },
       ],
     },
     {
       label: 'pi 进程',
-      icon: 'cpu',
       children: [
-        { label: '重新加载（扩展/技能/设置）', icon: 'refresh', run: restartAgent },
-        { label: '在终端里打开 pi（设置/登录）', icon: 'terminal', run: () => openTerminal({ command: 'pi', title: 'pi' }) },
+        { label: '重新加载（扩展/技能/设置）', run: restartAgent },
+        { label: '在终端里打开 pi（设置/登录）', run: () => openTerminal({ command: 'pi', title: 'pi' }) },
         '-',
-        { label: '关闭这个会话的 pi', icon: 'power', run: quitAgent, danger: true },
+        { label: '关闭这个会话的 pi', run: quitAgent, danger: true },
       ],
     },
     '-',
-    { label: '切换工作目录…', icon: 'folder', run: () => openDirPicker('switch') },
-    { label: '会话侧栏', icon: 'sidebar', key: 'Ctrl+B', check: view.mobile ? view.drawer : view.side, run: () => toggleSide() },
-    { label: '文件', icon: 'folder', key: 'Ctrl+E', check: view.panel === 'files', run: () => togglePanel('files') },
-    { label: '进程', icon: 'cpu', check: view.panel === 'agents', run: () => togglePanel('agents') },
-    S.info.terminal && { label: '终端', icon: 'terminal', key: 'Ctrl+`', check: !!termIdOf(S.activeTab), run: toggleTerminal },
-    (S.tabs.length || S.terms.length) && { label: '关闭全部标签页', icon: 'closeall', run: () => closeAllTabs() },
+    { label: '切换工作目录…', run: () => openDirPicker('switch') },
+    { label: '会话侧栏', key: 'Ctrl+B', check: view.mobile ? view.drawer : view.side, run: () => toggleSide() },
+    { label: '文件', key: 'Ctrl+E', check: view.panel === 'files', run: () => togglePanel('files') },
+    { label: '进程', check: view.panel === 'agents', run: () => togglePanel('agents') },
+    S.info.terminal && { label: '终端', key: 'Ctrl+`', check: !!termIdOf(S.activeTab), run: toggleTerminal },
+    (S.tabs.length || S.terms.length) && { label: '关闭全部标签页', run: () => closeAllTabs() },
     '-',
-    { label: UI.showUsage ? '收起状态信息' : '展开状态信息（花费/tokens/上下文）', icon: 'chart', check: UI.showUsage, run: () => (UI.showUsage = !UI.showUsage) },
+    { label: UI.showUsage ? '收起状态信息' : '展开状态信息', check: UI.showUsage, run: () => (UI.showUsage = !UI.showUsage) },
     {
-      label: UI.showMeta ? '隐藏每条回复的模型与用量' : '显示每条回复的模型与用量',
-      icon: 'info',
+      label: UI.showMeta ? '隐藏时间、模型与用量' : '显示时间、模型与用量',
       check: UI.showMeta,
       run: () => (UI.showMeta = !UI.showMeta),
     },
     '-',
-    { label: '界面设置', icon: 'settings', key: 'Ctrl+,', run: () => (view.settingsOpen = true) },
-    { label: '快捷键', icon: 'keyboard', run: hotkeys },
+    { label: '界面设置', key: 'Ctrl+,', run: () => (view.settingsOpen = true) },
+    { label: '快捷键', run: hotkeys },
   ].filter(Boolean);
 }
 
@@ -97,7 +93,7 @@ export function mainMenu(extra = []) {
 export function contextExtras(target) {
   const out = [];
   const sel = String(window.getSelection?.() || '').trim();
-  if (sel) out.push({ label: '复制选中文字', icon: 'copy', key: 'Ctrl+C', run: () => navigator.clipboard.writeText(sel) });
+  if (sel) out.push({ label: '复制选中文字', key: 'Ctrl+C', run: () => navigator.clipboard.writeText(sel) });
   // 点在某条消息上：原来悬停出来的“⋯”里的东西，都收进右键菜单
   const msgEl = target.closest?.('[data-msg]');
   if (msgEl) {
@@ -105,17 +101,15 @@ export function contextExtras(target) {
     if (text) {
       out.push({
         label: '复制这条消息',
-        icon: 'copy',
         run: () => {
           navigator.clipboard.writeText(text);
           toast('已复制');
         },
       });
     }
-    if (msgEl.dataset.role === 'assistant') {
+    if (msgEl.dataset.role === 'assistant' || msgEl.dataset.role === 'user') {
       out.push({
-        label: UI.showMeta ? '隐藏模型与用量' : '显示模型与用量',
-        icon: 'info',
+        label: UI.showMeta ? '隐藏时间、模型与用量' : '显示时间、模型与用量',
         check: UI.showMeta,
         run: () => (UI.showMeta = !UI.showMeta),
       });
@@ -123,10 +117,10 @@ export function contextExtras(target) {
   }
   const a = target.closest?.('a[href]');
   if (a && /^https?:/.test(a.href)) {
-    out.push({ label: '在新标签页打开链接', icon: 'link', run: () => window.open(a.href, '_blank', 'noopener') });
-    out.push({ label: '复制链接地址', icon: 'copy', run: () => navigator.clipboard.writeText(a.href) });
+    out.push({ label: '在新标签页打开链接', run: () => window.open(a.href, '_blank', 'noopener') });
+    out.push({ label: '复制链接地址', run: () => navigator.clipboard.writeText(a.href) });
   }
   const code = target.closest?.('pre')?.querySelector('code');
-  if (code && !sel) out.push({ label: '复制这段代码', icon: 'copy', run: () => navigator.clipboard.writeText(code.innerText) });
+  if (code && !sel) out.push({ label: '复制这段代码', run: () => navigator.clipboard.writeText(code.innerText) });
   return out;
 }

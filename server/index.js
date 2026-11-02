@@ -298,6 +298,34 @@ app.get(
   }),
 );
 
+// 路径存不存在：地址栏打字时会反复问，只 stat 一下，不读目录
+app.get(
+  '/api/fs/stat',
+  wrap(async (req, res) => {
+    const p = path.resolve(String(req.query.path || ''));
+    const st = await fsp.stat(p).catch(() => null);
+    res.json({ path: p, exists: !!st, dir: !!st?.isDirectory() });
+  }),
+);
+
+// 新建目录：地址栏里输入了还不存在的路径，按输入的内容建出来（父目录一起建）
+app.post(
+  '/api/fs/mkdir',
+  wrap(async (req, res) => {
+    const raw = String(req.body?.path || '');
+    if (!raw) throw new Error('路径是空的');
+    const p = path.resolve(raw);
+    if (p === path.parse(p).root) throw new Error('不能把磁盘根目录当新目录');
+    const st = await fsp.stat(p).catch(() => null);
+    if (st) {
+      if (!st.isDirectory()) throw new Error('这个路径上已经有一个同名文件');
+      return res.json({ path: p, created: false });
+    }
+    await fsp.mkdir(p, { recursive: true });
+    res.json({ path: p, created: true });
+  }),
+);
+
 app.get(
   '/api/fs/roots',
   wrap(async (req, res) => {
@@ -315,8 +343,7 @@ app.get(
   }),
 );
 
-const TEXT_LIMIT = 2 * 1024 * 1024;
-app.get(
+const TEXT_LIMIT = 2 * 1024 * 1024;app.get(
   '/api/fs/read',
   wrap(async (req, res) => {
     const file = path.resolve(String(req.query.path || ''));

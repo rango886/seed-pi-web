@@ -67,9 +67,11 @@ export function fire(t, payload = {}) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ ...payload, t }));
 }
 
-async function req(method, url, query) {
+async function req(method, url, query, body) {
   const qs = query ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== false)) : '';
-  const res = await fetch(url + qs, { method, headers: token ? { 'x-pi-web-token': token } : {} });
+  const headers = token ? { 'x-pi-web-token': token } : {};
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  const res = await fetch(url + qs, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
@@ -77,6 +79,7 @@ async function req(method, url, query) {
 
 export const http = {
   get: (url, query) => req('GET', url, query),
+  post: (url, body) => req('POST', url, null, body),
   del: (url, query) => req('DELETE', url, query),
 };
 

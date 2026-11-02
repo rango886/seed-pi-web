@@ -1,5 +1,6 @@
 <script setup>
-import { UI, DEFAULTS, ACCENTS, FONT_PRESETS, GITHUB_FONT, GITHUB_MONO, view, resetSettings } from '../settings.js';
+import { ref, watch } from 'vue';
+import { UI, DEFAULTS, STYLES, useStyle, ACCENTS, ACCENT_NAMES, FONT_PRESETS, MONO_PRESETS, view, resetSettings } from '../settings.js';
 import { toast } from '../store.js';
 
 const close = () => (view.settingsOpen = false);
@@ -18,12 +19,37 @@ function exportSettings() {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
   toast(`已导出 ${name}`);
 }
-const isPreset = (v) => FONT_PRESETS.some((f) => f.value === v);
-// 一键套用 GitHub 全套：界面 + Markdown + 气泡 + GitHub 蓝 + GitHub 字体
-function applyGithub() {
-  Object.assign(UI, { uiStyle: 'github', mdStyle: 'github', userBubble: 'github', accent: '#0969da', font: GITHUB_FONT, codeFont: GITHUB_MONO, radius: 6 });
-  toast('已套用 GitHub 风格');
+// 界面字体和代码字体各自一张表：一个选项一款字体，代码字体那张只放等宽的
+const presetsOf = (which) => (which === 'font' ? FONT_PRESETS : MONO_PRESETS);
+const isPreset = (v, which = 'font') => presetsOf(which).some((f) => f.value === v);
+
+// 字体下拉框：选“自定义…”时把当前预设值清掉，露出下面那个输入框
+const fontCustom = ref(!isPreset(UI.font, 'font'));
+const codeCustom = ref(!isPreset(UI.codeFont, 'code'));
+function onFontPick(e, which) {
+  const v = e.target.value;
+  const custom = which === 'font' ? fontCustom : codeCustom;
+  if (v === '__custom') {
+    custom.value = true;
+    if (isPreset(which === 'font' ? UI.font : UI.codeFont, which)) {
+      if (which === 'font') UI.font = '';
+      else UI.codeFont = '';
+    }
+    return;
+  }
+  custom.value = false;
+  if (which === 'font') UI.font = v;
+  else UI.codeFont = v;
 }
+// 整体样式会把字体换成预设值，换完把“自定义”输入框收起来
+watch(
+  () => UI.font,
+  (v) => isPreset(v, 'font') && (fontCustom.value = false),
+);
+watch(
+  () => UI.codeFont,
+  (v) => isPreset(v, 'code') && (codeCustom.value = false),
+);
 function onKey(e) {
   if (e.key === 'Escape') {
     e.stopPropagation();
@@ -61,34 +87,41 @@ const layoutSliders = [
         </header>
 
         <div class="body">
-          <!-- 外观 -->
+          <!-- 整体样式：选一次就把主题色 / Markdown 排版 / 字体字号行高这些一起换掉 -->
           <section>
-            <h3>外观</h3>
+            <h3>整体样式</h3>
+            <div class="card">
+              <div class="styles">
+                <button v-for="s in STYLES" :key="s.value" class="style" :class="{ on: UI.uiStyle === s.value }" @click="useStyle(s.value)">
+                  <span class="sty-name">{{ s.label }}</span>
+                  <span class="sty-desc">{{ s.desc }}</span>
+                </button>
+              </div>
+              <div class="item">
+                <span class="label dim small-tip">换样式会把主题色、Markdown 排版和字体字号行高一起换掉，换完还能单独改；深浅色在下面单独选。</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- 深浅色 -->
+          <section>
+            <h3>深浅色</h3>
             <div class="card">
               <div class="item">
-                <span class="label">主题</span>
+                <span class="label">配色</span>
                 <div class="seg">
                   <button v-for="[v, l] in [['light', '浅色'], ['dark', '深色'], ['auto', '跟随系统']]" :key="v" :class="{ on: UI.theme === v }" @click="UI.theme = v">{{ l }}</button>
                 </div>
               </div>
-              <div class="item">
-                <span class="label">界面风格</span>
-                <div class="seg">
-                  <button v-for="[v, l] in [['modern', '现代'], ['github', 'GitHub']]" :key="v" :class="{ on: UI.uiStyle === v }" @click="UI.uiStyle = v">{{ l }}</button>
-                </div>
-              </div>
-              <div class="item">
-                <span class="label">Markdown</span>
-                <div class="seg">
-                  <button v-for="[v, l] in [['default', '默认'], ['github', 'GitHub'], ['github-compact', 'GitHub 紧凑']]" :key="v" :class="{ on: UI.mdStyle === v }" @click="UI.mdStyle = v">{{ l }}</button>
-                </div>
-              </div>
-              <div class="item">
-                <span class="label dim small">想要完整的 GitHub 观感？</span>
-                <button class="btn sm" @click="applyGithub">一键套用 GitHub 全套</button>
-              </div>
+            </div>
+          </section>
+
+          <!-- 主题色 -->
+          <section>
+            <h3>主题色</h3>
+            <div class="card">
               <div class="item col">
-                <span class="label">主题色</span>
+                <span class="label">主题色<span class="dim small-tip">（自己的气泡颜色跟着它走）</span></span>
                 <div class="swatches">
                   <button
                     v-for="c in ACCENTS"
@@ -96,7 +129,7 @@ const layoutSliders = [
                     class="sw"
                     :class="{ on: UI.accent.toLowerCase() === c }"
                     :style="{ background: c }"
-                    :title="c"
+                    :title="ACCENT_NAMES[c] || c"
                     @click="UI.accent = c"
                   />
                   <label class="sw custom" :class="{ on: !ACCENTS.includes(UI.accent.toLowerCase()) }" title="自定义颜色" :style="{ background: ACCENTS.includes(UI.accent.toLowerCase()) ? '' : UI.accent }">
@@ -105,12 +138,23 @@ const layoutSliders = [
                   </label>
                 </div>
               </div>
+            </div>
+          </section>
+
+          <!-- Markdown 排版 -->
+          <section>
+            <h3>Markdown 排版</h3>
+            <div class="card">
               <div class="item">
-                <span class="label">我的气泡</span>
+                <span class="label">回复正文的 Markdown</span>
                 <div class="seg">
-                  <button v-for="[v, l] in [['accent', '主题色'], ['soft', '浅色调'], ['green', '微信绿'], ['github', 'GitHub']]" :key="v" :class="{ on: UI.userBubble === v }" @click="UI.userBubble = v">{{ l }}</button>
+                  <button v-for="[v, l] in [['default', '默认'], ['github', 'GitHub'], ['github-compact', 'GitHub 紧凑']]" :key="v" :class="{ on: UI.mdStyle === v }" @click="UI.mdStyle = v">{{ l }}</button>
                 </div>
               </div>
+              <label class="item">
+                <span class="label">回复正文加边框（默认关）</span>
+                <input v-model="UI.hoverBox" type="checkbox" class="switch" />
+              </label>
             </div>
           </section>
 
@@ -132,19 +176,19 @@ const layoutSliders = [
             <div class="card">
               <div class="item col">
                 <span class="label">界面字体</span>
-                <select class="input" :value="isPreset(UI.font) ? UI.font : '__custom'" @change="$event.target.value !== '__custom' && (UI.font = $event.target.value)">
+                <select class="input" :value="fontCustom ? '__custom' : UI.font" @change="onFontPick($event, 'font')">
                   <option v-for="f in FONT_PRESETS" :key="f.value" :value="f.value">{{ f.label }}</option>
                   <option value="__custom">自定义…</option>
                 </select>
-                <input v-if="!isPreset(UI.font)" v-model.lazy="UI.font" class="input" placeholder="CSS 字体名，例如 'LXGW WenKai'" />
+                <input v-if="fontCustom" v-model.lazy="UI.font" class="input" placeholder="CSS 字体名，例如 'LXGW WenKai'" />
               </div>
               <div class="item col">
                 <span class="label">代码字体</span>
-                <select class="input" :value="isPreset(UI.codeFont) ? UI.codeFont : '__custom'" @change="$event.target.value !== '__custom' && (UI.codeFont = $event.target.value)">
-                  <option v-for="f in FONT_PRESETS" :key="f.value" :value="f.value">{{ f.label }}</option>
+                <select class="input" :value="codeCustom ? '__custom' : UI.codeFont" @change="onFontPick($event, 'code')">
+                  <option v-for="f in MONO_PRESETS" :key="f.value" :value="f.value">{{ f.label }}</option>
                   <option value="__custom">自定义…</option>
                 </select>
-                <input v-if="!isPreset(UI.codeFont)" v-model.lazy="UI.codeFont" class="input" placeholder="CSS 字体名，例如 'JetBrains Mono'" />
+                <input v-if="codeCustom" v-model.lazy="UI.codeFont" class="input" placeholder="CSS 字体名，例如 'JetBrains Mono'" />
               </div>
               <div v-for="[k, l, min, max, step, fmt] in textSliders" :key="k" class="item">
                 <span class="label">{{ l }}</span>
@@ -179,7 +223,7 @@ const layoutSliders = [
                 <input v-model="UI.toolsOpen" type="checkbox" class="switch" />
               </label>
               <label class="item">
-                <span class="label">显示模型与用量（默认关；也可以右键消息打开）</span>
+                <span class="label">显示时间、模型与用量（默认关；也可以右键消息打开）</span>
                 <input v-model="UI.showMeta" type="checkbox" class="switch" />
               </label>
             </div>
@@ -241,6 +285,14 @@ label.item { cursor: pointer; }
 [data-theme='dark'] .seg button.on { background: var(--elev); }
 
 .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+/* 整体样式：三张并排的小卡片，选中的那张用主题色描一圈 */
+.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 14px 4px; }
+.style { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-align: left; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.style:hover { border-color: var(--text-3); }
+.style.on { border-color: var(--accent); background: var(--accent-softer); }
+.sty-name { font-weight: 600; color: var(--text); }
+.style.on .sty-name { color: var(--accent-text); }
+.sty-desc { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
 .sw { width: 28px; height: 28px; border-radius: 50%; border: 0; cursor: pointer; position: relative; padding: 0; transition: transform 0.12s; }
 .sw:hover { transform: scale(1.1); }
 .sw.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--text-2); }
