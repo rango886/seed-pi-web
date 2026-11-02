@@ -3,7 +3,7 @@
   /* 由 settings.js 覆盖的可调参数 */
   --accent: #3b82f6;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif;
-  --font-code: 'Sarasa Term SC', Consolas, monospace;
+  --font-code: ui-monospace, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
   --fs: 14px;
   --fs-code: 13px;
   --lh: 1.7;
@@ -261,6 +261,9 @@ a:hover { text-decoration: underline; }
 .blk.prose .blk-chip,
 .blk.prose .blk-sum,
 .blk.prose .blk-body { font-family: var(--font); }
+/* 展开后的思考正文就是一段淡一点的正文：跟回复正文同一个字号和行高，颜色淡一档。
+   工具调用的输出是等宽代码，字号也小一号，两边一眼能分开 */
+.blk.prose .blk-body { font-size: var(--fs); color: var(--text-2); }
 .blk-body.dim { color: var(--text-3); }
 
 /* spinner / 状态点 */

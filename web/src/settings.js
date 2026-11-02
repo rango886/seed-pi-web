@@ -21,7 +21,7 @@ export const DEFAULTS = {
   hoverBox: false, // 回复正文外面那圈边框：默认关（想要带框的正文就打开）
   // 文字（默认系统字体：macOS / iOS 上是苹方，Windows 上是微软雅黑）
   font: SYSTEM_FONT,
-  codeFont: "'Sarasa Term SC'",
+  codeFont: GITHUB_MONO,
   fontSize: 14,
   codeFontSize: 13,
   lineHeight: 1.7,
@@ -50,7 +50,7 @@ export const STYLES = [
       accent: '#3b82f6',
       mdStyle: 'default',
       font: SYSTEM_FONT,
-      codeFont: "'Sarasa Term SC'",
+      codeFont: GITHUB_MONO,
       radius: 10,
       chatWidth: 920,
       spacing: 1,
@@ -69,7 +69,7 @@ export const STYLES = [
       accent: '#07c160',
       mdStyle: 'default',
       font: SYSTEM_FONT,
-      codeFont: "'Sarasa Term SC'",
+      codeFont: GITHUB_MONO,
       radius: 8,
       chatWidth: 880,
       spacing: 1,
@@ -114,21 +114,19 @@ export const ACCENT_NAMES = { '#0969da': 'GitHub 蓝', '#07c160': '微信绿', '
 /** 字体下拉框：一个选项就是一款字体，不往里塞一串（缺字、缺等宽的兜底交给 apply() 统一补） */
 export const FONT_PRESETS = [
   { label: '系统默认', value: SYSTEM_FONT },
+  { label: '霞鹜文楷 LXGW WenKai', value: "'LXGW WenKai'" },
   { label: '苹方 PingFang SC', value: "'PingFang SC'" },
   { label: '微软雅黑 Microsoft YaHei', value: "'Microsoft YaHei'" },
   { label: '微软雅黑 UI Microsoft YaHei UI', value: "'Microsoft YaHei UI'" },
   { label: 'Segoe UI', value: "'Segoe UI'" },
   { label: 'Noto Sans', value: "'Noto Sans'" },
   { label: 'Noto Sans CJK SC', value: "'Noto Sans CJK SC'" },
-  { label: '更纱黑体 Sarasa Gothic SC', value: "'Sarasa Gothic SC'" },
-  { label: '更纱黑体 UI Sarasa UI SC', value: "'Sarasa UI SC'" },
 ];
 
 /** 等宽字体：同样一款一个。只有“系统默认等宽”那项得靠 ui-monospace 这类关键字，拆不开 */
 export const MONO_PRESETS = [
   { label: '系统默认等宽', value: GITHUB_MONO },
-  { label: '更纱终端黑体 Sarasa Term SC', value: "'Sarasa Term SC'" },
-  { label: '等距更纱黑体 Sarasa Mono SC', value: "'Sarasa Mono SC'" },
+  { label: '霞鹜文楷等宽 LXGW WenKai Mono', value: "'LXGW WenKai Mono'" },
   { label: 'Cascadia Mono', value: "'Cascadia Mono'" },
   { label: 'Consolas', value: "'Consolas'" },
   { label: 'SF Mono', value: "'SF Mono'" },
@@ -138,7 +136,7 @@ export const MONO_PRESETS = [
 ];
 
 const KEY = 'pi-web-settings';
-const VER = 8; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）
+const VER = 9; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷
 let saved = {};
 try {
   saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -161,6 +159,12 @@ if ((saved.__v || 1) < 8) {
   // “GitHub 字体”那个打包选项没了：界面字体回到系统默认，代码字体换到系统默认等宽
   if (saved.font === GITHUB_FONT) saved.font = SYSTEM_FONT;
   if (saved.codeFont === GITHUB_FONT) saved.codeFont = GITHUB_MONO;
+}
+if ((saved.__v || 1) < 9) {
+  // 更纱黑体那几个选项去掉了：存着的老值换成最接近的（正文字体回系统默认，等宽的换系统默认等宽）
+  const gone = { "'Sarasa Term SC'": GITHUB_MONO, "'Sarasa Mono SC'": GITHUB_MONO, "'Sarasa Gothic SC'": SYSTEM_FONT, "'Sarasa UI SC'": SYSTEM_FONT };
+  if (saved.font in gone) saved.font = gone[saved.font];
+  if (saved.codeFont in gone) saved.codeFont = gone[saved.codeFont];
 }
 delete saved.__v;
 
@@ -209,7 +213,7 @@ export function resetSettings() {
 }
 
 const FALLBACK = "'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', sans-serif";
-const MONO_FALLBACK = "'Sarasa Term SC', 'Cascadia Mono', Consolas, monospace";
+const MONO_FALLBACK = "'Cascadia Mono', Consolas, 'Liberation Mono', monospace";
 const mql = window.matchMedia('(prefers-color-scheme: dark)');
 
 function apply() {
