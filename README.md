@@ -76,8 +76,32 @@ npm start         # http://127.0.0.1:8787
 | `PI_WEB_SHELL` | pwsh / $SHELL | 终端用的 shell |
 | `PI_WEB_IDLE_MINUTES` | 30 | 没人看而且空闲的 pi 进程，过多久自动关掉（一句话没说的新会话 2 分钟就关） |
 
+### 局域网访问（手机、别的电脑打开）
+
+默认只监听 `127.0.0.1`，本机以外连不进来。要让局域网里别的设备用，两件事得一起做：监听所有网卡 + 设一个 token。
+
+```bash
+# bash / zsh
+HOST=0.0.0.0 PI_WEB_TOKEN='自己编一串够长的' npm start
+```
+
+```powershell
+# PowerShell：先设环境变量再启动
+$env:HOST='0.0.0.0'; $env:PI_WEB_TOKEN='自己编一串够长的'; npm start
+```
+
+启动日志会打印带 token 的地址（`http://localhost:8787/?token=...`），把它换成这台机器的局域网 IP，就能在手机或别的电脑上打开。token 只在地址栏用一次，前端会存进 localStorage 并把参数从地址栏抹掉，之后 `/api` 请求和 WebSocket 连接自动带上；脚本调用也可以直接用 `X-Pi-Web-Token` 头传。
+
+关于这道锁，几件事得说清楚：
+
+- **token 是唯一的一道锁**：一个大家共用的明文串，没有账号、没有权限分级、没有过期时间。要换就改环境变量重启。
+- **没设 token 时那道校验不是认证**：没有 token 时只接受 `Host` 是 `localhost` / `127.0.0.1` / `[::1]` 的请求，目的是防 DNS rebinding（外面的网站把域名解析到 127.0.0.1 来打你的服务）。`Host` 头是客户端自己填的，手写个 HTTP 请求就能绕过，所以不设 token 又监听 `0.0.0.0`，等于没锁。
+- **HTTP 是明文的**：`?token=` 可能留在浏览器历史和中间设备的日志里，同一个 Wi-Fi 上抓包也能看到。长期用就套一层 HTTPS 反向代理，或者干脆用 Tailscale / SSH 端口转发，别把它直接暴露到局域网。
+- **拿到 token 就等于拿到这台机器的 shell**：agent 能执行任意命令，网页里还有真终端，按 root 的权限对待。
+- 校验范围：`/api/*` 和 `/ws` 才走 token；页面本身的静态文件不校验（所以不带 token 也能看到界面，但连不上后端）；剪贴板相关接口另外要求请求来自本机（loopback）。
+
 ## 注意
 
-- 这是一个能执行任意命令的网页，默认只监听本机。要远程用，请设置 `PI_WEB_TOKEN`，再套 HTTPS 或 Tailscale
+- 这是一个能执行任意命令的网页，默认只监听本机。要远程用，见上面的「局域网访问」：设 `PI_WEB_TOKEN`，再套 HTTPS 或 Tailscale
 - 同一个会话不要同时在终端版 pi 和网页里打开，两个进程一起写同一个会话文件会冲突
 - Linux 上 node-pty 需要编译：先装好 `build-essential` 和 `python3`，然后运行 `npm approve-scripts node-pty && npm rebuild node-pty`。装不上也没关系，只是终端功能不能用
