@@ -33,7 +33,7 @@ export async function sessionRoots(extra = []) {
 // ---------- 缓存：file -> { size, mtimeMs, head, body } ----------
 // head: { id, cwd, created, parentSession }（header 不会变）
 // body: { offset, name, firstUser, messages }（offset = 已扫描到的字节位置，总在换行符之后）
-const CACHE_FILE = path.join(os.tmpdir(), 'pi-web-sessions-cache-v1.json');
+const CACHE_FILE = path.join(os.tmpdir(), 'pi-web-sessions-cache-v2.json'); // v2：标题里去掉了 <attachments> 块
 const cache = new Map();
 try {
   const saved = JSON.parse(fsSync.readFileSync(CACHE_FILE, 'utf8'));
@@ -56,6 +56,17 @@ function textOf(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return content.filter((c) => c.type === 'text').map((c) => c.text).join(' ');
   return '';
+}
+
+// 网页发消息时拼的附件路径块：当会话标题时去掉，只剩附件的话就列文件名
+function titleOf(text) {
+  const names = [];
+  const rest = text.replace(/<attachments>([\s\S]*?)<\/attachments>/g, (_, body) => {
+    for (const m of body.matchAll(/^\[\d+\]\s+\w+:\s+(.+)$/gm)) names.push(m[1].trim().split(/[\\/]/).filter(Boolean).pop());
+    return ' ';
+  });
+  const t = rest.replace(/\s+/g, ' ').trim();
+  return t || (names.length ? `[附件] ${names.join(', ')}` : '');
 }
 
 /** 限制并发：同时打开太多大文件会把内存和磁盘都挤爆 */
@@ -115,7 +126,7 @@ function scanLine(line, body) {
     if (role === 'user' || role === 'assistant') body.messages++;
     if (role === 'user' && !body.firstUser) {
       const e = parse();
-      if (e) body.firstUser = textOf(e.message?.content).slice(0, 200);
+      if (e) body.firstUser = titleOf(textOf(e.message?.content)).slice(0, 200);
     }
   }
 }

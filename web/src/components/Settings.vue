@@ -1,5 +1,5 @@
 <script setup>
-import { UI, DEFAULTS, ACCENTS, FONT_PRESETS, view, resetSettings } from '../settings.js';
+import { UI, DEFAULTS, ACCENTS, FONT_PRESETS, GITHUB_FONT, GITHUB_MONO, view, resetSettings } from '../settings.js';
 import { toast } from '../store.js';
 
 const close = () => (view.settingsOpen = false);
@@ -19,6 +19,11 @@ function exportSettings() {
   toast(`已导出 ${name}`);
 }
 const isPreset = (v) => FONT_PRESETS.some((f) => f.value === v);
+// 一键套用 GitHub 全套：界面 + Markdown + 气泡 + GitHub 蓝 + GitHub 字体
+function applyGithub() {
+  Object.assign(UI, { uiStyle: 'github', mdStyle: 'github', userBubble: 'github', accent: '#0969da', font: GITHUB_FONT, codeFont: GITHUB_MONO, radius: 6 });
+  toast('已套用 GitHub 风格');
+}
 function onKey(e) {
   if (e.key === 'Escape') {
     e.stopPropagation();
@@ -35,7 +40,7 @@ const textSliders = [
 ];
 const layoutSliders = [
   ['spacing', '整体间距', 0.7, 1.5, 0.05, (v) => `${Math.round(v * 100)}%`],
-  ['radius', '气泡圆角', 0, 22, 1, (v) => `${v}px`],
+  ['radius', '全局圆角', 0, 20, 1, (v) => `${v}px`],
   ['chatWidth', '聊天区宽度', 0, 1400, 20, (v) => (v ? `${v}px` : '铺满')],
 ];
 </script>
@@ -66,6 +71,22 @@ const layoutSliders = [
                   <button v-for="[v, l] in [['light', '浅色'], ['dark', '深色'], ['auto', '跟随系统']]" :key="v" :class="{ on: UI.theme === v }" @click="UI.theme = v">{{ l }}</button>
                 </div>
               </div>
+              <div class="item">
+                <span class="label">界面风格</span>
+                <div class="seg">
+                  <button v-for="[v, l] in [['modern', '现代'], ['github', 'GitHub']]" :key="v" :class="{ on: UI.uiStyle === v }" @click="UI.uiStyle = v">{{ l }}</button>
+                </div>
+              </div>
+              <div class="item">
+                <span class="label">Markdown</span>
+                <div class="seg">
+                  <button v-for="[v, l] in [['default', '默认'], ['github', 'GitHub'], ['github-compact', 'GitHub 紧凑']]" :key="v" :class="{ on: UI.mdStyle === v }" @click="UI.mdStyle = v">{{ l }}</button>
+                </div>
+              </div>
+              <div class="item">
+                <span class="label dim small">想要完整的 GitHub 观感？</span>
+                <button class="btn sm" @click="applyGithub">一键套用 GitHub 全套</button>
+              </div>
               <div class="item col">
                 <span class="label">主题色</span>
                 <div class="swatches">
@@ -87,7 +108,7 @@ const layoutSliders = [
               <div class="item">
                 <span class="label">我的气泡</span>
                 <div class="seg">
-                  <button v-for="[v, l] in [['accent', '主题色'], ['soft', '浅色调'], ['green', '微信绿']]" :key="v" :class="{ on: UI.userBubble === v }" @click="UI.userBubble = v">{{ l }}</button>
+                  <button v-for="[v, l] in [['accent', '主题色'], ['soft', '浅色调'], ['green', '微信绿'], ['github', 'GitHub']]" :key="v" :class="{ on: UI.userBubble === v }" @click="UI.userBubble = v">{{ l }}</button>
                 </div>
               </div>
             </div>
@@ -133,6 +154,7 @@ const layoutSliders = [
               <div class="preview md">
                 <p>预览 Preview：敏捷的棕色狐狸跳过了懒狗。The quick brown fox jumps over the lazy dog. <code>const x = 42</code></p>
                 <p>第二段，用来看段落间距和行高是否舒服。0O 1lI {} [] =&gt; ===</p>
+                <blockquote><p>引用块长这样</p></blockquote>
               </div>
             </div>
           </section>
@@ -163,6 +185,30 @@ const layoutSliders = [
             </div>
             <p class="dim tip">小技巧：双击滑块恢复该项默认值。随时按 <b>Ctrl + ,</b> 打开这里。</p>
           </section>
+
+          <!-- 附件 -->
+          <section>
+            <h3>附件</h3>
+            <div class="card">
+              <label class="item">
+                <span class="label">发送后保留附件（下一轮接着带上）</span>
+                <input v-model="UI.keepAttachments" type="checkbox" class="switch" />
+              </label>
+              <div class="item col">
+                <span class="label">上传目录</span>
+                <input v-model.lazy.trim="UI.uploadDir" class="input mono" :placeholder="DEFAULTS.uploadDir" @change="!UI.uploadDir && (UI.uploadDir = DEFAULTS.uploadDir)" />
+                <span class="dim small-tip">
+                  从资源管理器拖进来的、截图、局域网里传的文件存在这里。可以用 <code>{tmp}</code> 系统临时目录、<code>{cwd}</code> 工作目录、<code>{session}</code> 会话 id、<code>{date}</code> 日期、<code>{home}</code> 用户目录；相对路径按工作目录算。
+                </span>
+              </div>
+              <div class="item">
+                <span class="label">单个文件上传上限</span>
+                <input v-model.number="UI.uploadMaxMB" type="number" min="1" class="input num" />
+                <span class="val">MB</span>
+              </div>
+            </div>
+            <p class="dim tip">本机打开时，在资源管理器里复制文件再到输入框 <b>Ctrl + V</b>，用的是原文件路径，不会上传；从右侧文件树拖进来、输入 <b>@</b> 引用也一样。</p>
+          </section>
         </div>
       </aside>
     </div>
@@ -188,8 +234,8 @@ label.item { cursor: pointer; }
 .val { width: 54px; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
 .range { width: 150px; accent-color: var(--accent); cursor: pointer; }
 
-.seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 2px; }
-.seg button { border: 0; background: transparent; padding: 4px 10px; border-radius: 6px; cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
+.seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 2px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 4px 10px; border-radius: var(--r-sm); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
 .seg button:hover { color: var(--text); }
 .seg button.on { background: var(--panel); color: var(--accent-text); box-shadow: var(--shadow-sm); font-weight: 600; }
 [data-theme='dark'] .seg button.on { background: var(--elev); }
@@ -204,7 +250,12 @@ select.input { cursor: pointer; }
 
 .preview { padding: 12px 14px; background: var(--chat-bg); font-size: var(--fs); border-top: 1px solid var(--line-2); }
 .tip { font-size: var(--fs-xs); margin: 10px 4px 0; line-height: 1.7; }
+.small { font-size: var(--fs-sm); }
 .tip b { font-weight: 600; color: var(--text-2); }
+.small-tip { font-size: var(--fs-xs); line-height: 1.7; }
+.small-tip code { font-family: var(--font-code); font-size: 11px; background: var(--hover); padding: 0 4px; border-radius: var(--r-xs); }
+.input.mono { font-family: var(--font-code); font-size: var(--fs-sm); }
+.input.num { width: 90px; }
 
 .drawer-enter-active, .drawer-leave-active { transition: background 0.2s; }
 .drawer-enter-active .settings-drawer, .drawer-leave-active .settings-drawer { transition: transform 0.22s ease; }

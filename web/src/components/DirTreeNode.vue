@@ -79,7 +79,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.node { display: flex; align-items: center; gap: 6px; height: 28px; border-radius: 6px; cursor: pointer; padding-right: 8px; font-size: var(--fs-sm); white-space: nowrap; }
+.node { display: flex; align-items: center; gap: 6px; height: 28px; border-radius: var(--r-sm); cursor: pointer; padding-right: 8px; font-size: var(--fs-sm); white-space: nowrap; }
 .node:hover { background: var(--hover); }
 .node.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
 .arrow { width: 16px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); transition: transform 0.15s; }

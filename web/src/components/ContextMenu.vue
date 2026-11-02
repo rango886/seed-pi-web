@@ -89,12 +89,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.ctxmenu { position: fixed; z-index: 70; min-width: 240px; max-width: 340px; background: var(--elev); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 6px; user-select: none; animation: pop 0.1s ease-out; font-size: var(--fs-sm); }
+.ctxmenu { position: fixed; z-index: 70; min-width: 240px; max-width: 340px; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 6px; user-select: none; animation: pop 0.1s ease-out; font-size: var(--fs-sm); }
 .submenu { position: absolute; left: calc(100% + 2px); top: -6px; }
 .submenu.left { left: auto; right: calc(100% + 2px); }
 /* 窄屏：子菜单直接在下面展开 */
 .submenu.inline { position: static; box-shadow: none; border: 0; padding: 2px 0 2px 16px; min-width: 0; background: transparent; animation: none; width: 100%; }
-.mi { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 34px; padding: 0 10px 0 8px; border-radius: 8px; cursor: pointer; color: var(--text); }
+.mi { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 34px; padding: 0 10px 0 8px; border-radius: var(--r-sm); cursor: pointer; color: var(--text); }
 .mi:hover, .mi.open { background: var(--hover); }
 .mi.dis { opacity: 0.4; cursor: default; }
 .mi.dis:hover { background: transparent; }

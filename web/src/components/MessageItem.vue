@@ -1,15 +1,23 @@
 <script setup>
 import { computed, ref, watchEffect } from 'vue';
-import { S } from '../store.js';
+import { S, openFile } from '../store.js';
 import { UI } from '../settings.js';
-import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText } from '../util.js';
+import { rawUrl } from '../api.js';
+import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText, splitAttachments } from '../util.js';
 import ToolCard from './ToolCard.vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({ m: Object });
 const role = computed(() => props.m.role);
 const open = ref(false);
 
-const userText = computed(() => textOf(props.m.content));
+// 用户消息前面的 <attachments> 块：不显示原文，还原成和输入框上一样的附件
+const userParts = computed(() => splitAttachments(textOf(props.m.content)));
+const userText = computed(() => userParts.value.text);
+const atts = computed(() => userParts.value.attachments);
+const broken = ref({}); // 文件已经不在的图片，缩略图换成图标
+const attTitle = (a) => `${a.path}\n${a.kind === 'dir' ? '点击不会打开目录' : '点击打开'}`;
+const openAtt = (a) => a.kind !== 'dir' && openFile(a.path);
 const images = computed(() => imagesOf(props.m.content));
 const blocks = computed(() => (Array.isArray(props.m.content) ? props.m.content.filter(Boolean) : []));
 // 空内容的思考块直接不画（有的模型只会发一个空的 thinking 块，比如 opus 系列），
@@ -41,7 +49,15 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
   <div v-if="role === 'user'" class="msg me" :data-msg="m._k" data-role="user">
     <div class="col">
       <div class="bubble me-bubble">
-        <div class="pre">{{ userText }}</div>
+        <div v-if="atts.length" class="atts">
+          <div v-for="a in atts" :key="a.n" class="att" :class="{ link: a.kind !== 'dir' }" :title="attTitle(a)" @click="openAtt(a)">
+            <span class="no">{{ a.n }}</span>
+            <img v-if="a.kind === 'image' && !broken[a.n]" class="pic" :src="rawUrl(a.path)" alt="" @error="broken[a.n] = true" />
+            <span v-else class="fic"><Icon :name="a.kind === 'dir' ? 'folder' : 'file'" :size="14" /></span>
+            <span class="aname ellipsis">{{ a.name }}</span>
+          </div>
+        </div>
+        <div v-if="userText.trim()" class="pre">{{ userText }}</div>
         <div v-if="images.length" class="imgs">
           <img v-for="(im, i) in images" :key="i" :src="`data:${im.mimeType};base64,${im.data}`" />
         </div>
@@ -123,12 +139,22 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
 .me .col { align-items: flex-end; }
 .ai .col { align-items: flex-start; }
 
-.bubble { border-radius: var(--radius); padding: calc(var(--sp2) + 2px) var(--pad-x); line-height: var(--lh); max-width: 100%; }
-.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); max-width: min(80%, 720px); border-top-right-radius: min(var(--radius), 4px); }
+.bubble { border-radius: var(--r-bubble); padding: calc(var(--sp2) + 2px) var(--pad-x); line-height: var(--lh); max-width: 100%; }
+.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); }
 .ai-bubble { background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); }
 .pre { white-space: pre-wrap; word-break: break-word; }
 .imgs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-.imgs img { max-height: 160px; max-width: 260px; border-radius: 8px; display: block; }
+.imgs img { max-height: 160px; max-width: 260px; border-radius: var(--r-sm); display: block; }
+/* 消息里带的附件：和输入框上面那一排长得一样，只是不能拖、不能删 */
+.atts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.atts:last-child { margin-bottom: 0; }
+.att { display: inline-flex; align-items: center; gap: 6px; height: 34px; max-width: 220px; padding: 0 10px 0 4px; border-radius: var(--r-md); background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text-2); border: 1px solid var(--line-2); font-size: var(--fs-sm); }
+.att.link { cursor: pointer; }
+.att.link:hover { color: var(--text); border-color: var(--text-3); }
+.att .no { flex: none; min-width: 18px; height: 18px; padding: 0 4px; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent-text); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
+.att .pic { flex: none; width: 26px; height: 26px; object-fit: cover; border-radius: var(--r-xs); display: block; }
+.att .fic { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); }
+.att .aname { min-width: 0; }
 
 .errbox { margin: 0 var(--pad-x); background: var(--err-bg); color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--r-md); padding: 8px var(--pad-x); white-space: pre-wrap; font-size: var(--fs-sm); }
 .note-sm { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); }
@@ -142,10 +168,10 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
 .shell { margin: 0 0 var(--sp5); }
 .card-head { padding: var(--sp2) var(--pad-x); font-size: var(--fs-sm); }
 .dollar { color: var(--accent-text); font-weight: 700; font-family: var(--font-code); }
-.badge { font-size: var(--fs-xs); padding: 0 8px; border-radius: 10px; background: var(--hover); line-height: 20px; flex: none; }
+.badge { font-size: var(--fs-xs); padding: 0 8px; border-radius: var(--r-pill); background: var(--hover); line-height: 20px; flex: none; }
 .out { margin: 0; padding: var(--sp2) var(--pad-x); max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: var(--fs-code); font-family: var(--font-code); background: var(--code-bg); border-top: 1px solid var(--line); line-height: 1.55; }
 .sys { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0 0 var(--sp5); }
-.sys-pill { border: 0; cursor: pointer; background: var(--active); color: var(--text-2); font-size: var(--fs-xs); padding: 4px 12px; border-radius: 12px; display: inline-flex; gap: 8px; }
+.sys-pill { border: 0; cursor: pointer; background: var(--active); color: var(--text-2); font-size: var(--fs-xs); padding: 4px 12px; border-radius: var(--r-pill); display: inline-flex; gap: 8px; }
 .sys-pill:hover { color: var(--text); }
 .caret { color: var(--accent-text); }
 .sys-card { width: 100%; padding: var(--sp3) var(--pad-x); }

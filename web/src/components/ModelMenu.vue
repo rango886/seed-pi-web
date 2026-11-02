@@ -108,7 +108,7 @@ const ctxLabel = (m) => (m.contextWindow ? (m.contextWindow >= 1e6 ? `${(m.conte
 .mi.cur { color: var(--accent-text); font-weight: 600; }
 .check { width: 16px; text-align: center; flex: none; }
 .prov { color: var(--text-3); font-size: var(--fs-xs); margin-left: 8px; font-weight: normal; }
-.tag { font-size: 11px; color: var(--text-3); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; line-height: 18px; flex: none; font-weight: normal; }
+.tag { font-size: 11px; color: var(--text-3); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 0 5px; line-height: 18px; flex: none; font-weight: normal; }
 .empty { padding: 24px; text-align: center; color: var(--text-3); }
 .foot { font-size: var(--fs-xs); color: var(--text-3); padding: 6px 12px; border-top: 1px solid var(--line); background: var(--panel-2); }
 </style>

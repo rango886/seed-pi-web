@@ -135,5 +135,5 @@ const dur = computed(() => {
 .add { background: var(--add-bg); color: var(--add-fg); }
 .more { padding: 4px 10px; border-top: 1px solid var(--line-2); }
 .imgs { padding: var(--sp2) var(--pad-x); border-top: 1px solid var(--line-2); }
-.imgs img { max-width: 100%; max-height: 320px; border-radius: 6px; }
+.imgs img { max-width: 100%; max-height: 320px; border-radius: var(--r-sm); }
 </style>

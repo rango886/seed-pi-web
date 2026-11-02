@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { S, loadFile, insertToComposer } from '../store.js';
+import { loadFile, attachFromTree } from '../store.js';
 import { rawUrl } from '../api.js';
 import { highlightFile, renderMarkdown, IMAGE_EXT } from '../util.js';
 
@@ -15,10 +15,6 @@ const size = computed(() => {
   const s = d.value?.size ?? 0;
   return s < 1024 ? `${s} B` : s < 1048576 ? `${(s / 1024).toFixed(1)} KB` : `${(s / 1048576).toFixed(1)} MB`;
 });
-const relPath = computed(() => {
-  const c = S.cwd.replace(/[\\/]+$/, '');
-  return props.tab.path.startsWith(c) ? props.tab.path.slice(c.length + 1) : props.tab.path;
-});
 </script>
 
 <template>
@@ -27,7 +23,7 @@ const relPath = computed(() => {
       <span class="ellipsis grow" :title="tab.path">{{ tab.path }}</span>
       <span v-if="d" class="dim">{{ size }}<template v-if="lineCount"> · {{ lineCount }} 行</template></span>
       <label v-if="isMd" class="row chk"><input v-model="preview" type="checkbox" />预览</label>
-      <button class="btn sm" title="在输入框里引用这个文件" @click="insertToComposer(relPath)">@ 引用</button>
+      <button class="btn sm" title="把这个文件加到输入框的附件里" @click="attachFromTree(tab.path)">@ 引用</button>
       <button class="btn sm" @click="loadFile(tab)">刷新</button>
     </div>
     <div class="content">
@@ -54,7 +50,7 @@ const relPath = computed(() => {
 .pad { padding: 16px 24px; }
 .mdview { max-width: 900px; margin: 0 auto; line-height: var(--lh); }
 .img { padding: 16px; background: repeating-conic-gradient(var(--line-2) 0 25%, var(--panel) 0 50%) 0 0 / 16px 16px; min-height: 100%; }
-.img img { max-width: 100%; border-radius: 6px; }
+.img img { max-width: 100%; border-radius: var(--r-sm); }
 .code { display: flex; min-width: max-content; font-family: var(--font-code); font-size: var(--fs-code); line-height: 1.6; }
 .gutter { margin: 0; padding: 10px 12px 10px 14px; text-align: right; color: var(--text-3); background: var(--panel-2); border-right: 1px solid var(--line); user-select: none; position: sticky; left: 0; font: inherit; }
 .src { margin: 0; padding: 10px 16px; white-space: pre; font: inherit; }

@@ -1,10 +1,11 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
-import { S, openDir, openDirPicker } from '../store.js';
+import { S, openDirPicker, restartExited, viewer } from '../store.js';
 import MessageItem from './MessageItem.vue';
 import Composer from './Composer.vue';
 import { UI, view } from '../settings.js';
 import Icon from './Icon.vue';
+import { splitAttachments } from '../util.js';
 
 const scroller = ref(null);
 const inner = ref(null);
@@ -107,7 +108,12 @@ function onClick(e) {
 
 const widgetsAbove = computed(() => Object.entries(S.widgets).filter(([, w]) => w.placement !== 'belowEditor'));
 const widgetsBelow = computed(() => Object.entries(S.widgets).filter(([, w]) => w.placement === 'belowEditor'));
-const queued = computed(() => [...S.queue.steering.map((t) => ['插话', t]), ...S.queue.followUp.map((t) => ['排队', t])]);
+// 排队里的消息不显示附件块原文，只标一下带了几个附件
+const qText = (t) => {
+  const { text, attachments } = splitAttachments(t);
+  return (attachments.length ? `[${attachments.length} 个附件] ` : '') + text.trim();
+};
+const queued = computed(() => [...S.queue.steering.map((t) => ['插话', qText(t)]), ...S.queue.followUp.map((t) => ['排队', qText(t)])]);
 const model = computed(() => S.state?.model);
 </script>
 
@@ -130,7 +136,7 @@ const model = computed(() => S.state?.model);
             <b class="err">pi 进程已退出</b>
             <span class="dim">（退出码 {{ S.agentExited.code ?? '?' }}）</span>
             <div class="grow" />
-            <button class="btn" @click="openDir(S.cwd, true)">重新启动</button>
+            <button class="btn" @click="restartExited">重新启动</button>
           </div>
           <pre v-if="S.agentExited.stderr" class="stderr">{{ S.agentExited.stderr }}</pre>
         </div>
@@ -156,7 +162,8 @@ const model = computed(() => S.state?.model);
           <span v-if="S.retry">第 {{ S.retry.attempt }}/{{ S.retry.maxAttempts }} 次重试：{{ S.retry.errorMessage }}</span>
           <span v-else-if="S.compacting">正在压缩上下文…</span>
           <span v-else>工作中</span>
-          <span class="dim">· Esc 停止</span>
+          <span v-if="viewer" class="dim">· 另一个窗口在操作</span>
+          <span v-else class="dim">· Esc 停止</span>
         </div>
       </div>
     </div>
@@ -185,14 +192,14 @@ const model = computed(() => S.state?.model);
 .scroll { position: absolute; inset: 0; overflow-y: auto; outline: none; scrollbar-gutter: stable both-edges; }
 .inner { padding: var(--sp5) var(--gut) var(--sp4); max-width: calc(var(--chat-w) + 2 * var(--gut)); margin: 0 auto; }
 .welcome { text-align: center; padding: 12vh 0 20px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.welcome .big { width: 64px; height: 64px; border-radius: 18px; background: var(--accent); color: #fff; font-size: 34px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px var(--accent-soft); margin-bottom: 10px; }
+.welcome .big { width: 64px; height: 64px; border-radius: var(--r-xl); background: var(--accent); color: #fff; font-size: 34px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px var(--accent-soft); margin-bottom: 10px; }
 .wtitle { font-size: calc(var(--fs) + 6px); font-weight: 600; }
 .wcwd { font-size: var(--fs-sm); }
 .tips { margin-top: 28px; display: grid; grid-template-columns: repeat(3, auto); gap: 10px 26px; font-size: var(--fs-sm); color: var(--text-2); }
 .tip { display: flex; align-items: center; gap: 8px; }
-kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 7px; color: var(--text); min-width: 24px; text-align: center; }
+kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: var(--r-xs); padding: 1px 7px; color: var(--text); min-width: 24px; text-align: center; }
 .working { display: flex; align-items: center; gap: 8px; padding: 6px 0; color: var(--text-2); font-size: var(--fs-sm); }
-.typing { display: inline-flex; gap: 3px; background: var(--bubble-ai); padding: 8px 10px; border-radius: 12px; box-shadow: var(--shadow-sm); }
+.typing { display: inline-flex; gap: 3px; background: var(--bubble-ai); padding: 8px 10px; border-radius: var(--r-bubble); box-shadow: var(--shadow-sm); }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: bounce 1.2s infinite; }
 .typing i:nth-child(2) { animation-delay: 0.15s; }
 .typing i:nth-child(3) { animation-delay: 0.3s; }
@@ -213,7 +220,7 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
 .widget { background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border: 1px solid var(--line); border-radius: var(--r-md); padding: 8px 12px; margin-bottom: 8px; white-space: pre-wrap; font-size: var(--fs-sm); font-family: var(--font-code); }
 .queue { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .qitem { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); background: var(--panel); border: 1px dashed var(--line); border-radius: var(--r-sm); padding: 5px 10px; color: var(--text-2); }
-.tag { background: var(--accent-soft); color: var(--accent-text); padding: 0 8px; border-radius: 10px; flex: none; font-size: var(--fs-xs); line-height: 20px; }
+.tag { background: var(--accent-soft); color: var(--accent-text); padding: 0 8px; border-radius: var(--r-pill); flex: none; font-size: var(--fs-xs); line-height: 20px; }
 </style>
 
 <style>

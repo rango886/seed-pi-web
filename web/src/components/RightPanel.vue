@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted } from 'vue';
-import { S, openDir } from '../store.js';
+import { S, openSession, sessionStatus } from '../store.js';
 import { view } from '../settings.js';
 import TreeNode from './TreeNode.vue';
 import Icon from './Icon.vue';
@@ -43,7 +43,7 @@ onUnmounted(() => window.removeEventListener('mousedown', onDown));
       </div>
 
       <div v-show="view.panel === 'agents'" class="pane">
-        <div class="sub">每个目录一个 pi 进程，切走后会在后台继续跑</div>
+        <div class="sub">每个会话一个 pi 进程，切走后会在后台继续跑</div>
         <div class="list">
           <div v-if="!S.agents.length" class="empty">没有运行中的 pi</div>
           <div
@@ -52,13 +52,14 @@ onUnmounted(() => window.removeEventListener('mousedown', onDown));
             class="agent"
             :class="{ active: a.id === S.agentId }"
             :title="`${a.cwd}${a.sessionName ? '\n' + a.sessionName : ''}`"
-            @click="openDir(a.cwd)"
+            @click="openSession(a.sessionFile)"
           >
             <span class="dot" :class="a.running ? 'busy' : 'on'" />
             <span class="ellipsis aname">{{ base(a.cwd) }}</span>
             <span v-if="a.sessionName" class="ellipsis grow asess">{{ a.sessionName }}</span>
+            <span v-else-if="!a.saved" class="ellipsis grow asess">新会话</span>
             <span v-else class="grow" />
-            <span class="astate" :class="{ busy: a.running }">{{ a.running ? '运行中' : '空闲' }}</span>
+            <span class="astate" :class="{ busy: a.running }">{{ a.waitingUi ? '等你操作' : a.running ? '运行中' : sessionStatus(a.sessionFile)?.unread ? '有新回复' : sessionStatus(a.sessionFile)?.elsewhere ? '别的窗口在用' : '空闲' }}</span>
           </div>
         </div>
       </div>
@@ -71,8 +72,8 @@ onUnmounted(() => window.removeEventListener('mousedown', onDown));
 .rpanel.low { top: 98px; }
 .rhead { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 6px 0 14px; flex: none; color: var(--text-2); border-bottom: 1px solid var(--line-2); }
 .rtitle { font-weight: 600; color: var(--text); }
-.cnt { font-size: 11px; background: var(--active); padding: 0 6px; border-radius: 8px; color: var(--text-2); }
-.ib { width: 30px; height: 30px; border: 0; background: transparent; border-radius: 8px; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.cnt { font-size: 11px; background: var(--active); padding: 0 6px; border-radius: var(--r-pill); color: var(--text-2); }
+.ib { width: 30px; height: 30px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .ib:hover { background: var(--active); color: var(--text); }
 .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .sub { font-size: var(--fs-xs); color: var(--text-3); padding: 8px 14px 4px; flex: none; }
@@ -80,7 +81,7 @@ onUnmounted(() => window.removeEventListener('mousedown', onDown));
 .tree { padding: 2px 6px 12px; }
 .empty { padding: 32px 12px; text-align: center; font-size: var(--fs-sm); color: var(--text-3); }
 
-.agent { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 6px; border-radius: 9px; cursor: pointer; }
+.agent { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 6px; border-radius: var(--r-sm); cursor: pointer; }
 .agent:hover { background: var(--active); }
 .agent.active { background: var(--accent-softer); }
 .agent.active .aname { font-weight: 600; color: var(--accent-text); }

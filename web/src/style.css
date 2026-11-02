@@ -9,7 +9,7 @@
   --lh: 1.7;
   --ls: 0.2px;
   --para: 0.6em;
-  --radius: 12px;
+  --r: 10px; /* 全局圆角，下面 --r-xs … --r-bubble 各档都按它按比例推出来 */
   --s: 1;
   --chat-w: 920px;
 
@@ -21,9 +21,13 @@
   --sp3: calc(12px * var(--s));
   --sp4: calc(16px * var(--s));
   --sp5: calc(24px * var(--s));
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
+  --r-xs: calc(var(--r) * 0.5);
+  --r-sm: calc(var(--r) * 0.7);
+  --r-md: var(--r);
+  --r-lg: calc(var(--r) * 1.4);
+  --r-xl: calc(var(--r) * 1.8);
+  --r-pill: calc(var(--r) * 1.5);
+  --r-bubble: calc(var(--r) * 1.2);
   /* 统一的左右内边距：正文、气泡、思考/工具卡片、输入框内部都用它，这样各处的文字左边缘能对成一条线 */
   --pad-x: calc(var(--sp3) + 2px);
   --accent-hover: color-mix(in srgb, var(--accent) 85%, black);
@@ -133,6 +137,17 @@
   --bubble-me: #3eb575;
   --bubble-me-text: #fff;
 }
+/* GitHub 风：像 GitHub 评论框那样，淡蓝底 + 细蓝边 */
+[data-bubble='github'] {
+  --bubble-me: #ddf4ff;
+  --bubble-me-text: #1f2328;
+  --bubble-me-border: #54aeff66;
+}
+[data-theme='dark'][data-bubble='github'] {
+  --bubble-me: #388bfd1a;
+  --bubble-me-text: #f0f6fc;
+  --bubble-me-border: #388bfd66;
+}
 
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; height: 100%; }
@@ -218,7 +233,7 @@ a:hover { text-decoration: underline; }
 .tab { height: 30px; padding: 0 12px; border-radius: var(--r-sm); color: var(--text-2); display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; max-width: 220px; transition: background 0.15s, color 0.15s; }
 .tab:hover { background: var(--hover); color: var(--text); }
 .tab.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
-.tab .x { opacity: 0.5; width: 18px; height: 18px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; }
+.tab .x { opacity: 0.5; width: 18px; height: 18px; border-radius: var(--r-xs); display: inline-flex; align-items: center; justify-content: center; }
 .tab .x:hover { opacity: 1; background: var(--active); }
 
 /* 列表项 */
@@ -238,7 +253,7 @@ a:hover { text-decoration: underline; }
 @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
 
 /* 弹出菜单（下拉） */
-.pop { position: absolute; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-lg); padding: 6px; z-index: 40; animation: pop 0.12s ease-out; }
+.pop { position: absolute; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 6px; z-index: 40; animation: pop 0.12s ease-out; }
 
 /* ---- 折叠块：思考过程、工具调用共用同一套外观（框是灰的、小标签跟主题色），改这里两边一起变 ---- */
 .blk { border: 1px solid var(--line); background: var(--panel); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-sm); align-self: stretch; max-width: 100%; transition: border-color 0.15s; }
@@ -248,7 +263,7 @@ a:hover { text-decoration: underline; }
 .blk > summary { list-style: none; }
 .blk > summary::-webkit-details-marker { display: none; }
 .blk-ic { width: 16px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); }
-.blk-chip { flex: none; font-family: var(--font-code); font-size: var(--fs-xs); padding: 1px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-text); }
+.blk-chip { flex: none; font-family: var(--font-code); font-size: var(--fs-xs); padding: 1px 8px; border-radius: var(--r-xs); background: var(--accent-soft); color: var(--accent-text); }
 .blk-chip.soft { font-family: var(--font); background: var(--accent-soft); color: var(--accent-text); }
 .blk-sum { color: var(--text-3); font-family: var(--font-code); font-size: var(--fs-sm); }
 .blk-meta { flex: none; color: var(--text-3); font-size: var(--fs-xs); }
@@ -290,11 +305,11 @@ a:hover { text-decoration: underline; }
 .md h3 { font-size: 1.1em; }
 .md h4, .md h5 { font-size: 1em; }
 .md strong { font-weight: 600; }
-.md code { font-family: var(--font-code); font-size: 0.9em; background: var(--inline-code); padding: 0.1em 0.4em; border-radius: 4px; }
+.md code { font-family: var(--font-code); font-size: 0.9em; background: var(--inline-code); padding: 0.1em 0.4em; border-radius: var(--r-xs); }
 .md pre.code { background: var(--code-bg); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
 .md pre.code code { background: none; padding: var(--sp2) var(--pad-x); display: block; overflow-x: auto; font-size: var(--fs-code); line-height: 1.55; border-radius: 0; }
 .md .code-bar { display: flex; justify-content: space-between; align-items: center; padding: 0 6px 0 var(--pad-x); height: 30px; font-size: var(--fs-xs); color: var(--text-3); border-bottom: 1px solid var(--line); font-family: var(--font); }
-.md .copy-btn { border: 0; background: transparent; cursor: pointer; font-size: var(--fs-xs); color: var(--text-3); padding: 3px 8px; border-radius: 4px; }
+.md .copy-btn { border: 0; background: transparent; cursor: pointer; font-size: var(--fs-xs); color: var(--text-3); padding: 3px 8px; border-radius: var(--r-xs); }
 .md .copy-btn:hover { background: var(--hover); color: var(--text); }
 .md blockquote { border-left: 3px solid var(--accent); background: var(--accent-softer); padding: 0.4em 1em; border-radius: 0 var(--r-sm) var(--r-sm) 0; color: var(--text-2); }
 .md blockquote > :first-child { margin-top: 0; }

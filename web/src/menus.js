@@ -38,7 +38,7 @@ export function mainMenu(extra = []) {
   return [
     ...extra,
     ...(extra.length ? ['-'] : []),
-    { label: '新会话', icon: 'newchat', run: newSession, disabled: !idle },
+    { label: '新会话', icon: 'newchat', run: newSession },
     { label: '切换会话…', icon: 'history', key: 'Ctrl+P', run: pickSession },
     { label: '切换模型…', icon: 'model', key: 'Ctrl+L', run: openModelMenu },
     S.thinkingLevels.length > 1 && {
@@ -69,7 +69,7 @@ export function mainMenu(extra = []) {
         { label: '重新加载（扩展/技能/设置）', icon: 'refresh', run: restartAgent },
         { label: '在终端里打开 pi（设置/登录）', icon: 'terminal', run: () => openTerminal({ command: 'pi', title: 'pi' }) },
         '-',
-        { label: '关闭这个目录的 pi', icon: 'power', run: quitAgent, danger: true },
+        { label: '关闭这个会话的 pi', icon: 'power', run: quitAgent, danger: true },
       ],
     },
     '-',

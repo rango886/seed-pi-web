@@ -1,7 +1,7 @@
 // 全局状态 + 所有动作。组件只负责显示，逻辑都在这里，方便看懂。
-import { reactive, computed } from 'vue';
-import { connect, call, fire, http, rawUrl } from './api.js';
-import { stripAnsi, joinPath, normPath, isAbsPath } from './util.js';
+import { reactive, computed, watch } from 'vue';
+import { connect, call, fire, http, rawUrl, upload, CID } from './api.js';
+import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments } from './util.js';
 import { view, UI } from './settings.js';
 
 export const S = reactive({
@@ -30,7 +30,8 @@ export const S = reactive({
   statusItems: {},
   widgets: {},
   // 界面
-  composer: { text: '', images: [] },
+  // attachments：输入框上面那一排附件（顺序就是发送时的编号），每个会话各自一份
+  composer: { text: '', attachments: [] },
   toasts: [],
   picker: null,
   dirPicker: false,
@@ -48,6 +49,8 @@ export const S = reactive({
 
 // 后台还有几个别的 pi 进程在跑（不含当前这个）
 export const otherAgents = computed(() => S.agents.filter((a) => a.running && a.id !== S.agentId).length);
+// 这个会话正在被别的窗口操作：这里只能看
+export const viewer = computed(() => !!(S.agent?.owner && S.agent.owner !== CID && !S.agentExited));
 // 输入框上面那行状态信息有没有东西可显示：顶部栏的状态按钮靠它决定要不要出现
 export const hasStatus = computed(() => !!(S.stats?.tokens || S.stats?.contextUsage || otherAgents.value || Object.keys(S.statusItems).length));
 
@@ -63,6 +66,7 @@ export function toast(text, kind = 'info', ms = 4000) {
 
 async function rpc(cmd) {
   if (!S.agentId) throw new Error('还没有打开目录');
+  if (viewer.value && !/^get_/.test(cmd.type) && cmd.type !== 'export_html') throw new Error('其他窗口正在使用这个会话，点「接管」以后才能操作');
   const res = await call('rpc', { agentId: S.agentId, cmd });
   if (!res.success) throw new Error(res.error || `${cmd.type} 失败`);
   return res.data;
@@ -109,13 +113,13 @@ export function start() {
         // 会话列表不依赖 pi 进程，先拉，不用等 pi 启动完
         if (S.cwd) loadSessions();
         try {
-          // 从别的标签页指定的目录：不恢复当前标签页记着的会话，那个还在原标签页用着
-          await openDirRaw(cwd, true, bootCwd ? undefined : localStorage.getItem('pi-web-session'));
+          if (bootNew) await newSessionIn(cwd);
+          // 从别的标签页指定的目录：不恢复当前标签页记着的会话
+          else await openDirRaw(cwd, true, bootCwd ? null : S.agent?.sessionFile || localStorage.getItem('pi-web-session'));
         } catch (e) {
           toast(e.message, 'error');
           await openDirRaw(S.info.home, true);
         }
-        if (bootNew) await newSessionIn(cwd);
       } catch (e) {
         toast(e.message, 'error');
       }
@@ -144,27 +148,60 @@ export function openInNewTab(cwd, { newSession: atNew = false } = {}) {
 
 function onServerMsg(msg) {
   switch (msg.t) {
-    case 'agents':
+    case 'agents': {
+      const prev = new Map(S.agents.map((a) => [a.id, a]));
       S.agents = msg.list;
+      // 别的会话回复完了、新会话第一次写盘了：侧栏列表要更新（条数、时间、标题）
+      if (msg.list.some((a) => { const p = prev.get(a.id); return p && (p.lastSettledAt !== a.lastSettledAt || p.saved !== a.saved || p.sessionName !== a.sessionName); })) loadSessionsSoon();
       if (S.agentId) {
         const a = msg.list.find((x) => x.id === S.agentId);
         if (a) {
           const sessionChanged = S.agent && a.sessionFile !== S.agent.sessionFile;
+          const lostOwner = S.agent?.owner === CID && a.owner && a.owner !== CID;
           S.agent = a;
-          if (a.sessionFile) localStorage.setItem('pi-web-session', a.sessionFile);
+          if (a.sessionFile) rememberSession(a);
           if (a.cwd !== S.cwd) setCwd(a.cwd);
           if (sessionChanged) loadSessions();
+          // 操作权被别的窗口拿走了：扩展弹窗归它管，这边关掉
+          if (lostOwner) {
+            S.dialogs = S.dialogs.filter((d) => d._resolve);
+            toast('另一个窗口接管了这个会话，这里现在只能看', 'warning');
+          }
         }
       }
       break;
+    }
     case 'rec':
       if (msg.agentId === S.agentId) onRec(msg.rec);
       break;
     case 'agent_exit':
       if (msg.agentId === S.agentId) {
+        // 别的窗口重启了 pi（/reload）：等它起来以后重新连上同一个会话
+        if (msg.restart) {
+          if (!restarting && msg.sessionFile) setTimeout(() => reopenSession(msg.sessionFile, msg.cwd), 1500);
+          break;
+        }
         S.agentExited = { code: msg.code, stderr: msg.stderr };
         S.running = false;
       }
+      break;
+    // 操作者在另一个窗口 fork / clone 了：那个进程跟着它去了新会话，这里留在原来的会话上
+    case 'session_moved':
+      if (msg.agentId === S.agentId) {
+        S.agentId = null;
+        reopenSession(msg.from, msg.cwd);
+      }
+      break;
+    // 操作者改了模型、压缩了、跑了 shell ……：旁观的窗口跟着刷新
+    case 'state_changed':
+      if (msg.agentId === S.agentId) {
+        loadState();
+        loadStats();
+        if (msg.cmd === 'bash' || msg.cmd === 'compact') loadMessages();
+      }
+      break;
+    case 'notice':
+      toast(msg.text, msg.kind || 'info', 8000);
       break;
     case 'terms':
       S.terms = msg.list;
@@ -185,8 +222,87 @@ function setCwd(cwd) {
   S.cwd = cwd;
   localStorage.setItem('pi-web-cwd', cwd);
   syncTitle();
-  if (S.agent?.sessionFile) localStorage.setItem('pi-web-session', S.agent.sessionFile);
+  if (S.agent?.sessionFile) rememberSession(S.agent);
   S.fsEpoch++;
+}
+
+// 每个目录上次用的是哪个会话：打开目录时优先回到它
+const LAST_KEY = 'pi-web-last-session';
+function rememberSession(a) {
+  localStorage.setItem('pi-web-session', a.sessionFile);
+  if (!a.cwd) return;
+  let m = {};
+  try {
+    m = JSON.parse(localStorage.getItem(LAST_KEY) || '{}');
+  } catch {}
+  if (m[normPath(a.cwd)] === a.sessionFile) return;
+  delete m[normPath(a.cwd)];
+  m[normPath(a.cwd)] = a.sessionFile;
+  const keys = Object.keys(m);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 100))) delete m[k];
+  localStorage.setItem(LAST_KEY, JSON.stringify(m));
+}
+function lastSessionOf(cwd) {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_KEY) || '{}')[normPath(cwd)] || null;
+  } catch {
+    return null;
+  }
+}
+
+// ---- 侧栏的状态图标：运行中 / 等你操作 / 有新回复没看 / 别的窗口正在用 ----
+// “看没看过”每个浏览器各记各的：会话文件 -> 上次看到它的时间
+const SEEN_KEY = 'pi-web-seen';
+const seen = reactive((() => {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}');
+  } catch {
+    return {};
+  }
+})());
+function markSeen() {
+  const f = S.agent?.sessionFile;
+  if (!f || document.hidden) return;
+  seen[normPath(f)] = Date.now();
+  const keys = Object.keys(seen);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 300))) delete seen[k];
+  localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+}
+watch(() => [S.agent?.sessionFile, S.agent?.lastSettledAt], markSeen);
+document.addEventListener('visibilitychange', markSeen);
+
+const agentByFile = computed(() => {
+  const m = new Map();
+  for (const a of S.agents) if (a.sessionFile) m.set(normPath(a.sessionFile), a);
+  return m;
+});
+/** 某个会话现在是什么状态（侧栏、进程列表用） */
+export function sessionStatus(file) {
+  const k = normPath(file || '');
+  const a = agentByFile.value.get(k);
+  if (!a) return null;
+  const current = a.id === S.agentId;
+  return {
+    running: a.running,
+    waiting: a.waitingUi,
+    unread: !current && !a.running && a.lastSettledAt > (seen[k] || 0),
+    elsewhere: !!(a.owner && a.owner !== CID),
+  };
+}
+
+let sessionsTimer = null;
+function loadSessionsSoon() {
+  clearTimeout(sessionsTimer);
+  sessionsTimer = setTimeout(loadSessions, 400);
+}
+
+/** 重新连上某个会话；会话文件还没写盘（没说过话的新会话）就回到那个目录 */
+async function reopenSession(file, cwd) {
+  try {
+    await openSessionRaw(file);
+  } catch {
+    await openDirRaw(cwd || S.cwd, true, null).catch((e) => toast(e.message, 'error'));
+  }
 }
 
 /** 顶栏 / 浏览器标签页显示的会话名：自定义名 > 第一条用户消息 > 目录名 */
@@ -195,7 +311,7 @@ export function sessionTitle() {
   const first = S.messages.find((m) => m.role === 'user');
   const c = first?.content;
   const text = typeof c === 'string' ? c : Array.isArray(c) ? c.find((b) => b.type === 'text')?.text || '' : '';
-  const line = text.replace(/\s+/g, ' ').trim().slice(0, 60);
+  const line = stripAttachments(text).replace(/\s+/g, ' ').trim().slice(0, 60);
   if (line) return line;
   return (S.cwd || '').split(/[\\/]/).filter(Boolean).pop() || '新会话';
 }
@@ -206,7 +322,8 @@ export function syncTitle() {
   document.title = t.length > 28 ? t.slice(0, 28) + '…' : t;
 }
 
-async function attachResult({ agent, uiPending, uiState }) {
+/** 连上一个 pi 进程。后端的回复里带着快照：写完的消息 + 进行中的事件（正在吐的字、正在跑的工具） */
+async function attachResult({ agent, uiPending, uiState, messages, live }) {
   S.agentId = agent.id;
   S.agent = agent;
   S.agentExited = null;
@@ -217,20 +334,38 @@ async function attachResult({ agent, uiPending, uiState }) {
   for (const r of uiState || []) onUiRequest(r);
   S.retry = null;
   S.compacting = false;
+  S.queue = { steering: [], followUp: [] };
+  S.bashLive = null;
+  S.running = !!agent.running;
   setCwd(agent.cwd);
-  await reload();
+  setMessages(messages);
+  // 补放进行中的事件：和一直开着这个窗口的效果一样
+  for (const rec of live || []) onRec(rec);
+  flushDeltas();
+  await Promise.all([loadState(), loadCommands(), loadStats()]);
+  loadSessions();
 }
 
 async function openDirRaw(cwd, force = false, sessionFile) {
   if (!force && S.agent?.alive && !S.agentExited && normPath(S.agent.cwd) === normPath(cwd)) return;
-  await attachResult(await call('attach', { cwd, sessionFile }));
+  // sessionFile：undefined = 用这个目录上次的会话；null = 不指定，由后端挑
+  await attachResult(await call('attach', { cwd, sessionFile: sessionFile === undefined ? lastSessionOf(cwd) : sessionFile }));
 }
 export const openDir = guard(openDirRaw);
 
-export const openSession = guard(async (file) => {
+async function openSessionRaw(file) {
   const res = await call('open_session', { file });
   if (res?.detached) return openDetached(res.detached);
   await attachResult(res);
+}
+export const openSession = guard(openSessionRaw);
+
+/** 把操作权拿过来（另一个窗口正在用，比如别的电脑上忘了关） */
+export const takeOver = guard(async () => {
+  if (!S.agentId) return;
+  const r = await call('take_over', { agentId: S.agentId });
+  S.dialogs = S.dialogs.filter((d) => d._resolve).concat(r.uiPending || []);
+  toast('已接管这个会话');
 });
 
 /**
@@ -260,12 +395,22 @@ function openDetached({ file, cwd, messages }) {
 }
 
 
+let restarting = false;
 export const restartAgent = guard(async () => {
   if (S.running) return toast('正在运行，先停止再重新加载', 'warning');
-  if (!S.agentId || S.agentExited) return openDir(S.cwd, true);
-  await attachResult(await call('restart', { agentId: S.agentId }));
+  if (!S.agentId || S.agentExited) return reopenSession(S.agent?.sessionFile, S.cwd);
+  if (viewer.value) throw new Error('其他窗口正在使用这个会话，点「接管」以后才能操作');
+  restarting = true;
+  try {
+    await attachResult(await call('restart', { agentId: S.agentId }));
+  } finally {
+    restarting = false;
+  }
   toast('已重新加载 pi（扩展、技能、设置）');
 });
+
+/** 进程退出以后的「重新启动」：回到同一个会话 */
+export const restartExited = () => reopenSession(S.agent?.sessionFile, S.cwd);
 
 export async function reload() {
   await Promise.all([loadMessages(), loadState(), loadCommands(), loadStats()]);
@@ -578,24 +723,179 @@ export function answerDialog(d, payload) {
 // ---------------- 发送消息 ----------------
 /** 返回 true 表示已处理，输入框可以清空 */
 export async function submit(text, { followUp = false } = {}) {
-  const images = S.composer.images.map(({ type, data, mimeType }) => ({ type, data, mimeType }));
-  if (!text.trim() && !images.length) return false;
+  const atts = S.composer.attachments;
+  const ready = atts.filter((a) => a.status === 'ready' && a.path);
+  if (!text.trim() && !ready.length) {
+    if (atts.some((a) => a.status === 'uploading')) toast('附件还在上传，稍等一下', 'warning');
+    return false;
+  }
   try {
-    if (text.startsWith('/') && !images.length) {
+    // 内置命令、! shell 命令跟附件没关系：照常执行，附件留着
+    if (text.startsWith('/')) {
       const handled = await runSlash(text.trim());
       if (handled) return true;
     }
-    if (text.startsWith('!') && !images.length) return await runBash(text);
-    const cmd = { type: 'prompt', message: text };
-    if (images.length) cmd.images = images;
+    if (text.startsWith('!')) return await runBash(text);
+    if (atts.some((a) => a.status === 'uploading')) {
+      toast('附件还在上传，稍等一下', 'warning');
+      return false;
+    }
+    // 附件只发路径：拼在提示词最后面（会话名、斜杠命令都看的是开头，放前面会干扰）
+    let message = text;
+    if (ready.length) {
+      const block = buildAttachmentBlock(ready);
+      message = text.trim() ? `${text.replace(/\s+$/, '')}\n\n${block}` : block;
+    }
+    const cmd = { type: 'prompt', message };
     if (S.running) cmd.streamingBehavior = followUp ? 'followUp' : 'steer';
     await rpc(cmd);
+    if (ready.length && !UI.keepAttachments) clearAttachments();
     return true;
   } catch (e) {
     toast(e.message, 'error');
     return false;
   }
 }
+
+// ---------------- 附件 ----------------
+// 每个附件最后都变成一个后端机器上的路径（pi 跑在后端那台机器上，要的是那边的路径）：
+//   tree      从右侧文件树拖进来 / 点 @         → 原文件
+//   mention   输入框里 @ 补全选的                  → 原文件
+//   clipboard 本机资源管理器复制、这里 Ctrl+V      → 原文件（后端读剪贴板拿到的真实路径）
+//   upload    资源管理器拖进来、截图、局域网访问  → 上传到临时目录后的路径
+export const ORIGIN_LABEL = {
+  tree: '原文件（来自文件树）',
+  mention: '原文件（@ 引用）',
+  clipboard: '原文件（从剪贴板粘贴）',
+  upload: '已上传到临时目录',
+  path: '原文件',
+};
+let attSeq = 0;
+function makeAtt(p) {
+  return reactive({
+    id: ++attSeq,
+    kind: p.kind || attachKind(p.name || p.path, p.dir),
+    name: p.name || baseName(p.path),
+    path: p.path || '',
+    size: p.size ?? null,
+    origin: p.origin || 'path',
+    status: p.status || 'ready', // ready | uploading
+    progress: 0,
+    preview: p.preview || '', // 上传中的图片先用本地 blob 当缩略图
+    broken: false, // 缩略图加载不出来（文件被删了、不是真图片）就显示成文件图标
+  });
+}
+
+/** 加一组已经知道路径的附件（同一个文件不重复加） */
+export function attachPaths(list, origin = 'path') {
+  let added = 0;
+  for (const it of list) {
+    if (!it?.path) continue;
+    if (S.composer.attachments.some((a) => a.path && normPath(a.path) === normPath(it.path))) continue;
+    S.composer.attachments.push(makeAtt({ ...it, origin: it.origin || origin }));
+    added++;
+  }
+  if (added) S.activeTab = 'chat';
+  return added;
+}
+
+const pad = (n) => String(n).padStart(2, '0');
+function pastedName(f) {
+  const d = new Date();
+  const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/\W.*/, '');
+  return `paste-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`;
+}
+
+/** 浏览器里的文件（拿不到路径）：上传到后端的临时目录，用上传后的路径。pasted：剪贴板里的截图，没有像样的文件名 */
+export function uploadFiles(files, { pasted = false } = {}) {
+  const max = (Number(UI.uploadMaxMB) || 0) * 1048576;
+  for (const f of files) {
+    if (max && f.size > max) {
+      toast(`${f.name} 太大了（上限 ${UI.uploadMaxMB}MB，可以在设置里改）`, 'warning');
+      continue;
+    }
+    const name = !f.name || (pasted && /^image\.\w+$/i.test(f.name)) ? pastedName(f) : f.name;
+    const item = makeAtt({ name, size: f.size, origin: 'upload', status: 'uploading', preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : '' });
+    S.composer.attachments.push(item);
+    upload(f, { name, dir: UI.uploadDir, cwd: S.cwd, session: S.state?.sessionId, maxMB: UI.uploadMaxMB }, (p) => (item.progress = p))
+      .then((r) => Object.assign(item, { path: r.path, name: r.name, size: r.size, status: 'ready' }))
+      .catch((e) => {
+        toast(`${name} 上传失败：${e.message}`, 'error');
+        removeAttachment(item);
+      });
+  }
+}
+
+/**
+ * Ctrl+V 粘贴了文件。本机打开的网页：先问后端剪贴板里的路径列表（资源管理器复制文件时放进去的），
+ * 按文件名 + 大小跟浏览器给的文件对上了就直接用原路径；对不上的（截图之类）照常上传。
+ * files 为空：浏览器没给文件也没给文字，只看后端剪贴板
+ */
+export async function pasteFiles(files) {
+  let list = [];
+  if (S.info.local) list = await http.get('/api/clipboard/files').then((r) => r.files || [], () => []);
+  if (!list.length) return files.length ? uploadFiles(files, { pasted: true }) : false;
+  const used = new Set();
+  const rest = [];
+  for (const f of files) {
+    const i = list.findIndex((c, j) => !used.has(j) && c.name === f.name && (c.dir || c.size === f.size));
+    if (i >= 0) used.add(i);
+    else rest.push(f);
+  }
+  // 浏览器给的全对上了：剪贴板里的全部文件都加上（有的浏览器只给第一个，或者不给文件夹）
+  const pick = rest.length ? list.filter((_, j) => used.has(j)) : list;
+  attachPaths(pick.map((c) => ({ path: c.path, name: c.name, size: c.dir ? null : c.size, dir: c.dir })), 'clipboard');
+  if (rest.length) uploadFiles(rest, { pasted: true });
+  return true;
+}
+
+export function removeAttachment(a) {
+  const i = S.composer.attachments.indexOf(a);
+  if (i >= 0) S.composer.attachments.splice(i, 1);
+  if (a.preview) URL.revokeObjectURL(a.preview);
+}
+export function clearAttachments() {
+  for (const a of S.composer.attachments) if (a.preview) URL.revokeObjectURL(a.preview);
+  S.composer.attachments = [];
+}
+export function moveAttachment(from, to) {
+  const l = S.composer.attachments;
+  if (from === to || from < 0 || to < 0 || from >= l.length || to >= l.length) return;
+  l.splice(to, 0, l.splice(from, 1)[0]);
+}
+
+/** 取回一条发过的消息（分叉、停止时退回排队消息）：正文放回输入框，附件放回上面那一排 */
+function restoreMessage(raw) {
+  const { text, attachments } = splitAttachments(raw || '');
+  attachPaths(attachments.map((a) => ({ path: a.path, kind: a.kind, origin: 'path' })));
+  return text;
+}
+
+// 每个会话各自一排附件：切会话时换一份，刷新页面也还在（localStorage 里只存路径）
+const ATT_KEY = 'pi-web-attachments';
+let attSaved = {};
+try {
+  attSaved = JSON.parse(localStorage.getItem(ATT_KEY) || '{}');
+} catch {}
+const attLive = new Map(); // 内存里的：切走时还在上传的也能接着传完
+let attCur = '';
+const attKeyOf = () => S.agent?.sessionFile || S.detached?.file || '';
+function saveAtt() {
+  if (!attCur) return;
+  const list = S.composer.attachments.filter((a) => a.status === 'ready' && a.path).map(({ kind, name, path, size, origin }) => ({ kind, name, path, size, origin }));
+  delete attSaved[attCur];
+  if (list.length) attSaved[attCur] = list;
+  const keys = Object.keys(attSaved);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 80))) delete attSaved[k];
+  localStorage.setItem(ATT_KEY, JSON.stringify(attSaved));
+}
+watch(attKeyOf, (k) => {
+  if (k === attCur) return;
+  attLive.set(attCur, S.composer.attachments);
+  attCur = k;
+  S.composer.attachments = attLive.get(k) || (attSaved[k] || []).map(makeAtt);
+});
+watch(() => S.composer.attachments.map((a) => a.status + a.path).join('|'), saveAtt);
 
 async function runBash(text) {
   const exclude = text.startsWith('!!');
@@ -623,7 +923,7 @@ export const stop = guard(async () => {
   if (S.bashLive) return rpc({ type: 'abort_bash' });
   if (S.retry) await rpc({ type: 'abort_retry' }).catch(() => {});
   const q = await rpc({ type: 'clear_queue' }).catch(() => null);
-  const back = [...(q?.steering || []), ...(q?.followUp || [])].join('\n');
+  const back = [...(q?.steering || []), ...(q?.followUp || [])].map(restoreMessage).join('\n');
   if (back) S.composer.text = back + (S.composer.text ? '\n' + S.composer.text : '');
   await rpc({ type: 'abort' });
 });
@@ -648,7 +948,7 @@ export const BUILTINS = [
   { name: 'terminal', desc: '打开一个终端', run: () => openTerminal() },
   { name: 'hotkeys', desc: '快捷键说明', run: () => showHotkeys() },
   { name: 'ui', desc: '界面设置（主题、字体、气泡、间距…）', run: () => (view.settingsOpen = true) },
-  { name: 'quit', desc: '关闭当前目录的 pi 进程', run: () => quitAgent() },
+  { name: 'quit', desc: '关闭这个会话的 pi 进程', run: () => quitAgent() },
 ];
 // 这些只有终端版 pi 有界面，网页里就在终端里打开 pi 来用
 export const TUI_ONLY = ['settings', 'login', 'logout', 'scoped-models', 'tree', 'trust', 'share', 'bug', 'import', 'changelog'];
@@ -690,13 +990,9 @@ export function openDirPicker(mode = 'switch') {
   S.dirPicker = true;
 }
 
-/** 在指定目录里开始一个新会话（当前标签页）；正在跑的话不让切，免得丢内容 */
+/** 在指定目录里开始一个新会话（当前标签页）。新会话是一个新的 pi 进程，原来的会话在后台接着跑 */
 export const newSessionIn = guard(async (cwd) => {
-  if (cwd) await openDirRaw(cwd);
-  requireIdle();
-  const d = await rpc({ type: 'new_session' });
-  if (d?.cancelled) return toast('扩展取消了新建会话', 'warning');
-  await reload();
+  await attachResult(await call('create_session', { cwd: cwd || S.cwd }));
 });
 
 export const pickSession = guard(async () => {
@@ -782,12 +1078,12 @@ export const pickFork = guard(async () => {
   if (!list.length) return toast('还没有可以分叉的消息');
   openPicker({
     title: '从哪条消息分叉？',
-    items: list.map((m) => ({ label: m.text.replace(/\s+/g, ' ').slice(0, 120), value: m })),
+    items: list.map((m) => ({ label: stripAttachments(m.text).replace(/\s+/g, ' ').trim().slice(0, 120) || '（只有附件）', value: m })),
     onPick: guard(async (m) => {
       const r = await rpc({ type: 'fork', entryId: m.entryId });
       if (r?.cancelled) return toast('扩展取消了分叉', 'warning');
       await reload();
-      S.composer.text = r?.text || m.text;
+      S.composer.text = restoreMessage(r?.text || m.text);
       toast('已分叉到新会话，可以修改这条消息后重新发送');
     }),
   });
@@ -840,6 +1136,7 @@ export const changeDir = guard(async (arg) => {
 
 export const quitAgent = guard(async () => {
   if (!S.agentId) return;
+  if (viewer.value) throw new Error('其他窗口正在使用这个会话，点「接管」以后才能操作');
   await call('stop', { agentId: S.agentId });
   S.agentExited = { code: 0, stderr: '', manual: true };
 });
@@ -857,7 +1154,8 @@ function showHotkeys() {
       ['/', '命令菜单，↑↓ 选择，Tab 补全'],
       ['!命令', '直接执行 shell 命令（结果进上下文）'],
       ['!!命令', '执行 shell 命令（不进上下文）'],
-      ['Ctrl+V', '粘贴图片'],
+      ['Ctrl+V', '粘贴图片 / 文件（本机打开时，资源管理器复制的文件直接用原路径）'],
+      ['@', '引用项目里的文件，选中后变成附件'],
       ['Ctrl+`', '打开终端标签页 / 回到对话'],
       ['Ctrl+E', '显示/隐藏文件侧栏'],
       ['Ctrl+P', '切换会话'],
@@ -921,6 +1219,11 @@ export function insertToComposer(text) {
   const t = S.composer.text;
   S.composer.text = t + (t && !t.endsWith(' ') && !t.endsWith('\n') ? ' ' : '') + text + ' ';
   S.activeTab = 'chat';
+}
+
+/** 文件树 / 文件查看器里的「@ 引用」：加到输入框上面的附件里（用原路径） */
+export function attachFromTree(path, dir = false) {
+  if (!attachPaths([{ path, dir }], 'tree')) toast('已经在附件里了');
 }
 
 export const deleteSession = guard(async (s) => {

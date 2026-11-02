@@ -146,7 +146,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
       <header ref="topEl" class="top">
         <template v-if="!sideOpen || view.mobile">
           <button class="ib" title="侧栏 (Ctrl+B)" @click="toggleSide(true)"><Icon name="sidebar" /></button>
-          <button class="ib" title="新会话" :disabled="S.running" @click="newSession"><Icon name="newchat" /></button>
+          <button class="ib" title="新会话" @click="newSession"><Icon name="newchat" /></button>
         </template>
         <div class="ttl" :title="`${S.cwd}\n点击重命名`" @click="renameSession()">
           <div class="t1 ellipsis">{{ title }}</div>
@@ -246,11 +246,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 .top { height: 52px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 10px; border-bottom: 1px solid var(--line); background: var(--chat-bg); }
 .ttl { flex: 1; min-width: 0; text-align: center; cursor: pointer; padding: 0 8px; }
 .t1 { font-weight: 600; line-height: 1.3; }
-.ib { width: 36px; height: 36px; border: 0; background: transparent; border-radius: 9px; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ib { width: 36px; height: 36px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .ib:hover { background: var(--active); color: var(--text); }
 .ib.on { color: var(--accent-text); background: var(--accent-soft); }
 .ib:disabled { opacity: 0.4; pointer-events: none; }
-.ib.sm { width: 28px; height: 28px; border-radius: 7px; }
+.ib.sm { width: 28px; height: 28px; border-radius: var(--r-sm); }
 
 .tabbar { background: var(--chat-bg); padding: 6px 10px; }
 .tab { height: 28px; font-size: var(--fs-sm); }

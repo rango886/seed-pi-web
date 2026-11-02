@@ -1,0 +1,253 @@
+/* GitHub 风格：两部分互相独立，可以分别开关
+   1. [data-md='github' | 'github-compact']：只管回复正文的 Markdown（仿 github-markdown-css）
+   2. [data-ui='github']：整体界面配色和控件外观（仿 GitHub Primer）
+   选择器都以 :root 开头，是为了比组件里的 scoped 样式（.x[data-v-xxx]）多一级优先级，稳稳盖过去 */
+
+/* ================= 1. Markdown ================= */
+:root[data-md^='github'] {
+  --gh-fg-muted: #59636e;
+  --gh-border: #d1d9e0;
+  --gh-border-muted: #d1d9e0b3;
+  --gh-neutral-muted: #818b981f;
+  --gh-row: #818b980d;
+  --gh-link: #0969da;
+  --gh-btn-bg: #f6f8fa;
+  --gh-btn-hover: #eff2f5;
+}
+:root[data-md^='github'][data-theme='dark'] {
+  --gh-fg-muted: #9198a1;
+  --gh-border: #3d444d;
+  --gh-border-muted: #3d444db3;
+  --gh-neutral-muted: #656c7633;
+  --gh-row: #656c761a;
+  --gh-link: #4493f8;
+  --gh-btn-bg: #212830;
+  --gh-btn-hover: #262c36;
+}
+
+/* ---- 常规 GitHub ---- */
+:root[data-md^='github'] .md { line-height: 1.5; }
+:root[data-md^='github'] .md p,
+:root[data-md^='github'] .md ul,
+:root[data-md^='github'] .md ol,
+:root[data-md^='github'] .md blockquote,
+:root[data-md^='github'] .md table,
+:root[data-md^='github'] .md pre.code { margin: 0 0 var(--fs); }
+:root[data-md^='github'] .md h1,
+:root[data-md^='github'] .md h2,
+:root[data-md^='github'] .md h3,
+:root[data-md^='github'] .md h4,
+:root[data-md^='github'] .md h5,
+:root[data-md^='github'] .md h6 { margin: calc(var(--fs) * 1.5) 0 var(--fs); font-weight: 600; line-height: 1.25; }
+:root[data-md^='github'] .md h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--gh-border-muted); }
+:root[data-md^='github'] .md h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--gh-border-muted); }
+:root[data-md^='github'] .md h3 { font-size: 1.25em; }
+:root[data-md^='github'] .md h4 { font-size: 1em; }
+:root[data-md^='github'] .md h5 { font-size: 0.875em; }
+:root[data-md^='github'] .md h6 { font-size: 0.85em; color: var(--gh-fg-muted); }
+
+:root[data-md^='github'] .md ul,
+:root[data-md^='github'] .md ol { padding-left: 2em; }
+:root[data-md^='github'] .md li { margin: 0; }
+:root[data-md^='github'] .md li + li { margin-top: 0.25em; }
+:root[data-md^='github'] .md li > p { margin-top: var(--fs); margin-bottom: 0; }
+:root[data-md^='github'] .md li ul,
+:root[data-md^='github'] .md li ol { margin: 0; }
+:root[data-md^='github'] .md li::marker { color: inherit; }
+:root[data-md^='github'] .md input[type='checkbox'] { margin: 0 0.2em 0.25em -1.4em; vertical-align: middle; }
+:root[data-md^='github'] .md li:has(> input[type='checkbox']) { list-style: none; }
+
+:root[data-md^='github'] .md a { color: var(--gh-link); }
+:root[data-md^='github'] .md a:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+
+:root[data-md^='github'] .md code { padding: 0.2em 0.4em; margin: 0; font-size: 85%; background: var(--gh-neutral-muted); border-radius: var(--r-sm); white-space: break-spaces; }
+
+/* 代码块：没有标题栏，复制按钮悬停时浮在右上角，跟 GitHub 一样 */
+:root[data-md^='github'] .md pre.code { position: relative; background: var(--code-bg); border: 0; border-radius: var(--r-sm); }
+:root[data-md^='github'] .md pre.code code { padding: 16px; font-size: var(--fs-code); line-height: 1.45; background: none; white-space: pre; }
+:root[data-md^='github'] .md .code-bar { position: absolute; top: 8px; right: 8px; height: auto; padding: 0; border: 0; background: none; opacity: 0; transition: opacity 0.15s; }
+:root[data-md^='github'] .md .code-bar span { display: none; }
+:root[data-md^='github'] .md pre.code:hover .code-bar { opacity: 1; }
+:root[data-md^='github'] .md .copy-btn { padding: 4px 8px; border: 1px solid var(--gh-border); border-radius: var(--r-sm); background: var(--gh-btn-bg); color: var(--gh-fg-muted); }
+:root[data-md^='github'] .md .copy-btn:hover { background: var(--gh-btn-hover); color: var(--text); }
+@media (hover: none) {
+  :root[data-md^='github'] .md .code-bar { opacity: 1; }
+}
+
+:root[data-md^='github'] .md blockquote { padding: 0 1em; color: var(--gh-fg-muted); border-left: 0.25em solid var(--gh-border); background: none; border-radius: 0; }
+
+:root[data-md^='github'] .md table { border-collapse: collapse; border-spacing: 0; border: 0; border-radius: 0; display: block; width: max-content; max-width: 100%; overflow: auto; font-variant-numeric: tabular-nums; }
+:root[data-md^='github'] .md th,
+:root[data-md^='github'] .md td { padding: 6px 13px; border: 1px solid var(--gh-border); }
+:root[data-md^='github'] .md th { font-weight: 600; background: none; }
+:root[data-md^='github'] .md tr { border-top: 1px solid var(--gh-border-muted); }
+:root[data-md^='github'] .md tr:nth-child(2n) { background: var(--gh-row); }
+
+:root[data-md^='github'] .md hr { height: 0.25em; padding: 0; margin: calc(var(--fs) * 1.5) 0; background: var(--gh-border); border: 0; }
+:root[data-md^='github'] .md img { border-radius: 0; background: transparent; }
+
+/* ---- 紧凑 GitHub：同一套外观，把行高和各种间距都压一压，一屏能多看不少 ---- */
+:root[data-md='github-compact'] .md { line-height: 1.45; }
+:root[data-md='github-compact'] .md p,
+:root[data-md='github-compact'] .md ul,
+:root[data-md='github-compact'] .md ol,
+:root[data-md='github-compact'] .md blockquote,
+:root[data-md='github-compact'] .md table,
+:root[data-md='github-compact'] .md pre.code { margin: 0 0 0.5em; }
+:root[data-md='github-compact'] .md h1,
+:root[data-md='github-compact'] .md h2,
+:root[data-md='github-compact'] .md h3,
+:root[data-md='github-compact'] .md h4,
+:root[data-md='github-compact'] .md h5,
+:root[data-md='github-compact'] .md h6 { margin: calc(var(--fs) * 0.9) 0 calc(var(--fs) * 0.4); }
+:root[data-md='github-compact'] .md h1 { font-size: 1.5em; padding-bottom: 0.2em; }
+:root[data-md='github-compact'] .md h2 { font-size: 1.3em; padding-bottom: 0.2em; }
+:root[data-md='github-compact'] .md h3 { font-size: 1.15em; }
+:root[data-md='github-compact'] .md ul,
+:root[data-md='github-compact'] .md ol { padding-left: 1.6em; }
+:root[data-md='github-compact'] .md li + li { margin-top: 0.1em; }
+:root[data-md='github-compact'] .md li > p { margin-top: 0.25em; }
+:root[data-md='github-compact'] .md pre.code code { padding: 8px 12px; line-height: 1.4; }
+:root[data-md='github-compact'] .md .code-bar { top: 4px; right: 4px; }
+:root[data-md='github-compact'] .md .copy-btn { padding: 2px 6px; }
+:root[data-md='github-compact'] .md blockquote { padding: 0 0.8em; }
+:root[data-md='github-compact'] .md th,
+:root[data-md='github-compact'] .md td { padding: 3px 10px; }
+:root[data-md='github-compact'] .md hr { height: 2px; margin: calc(var(--fs) * 0.75) 0; }
+
+/* ================= 2. 整体界面 ================= */
+:root[data-ui='github'] {
+  --bg: #f6f8fa;
+  --panel: #ffffff;
+  --panel-2: #f6f8fa;
+  --chat-bg: #ffffff;
+  --bubble-ai: #ffffff;
+  --elev: #ffffff;
+  --text: #1f2328;
+  --text-2: #59636e;
+  --text-3: #818b98;
+  --line: #d1d9e0;
+  --line-2: #d1d9e0b3;
+  --hover: #818b981a;
+  --active: #818b9826;
+  --code-bg: #f6f8fa;
+  --inline-code: #818b981f;
+  --shadow-sm: 0 1px 0 #1f23280a;
+  --shadow: 0 1px 0 #1f23280a, 0 1px 3px #1f23280f;
+  --shadow-lg: 0 0 0 1px #d1d9e080, 0 6px 12px -3px #25292e0a, 0 6px 18px 0 #25292e1f;
+  --ok: #1a7f37;
+  --err: #d1242f;
+  --warn: #9a6700;
+  --err-bg: #ffebe9;
+  --add-bg: #dafbe1;
+  --add-fg: #116329;
+  --del-bg: #ffebe9;
+  --del-fg: #82071e;
+  --scroll: #818b9866;
+  /* 圆角：GitHub 几乎所有东西都是同一个圆角，所以各档都拉平成 --r，只有弹层（菜单 / 弹窗）是两倍 */
+  --r-xs: var(--r);
+  --r-sm: var(--r);
+  --r-md: var(--r);
+  --r-lg: calc(var(--r) * 2);
+  --r-xl: var(--r);
+  --r-pill: var(--r);
+  --r-bubble: var(--r);
+  --term-bg: #ffffff;
+  /* GitHub 的按钮：灰底细边；主按钮是标志性的绿色 */
+  --gh-btn: #f6f8fa;
+  --gh-btn-h: #eff2f5;
+  --gh-green: #1f883d;
+  --gh-green-h: #1c8139;
+  --gh-tab: #fd8c73;
+  /* 代码高亮：Primer 的 prettylights 配色 */
+  --hl-comment: #59636e;
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-number: #0550ae;
+  --hl-title: #6639ba;
+  --hl-var: #953800;
+  --hl-meta: #59636e;
+}
+:root[data-ui='github'][data-theme='dark'] {
+  --bg: #010409;
+  --panel: #0d1117;
+  --panel-2: #151b23;
+  --chat-bg: #0d1117;
+  --bubble-ai: #151b23;
+  --elev: #212830;
+  --text: #f0f6fc;
+  --text-2: #9198a1;
+  --text-3: #656c76;
+  --line: #3d444d;
+  --line-2: #3d444db3;
+  --hover: #656c7626;
+  --active: #656c7640;
+  --code-bg: #151b23;
+  --inline-code: #656c7633;
+  --shadow-sm: 0 0 transparent;
+  --shadow: 0 0 0 1px #3d444d40;
+  --shadow-lg: 0 0 0 1px #3d444d, 0 8px 24px #010409;
+  --ok: #3fb950;
+  --err: #f85149;
+  --warn: #d29922;
+  --err-bg: #f851491a;
+  --add-bg: #2ea04326;
+  --add-fg: #7ee787;
+  --del-bg: #f8514926;
+  --del-fg: #ffa198;
+  --scroll: #656c7699;
+  --term-bg: #0d1117;
+  --gh-btn: #212830;
+  --gh-btn-h: #262c36;
+  --gh-green: #238636;
+  --gh-green-h: #29903b;
+  --gh-tab: #f78166;
+  --hl-comment: #9198a1;
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-number: #79c0ff;
+  --hl-title: #d2a8ff;
+  --hl-var: #ffa657;
+  --hl-meta: #9198a1;
+}
+
+/* 按钮、输入框 */
+:root[data-ui='github'] .btn { background: var(--gh-btn); border-color: var(--line); box-shadow: var(--shadow-sm); font-weight: 500; }
+:root[data-ui='github'] .btn:hover { background: var(--gh-btn-h); border-color: var(--line); }
+:root[data-ui='github'] .btn.flat { background: transparent; border-color: transparent; box-shadow: none; }
+:root[data-ui='github'] .btn.flat:hover { background: var(--hover); }
+:root[data-ui='github'] .btn.primary { background: var(--gh-green); border-color: #1f232826; color: #fff; }
+:root[data-ui='github'] .btn.primary:hover { background: var(--gh-green-h); }
+:root[data-ui='github'] .btn.danger { color: var(--err); }
+:root[data-ui='github'] .btn.danger:hover { background: var(--err); border-color: var(--err); color: #fff; }
+:root[data-ui='github'] .input { background: var(--panel); }
+:root[data-ui='github'] .input:focus { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* 标签页：GitHub 仓库页那种底部橙色下划线 */
+:root[data-ui='github'] .tab.active { background: transparent; color: var(--text); box-shadow: inset 0 -2px 0 var(--gh-tab); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+
+/* 列表选中：浅灰底 + 左侧一根蓝色竖条（GitHub ActionList 的样子） */
+:root[data-ui='github'] .sel.active { background: var(--active); }
+:root[data-ui='github'] .sess.active { background: var(--active); box-shadow: none; }
+:root[data-ui='github'] .sess.active::before { content: ''; position: absolute; left: -6px; top: 6px; bottom: 6px; width: 4px; border-radius: var(--r-sm); background: var(--accent); }
+:root[data-ui='github'] .sess.active .stitle { color: var(--text); }
+
+/* 输入框：聚焦时一圈主题色描边；发送键用 GitHub 绿 */
+:root[data-ui='github'] .box { box-shadow: var(--shadow); }
+:root[data-ui='github'] .box.focused { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+:root[data-ui='github'] .chip { background: var(--gh-btn); }
+:root[data-ui='github'] .chip:hover,
+:root[data-ui='github'] .chip.on { background: var(--gh-btn-h); border-color: var(--line); color: var(--text); }
+:root[data-ui='github'] .send { background: var(--gh-green); }
+:root[data-ui='github'] .send:hover { background: var(--gh-green-h); }
+:root[data-ui='github'] .send:disabled { background: var(--gh-btn); color: var(--text-3); }
+/* 现代风里是正圆的按钮（发送 / 停止、回到底部），GitHub 风里也跟着全局圆角走 */
+:root[data-ui='github'] .round,
+:root[data-ui='github'] .tobottom { border-radius: var(--r-sm); }
+
+/* 思考 / 工具卡片的小标签：GitHub Label 那种描边样式 */
+:root[data-ui='github'] .blk-chip { background: transparent; border: 1px solid var(--line); color: var(--text-2); }
+:root[data-ui='github'] .blk-head:hover { background: var(--panel-2); }
+
+/* 弹层 */
+:root[data-ui='github'] .modal-mask { background: #1f232866; backdrop-filter: none; }

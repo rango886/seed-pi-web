@@ -7,8 +7,10 @@ export const DEFAULTS = {
   // 外观
   theme: 'light', // light | dark | auto
   accent: '#3b82f6',
-  userBubble: 'accent', // accent | soft | green
-  radius: 12, // 气泡圆角 px
+  userBubble: 'accent', // accent | soft | green | github
+  uiStyle: 'modern', // 整体界面：modern 现代聊天风 | github GitHub 风
+  mdStyle: 'default', // 回复正文的 Markdown：default | github | github-compact
+  radius: 10, // 全局圆角 px：按钮、卡片、弹窗、输入框、气泡等都按它按比例缩放（见 style.css 里的 --r-*）
   chatWidth: 920, // 聊天内容最大宽度 px，0 = 铺满
   spacing: 1, // 间距倍率
   // 文字（默认系统字体：macOS / iOS 上是苹方，Windows 上是微软雅黑）
@@ -25,12 +27,21 @@ export const DEFAULTS = {
   toolsOpen: false,
   showMeta: false, // 默认不显示每条回复的模型/用量，鼠标悬停才显示
   showUsage: false, // 输入框上面的花费/token/上下文信息：默认收起，点顶部栏的状态按钮（或右键菜单）展开
+  // 附件
+  uploadDir: '{tmp}/pi-web/{session}', // 拖进来/粘贴的文件上传到哪：{tmp} {cwd} {session} {date} {home}，相对路径按 cwd 解析
+  uploadMaxMB: 500, // 单个文件上传上限
+  keepAttachments: true, // 发送后附件留在输入框上面，下一轮接着带
 };
 
-export const ACCENTS = ['#3b82f6', '#07c160', '#12b7f5', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#64748b'];
+export const ACCENTS = ['#0969da', '#3b82f6', '#07c160', '#12b7f5', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#64748b'];
+
+export const GITHUB_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif";
+export const GITHUB_MONO = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace";
 
 export const FONT_PRESETS = [
   { label: '系统默认（苹方 / 微软雅黑）', value: SYSTEM_FONT },
+  { label: 'GitHub 字体（Segoe UI / -apple-system）', value: GITHUB_FONT },
+  { label: 'GitHub 代码字体（SF Mono / Consolas）', value: GITHUB_MONO },
   { label: '更纱终端黑体 Sarasa Term SC', value: "'Sarasa Term SC'" },
   { label: '等距更纱黑体 Sarasa Mono SC', value: "'Sarasa Mono SC'" },
   { label: '更纱黑体 Sarasa Gothic SC', value: "'Sarasa Gothic SC'" },
@@ -39,7 +50,7 @@ export const FONT_PRESETS = [
 ];
 
 const KEY = 'pi-web-settings';
-const VER = 3; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关
+const VER = 4; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角
 let saved = {};
 try {
   saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -49,6 +60,7 @@ if ((saved.__v || 1) < 2) {
   delete saved.showMeta; // v2 起默认改成“悬停才显示”
 }
 if ((saved.__v || 1) < 3) delete saved.avatars; // 头像去掉了，这个开关也没了
+if ((saved.__v || 1) < 4) delete saved.radius; // 旧值是“气泡圆角”，含义变了，回到新默认值
 delete saved.__v;
 
 export const UI = reactive({ ...DEFAULTS, ...saved });
@@ -105,6 +117,8 @@ function apply() {
   view.dark = dark;
   r.dataset.theme = dark ? 'dark' : 'light';
   r.dataset.bubble = UI.userBubble;
+  r.dataset.ui = UI.uiStyle;
+  r.dataset.md = UI.mdStyle;
   const set = (k, v) => r.style.setProperty(k, v);
   set('--accent', UI.accent);
   set('--font', `${UI.font || SYSTEM_FONT}, ${FALLBACK}`);
@@ -114,15 +128,18 @@ function apply() {
   set('--lh', String(UI.lineHeight));
   set('--ls', UI.letterSpacing + 'px');
   set('--para', UI.paraGap + 'em');
-  set('--radius', UI.radius + 'px');
+  set('--r', UI.radius + 'px');
   set('--s', String(UI.spacing));
   set('--chat-w', UI.chatWidth ? UI.chatWidth + 'px' : '100%');
   setFavicon();
 }
 
-/** 标签页图标：和左上角的 π 方块保持一致，跟着主题色变 */
+/** 标签页图标：和左上角的 π 方块保持一致，跟着主题色和全局圆角变。
+ *  logo 用的是 --r-sm 这一档（现代风 = 全局圆角 × 0.7，GitHub 风 = 全局圆角），
+ *  logo 是 28px、图标画布是 32，再按 32 / 28 换算一下，两者看起来就一样圆 */
 function setFavicon() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${UI.accent}"/><text x="16" y="24.5" font-size="22" font-weight="700" text-anchor="middle" fill="#fff" font-family="system-ui, 'Segoe UI', 'Helvetica Neue', sans-serif">π</text></svg>`;
+  const rx = Math.min(16, (UI.radius * (UI.uiStyle === 'github' ? 1 : 0.7) * 32) / 28).toFixed(1);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="${rx}" fill="${UI.accent}"/><text x="16" y="24.5" font-size="22" font-weight="700" text-anchor="middle" fill="#fff" font-family="system-ui, 'Segoe UI', 'Helvetica Neue', sans-serif">π</text></svg>`;
   let link = document.querySelector('link[rel="icon"]');
   if (!link) {
     link = document.createElement('link');

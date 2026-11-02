@@ -107,6 +107,6 @@ function onKey(e) {
 .info tr:last-child td { border-bottom: 0; }
 .info td:first-child { white-space: nowrap; }
 .small { font-size: var(--fs-xs); }
-.badge { font-size: var(--fs-xs); font-weight: normal; color: var(--text-3); background: var(--hover); padding: 1px 8px; border-radius: 10px; }
+.badge { font-size: var(--fs-xs); font-weight: normal; color: var(--text-3); background: var(--hover); padding: 1px 8px; border-radius: var(--r-pill); }
 .editor { min-width: min(560px, 84vw); }
 </style>

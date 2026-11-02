@@ -10,8 +10,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: backend },
-      '/ws': { target: backend, ws: true },
+      // xfwd：带上 x-forwarded-for，后端才分得清是本机还是局域网打开的网页（读剪贴板只给本机）
+      '/api': { target: backend, xfwd: true },
+      '/ws': { target: backend, ws: true, xfwd: true },
     },
   },
 });

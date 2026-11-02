@@ -9,6 +9,12 @@ if (params.get('token')) {
 }
 const token = localStorage.getItem('pi-web-token') || '';
 
+// 每个浏览器标签页一个 id，后端靠它认“谁是会话的操作者”。
+// 存在 sessionStorage 里：刷新不变。但“复制标签页”会把 sessionStorage 也复制过去，所以只有刷新才沿用旧的
+const navType = performance.getEntriesByType?.('navigation')?.[0]?.type;
+export const CID = (navType === 'reload' && sessionStorage.getItem('pi-web-cid')) || `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+sessionStorage.setItem('pi-web-cid', CID);
+
 let ws = null;
 let rid = 0;
 const waiting = new Map();
@@ -23,7 +29,9 @@ export function connect(handlers) {
 
 function open() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws${token ? `?token=${encodeURIComponent(token)}` : ''}`);
+  const q = new URLSearchParams({ cid: CID });
+  if (token) q.set('token', token);
+  ws = new WebSocket(`${proto}://${location.host}/ws?${q}`);
   ws.onopen = () => onStatus(true);
   ws.onclose = () => {
     onStatus(false);
@@ -73,3 +81,23 @@ export const http = {
 };
 
 export const rawUrl = (p) => `/api/fs/raw?path=${encodeURIComponent(p)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+
+/** 上传一个文件：请求体就是文件本身。用 XHR 是为了拿上传进度（fetch 拿不到） */
+export function upload(file, query, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v != null && v !== '')));
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    if (token) xhr.setRequestHeader('x-pi-web-token', token);
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
+    xhr.onload = () => {
+      let data = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {}
+      xhr.status < 300 ? resolve(data) : reject(new Error(data.error || `上传失败（${xhr.status}）`));
+    };
+    xhr.onerror = () => reject(new Error('上传失败：连接断了'));
+    xhr.send(file);
+  });
+}

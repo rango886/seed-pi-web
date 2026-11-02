@@ -247,15 +247,15 @@ function onKey(e) {
 .dirs .modal-body { overflow: hidden; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 .top { display: flex; align-items: center; gap: 8px; flex: none; }
 .filter { width: 160px; flex: none; font-size: var(--fs-sm); }
-.seg { display: flex; gap: 2px; padding: 3px; background: var(--active); border-radius: 9px; flex: none; }
-.seg button { height: 26px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
+.seg { display: flex; gap: 2px; padding: 3px; background: var(--active); border-radius: var(--r-md); flex: none; }
+.seg button { height: 26px; padding: 0 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
 .seg button:hover { color: var(--text); }
 .seg button.on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }
 
 .main { flex: 1; min-height: 0; display: flex; gap: 10px; }
 .left { width: 268px; flex: none; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); overflow-y: auto; padding: 4px 6px 10px; }
 .grp { font-size: var(--fs-xs); color: var(--text-3); padding: 10px 8px 4px; }
-.item { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
+.item { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer; }
 .item:hover { background: var(--hover); }
 .item.active { background: var(--accent-soft); }
 .item.active .path { color: var(--accent-text); }
@@ -271,7 +271,7 @@ function onKey(e) {
 .cols { display: flex; gap: 6px; align-items: stretch; overflow-x: auto; overflow-y: hidden; min-width: 0; flex: 1; padding: 6px; }
 .roots { width: 124px; flex: none; position: sticky; left: 0; z-index: 2; overflow-y: auto; padding: 4px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--panel-2); box-shadow: 3px 0 8px -4px rgba(15, 23, 42, 0.16); }
 .col { width: 218px; flex: none; overflow-y: auto; border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 4px; background: var(--panel-2); }
-.row { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border-radius: 6px; cursor: pointer; font-size: var(--fs-sm); white-space: nowrap; user-select: none; }
+.row { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-sm); white-space: nowrap; user-select: none; }
 .row:hover { background: var(--hover); }
 .row.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
 .tree { flex: 1; overflow: auto; padding: 6px; }

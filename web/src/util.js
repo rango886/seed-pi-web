@@ -155,3 +155,41 @@ export function highlightFile(name, text) {
 }
 
 export const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i;
+
+// ---------- 附件 ----------
+// 发给模型的只是路径：拼在提示词最后面，带编号，模型需要看内容时自己用 read 工具读。
+// 编号只对这一条消息有效（每轮都按输入框上面当前的顺序重新编）
+const ATT_NOTE = '以下是用户附带的文件路径（编号只对本条消息有效），需要查看内容时请用 read 工具读取。';
+// 模型能用 read 当图片读的那几种才算 image（svg 其实是文本）
+const VISION_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+export const attachKind = (name, dir = false) => (dir ? 'dir' : VISION_EXT.test(name || '') ? 'image' : 'file');
+export const baseName = (p) => String(p || '').split(/[\\/]/).filter(Boolean).pop() || String(p || '');
+
+export function buildAttachmentBlock(list) {
+  const lines = list.map((a, i) => `[${i + 1}] ${a.kind}: ${a.path}`);
+  return `<attachments>\n${ATT_NOTE}\n${lines.join('\n')}\n</attachments>`;
+}
+
+// 现在都拼在最后；最前面的是老版本发的，也认
+const ATT_HEAD = /^<attachments>\r?\n([\s\S]*?)\r?\n<\/attachments>[ \t]*(?:\r?\n){0,2}/;
+const ATT_TAIL = /(?:\r?\n){1,2}<attachments>\r?\n([\s\S]*?)\r?\n<\/attachments>\s*$/;
+const ATT_LINE = /^\[(\d+)\]\s+(image|file|dir):\s+(.+)$/;
+
+/** 把消息里的 <attachments> 块拆出来：返回 { text: 正文, attachments: [{ n, kind, path, name }] } */
+export function splitAttachments(text) {
+  const s = typeof text === 'string' ? text : '';
+  const m = s.match(ATT_HEAD) || s.match(ATT_TAIL);
+  if (!m) return { text: s, attachments: [] };
+  const attachments = [];
+  for (const line of m[1].split(/\r?\n/)) {
+    const x = line.trim().match(ATT_LINE);
+    if (x) attachments.push({ n: Number(x[1]), kind: x[2], path: x[3].trim(), name: baseName(x[3].trim()) });
+  }
+  return { text: s.slice(0, m.index) + s.slice(m.index + m[0].length), attachments };
+}
+export const stripAttachments = (text) => splitAttachments(text).text;
+
+export function fmtSize(s) {
+  if (s == null) return '';
+  return s < 1024 ? `${s} B` : s < 1048576 ? `${(s / 1024).toFixed(1)} KB` : s < 1073741824 ? `${(s / 1048576).toFixed(1)} MB` : `${(s / 1073741824).toFixed(2)} GB`;
+}

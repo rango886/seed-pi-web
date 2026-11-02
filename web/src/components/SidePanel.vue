@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { S, loadSessions, openSession, newSession, deleteSession, renameSession } from '../store.js';
+import { S, loadSessions, openSession, newSession, deleteSession, renameSession, sessionStatus } from '../store.js';
 import { view, toggleSide, closeDrawer, openMenu, togglePanel } from '../settings.js';
 import Icon from './Icon.vue';
 
@@ -23,6 +23,26 @@ function toggleSort() {
 }
 const byTime = (a, b) => new Date(b.modified) - new Date(a.modified);
 const byName = (a, b) => (a.title || '').localeCompare(b.title || '', 'zh');
+const norm = (p) => (p || '').replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+
+// 还没写盘的新会话（pi 要等有了消息才写文件）：磁盘上扫不到，从进程列表里补上
+const unsaved = computed(() => {
+  const known = new Set(S.sessions.map((s) => norm(s.file)));
+  return S.agents
+    .filter((a) => a.sessionFile && !known.has(norm(a.sessionFile)) && (S.showAllSessions || norm(a.cwd) === norm(S.cwd)))
+    .map((a) => ({ file: a.sessionFile, cwd: a.cwd, title: a.sessionName || '新会话', modified: new Date().toISOString(), messages: 0, unsaved: true }));
+});
+
+// 会话前面的状态图标
+function stat(s) {
+  const st = sessionStatus(s.file);
+  if (!st) return null;
+  if (st.waiting) return { cls: 'wait', tip: '在等你操作（扩展弹窗）' };
+  if (st.running) return { cls: 'run', tip: st.elsewhere ? 'AI 正在回复（另一个窗口在用）' : 'AI 正在回复' };
+  if (st.unread) return { cls: 'new', tip: '有新回复还没看' };
+  if (st.elsewhere) return { cls: 'busy', tip: '另一个窗口正在用' };
+  return null;
+}
 
 // 显示全部目录时，每个目录像文件夹一样可以折叠（状态记下来）
 const collapsed = ref(new Set(JSON.parse(localStorage.getItem('pi-web-collapsed-dirs') || '[]')));
@@ -68,7 +88,7 @@ function listMenu(e) {
 // 会话分组：显示全部目录时按目录分组，只看当前目录时按时间分组；组内再按当前排序方式排
 const groups = computed(() => {
   const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
-  const list = S.sessions.filter((s) => words.every((w) => `${s.title} ${s.cwd || ''}`.toLowerCase().includes(w)));
+  const list = [...unsaved.value, ...S.sessions].filter((s) => words.every((w) => `${s.title} ${s.cwd || ''}`.toLowerCase().includes(w)));
   const cmp = sortBy.value === 'name' ? byName : byTime;
 
   if (S.showAllSessions) {
@@ -142,8 +162,7 @@ function sessionMenu(e, s) {
     { label: '打开', icon: 'chat', run: () => open(s) },
     s.file === S.agent?.sessionFile && { label: '重命名…', icon: 'edit', run: () => renameSession() },
     { label: '复制文件路径', icon: 'copy', run: () => navigator.clipboard.writeText(s.file) },
-    '-',
-    { label: '删除', icon: 'trash', danger: true, run: () => deleteSession(s) },
+    ...(s.unsaved ? [] : ['-', { label: '删除', icon: 'trash', danger: true, run: () => deleteSession(s) }]),
   ].filter(Boolean));
 }
 function focusSearch() {
@@ -162,7 +181,7 @@ function focusSearch() {
     </div>
 
     <div class="nav">
-      <div class="nv" :class="{ dis: S.running }" @click="!S.running && onNew()"><Icon name="newchat" /><span>新会话</span></div>
+      <div class="nv" @click="onNew()"><Icon name="newchat" /><span>新会话</span></div>
     </div>
 
     <!-- 左边只放会话；文件、进程在右边的浮动侧栏里（按钮在顶栏），终端在顶部标签页里 -->
@@ -176,7 +195,7 @@ function focusSearch() {
         <button class="sbtn" :title="`当前按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
       </div>
       <div class="list" @contextmenu="listMenu">
-        <div v-if="!S.sessions.length" class="empty">{{ S.showAllSessions ? '还没有历史会话' : '这个目录还没有历史会话' }}</div>
+        <div v-if="!S.sessions.length && !unsaved.length" class="empty">{{ S.showAllSessions ? '还没有历史会话' : '这个目录还没有历史会话' }}</div>
         <div v-else-if="!groups.length" class="empty">没有匹配的会话</div>
         <template v-for="g in groups" :key="g.path || g.name">
           <!-- 目录：像文件夹一样，点一下折叠/展开；右键可以全部展开折叠、切路径显示 -->
@@ -197,9 +216,10 @@ function focusSearch() {
               @click="open(s)"
               @contextmenu.prevent.stop="sessionMenu($event, s)"
             >
+              <span class="st" :class="stat(s)?.cls" :title="stat(s)?.tip" />
               <span class="ellipsis grow stitle">{{ s.title }}</span>
-              <span class="sinfo">{{ s.messages }} 条 · {{ timeOf(s.modified) }}</span>
-              <button class="del" title="删除" @click.stop="deleteSession(s)"><Icon name="trash" :size="14" /></button>
+              <span class="sinfo">{{ s.unsaved ? '未保存' : `${s.messages} 条 · ${timeOf(s.modified)}` }}</span>
+              <button v-if="!s.unsaved" class="del" title="删除" @click.stop="deleteSession(s)"><Icon name="trash" :size="14" /></button>
             </div>
           </template>
         </template>
@@ -219,56 +239,63 @@ function focusSearch() {
 <style scoped>
 .side { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel-2); user-select: none; }
 .brand { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 10px 0 16px; flex: none; }
-.logo { background: var(--accent); color: #fff; width: 28px; height: 28px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
+.logo { background: var(--accent); color: #fff; width: 28px; height: 28px; border-radius: var(--r-sm); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
 .name { font-size: calc(var(--fs) + 3px); font-weight: 700; }
-.ib { width: 32px; height: 32px; border: 0; background: transparent; border-radius: 8px; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ib { width: 32px; height: 32px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .ib:hover { background: var(--active); color: var(--text); }
 .ib.sm { width: 26px; height: 26px; }
 .ib.on { color: var(--accent-text); background: var(--accent-soft); }
 
 .nav { padding: 0 8px 6px; display: flex; flex-direction: column; gap: 1px; flex: none; }
-.nv { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 10px; border-radius: 10px; cursor: pointer; color: var(--text); }
+.nv { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 10px; border-radius: var(--r-md); cursor: pointer; color: var(--text); }
 .nv:hover { background: var(--active); }
 .nv.dis { opacity: 0.45; cursor: default; }
 .nv :deep(.icon) { color: var(--text-2); }
 
-.seg { display: flex; gap: 2px; margin: 4px 12px 6px; padding: 3px; background: var(--active); border-radius: 10px; flex: none; }
-.st { flex: 1; text-align: center; height: 28px; line-height: 28px; border-radius: 7px; cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); }
+.seg { display: flex; gap: 2px; margin: 4px 12px 6px; padding: 3px; background: var(--active); border-radius: var(--r-md); flex: none; }
+.st { flex: 1; text-align: center; height: 28px; line-height: 28px; border-radius: var(--r-sm); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); }
 .st:hover { color: var(--text); }
 .st.on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }
 [data-theme='dark'] .st.on { background: var(--elev); }
-.cnt { margin-left: 4px; font-size: 11px; background: var(--active); padding: 0 6px; border-radius: 8px; color: var(--text-2); }
+.cnt { margin-left: 4px; font-size: 11px; background: var(--active); padding: 0 6px; border-radius: var(--r-pill); color: var(--text-2); }
 
 .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.search { display: flex; align-items: center; gap: 6px; margin: 2px 12px 4px; padding: 0 4px 0 10px; height: 34px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); color: var(--text-3); flex: none; }
+.search { display: flex; align-items: center; gap: 6px; margin: 2px 12px 4px; padding: 0 4px 0 10px; height: 34px; border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--text-3); flex: none; }
 .search:focus-within { border-color: var(--accent); }
 .search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-size: var(--fs-sm); }
 .list { flex: 1; overflow-y: auto; padding: 2px 8px 12px; }
 .tree { padding: 2px 6px 12px; }
 .gname { font-size: var(--fs-xs); color: var(--text-3); padding: 12px 10px 4px; display: flex; align-items: center; gap: 6px; }
-.dirhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 6px; border-radius: 8px; cursor: pointer; color: var(--text); font-size: var(--fs-sm); margin-top: 4px; }
+.dirhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 6px; border-radius: var(--r-sm); cursor: pointer; color: var(--text); font-size: var(--fs-sm); margin-top: 4px; }
 .dirhead:hover { background: var(--active); }
 .dirhead .arrow { width: 16px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); transition: transform 0.15s; }
 .dirhead.closed .arrow { transform: rotate(-90deg); }
 .dirhead :deep(.icon) { color: var(--accent-text); opacity: 0.85; }
 .dirhead .gcount { margin-left: auto; }
 .sess.child { padding-left: 26px; }
-.gcount { font-size: 10px; padding: 0 5px; border-radius: 7px; background: var(--active); color: var(--text-3); }
-.sbtn { height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
+.gcount { font-size: 10px; padding: 0 5px; border-radius: var(--r-pill); background: var(--active); color: var(--text-3); }
+.sbtn { height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
 .sbtn:hover { border-color: var(--accent); color: var(--accent-text); }
 .list > .sess, .list > .gname { content-visibility: auto; contain-intrinsic-size: auto 34px; }
-.sess { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border-radius: 9px; cursor: pointer; position: relative; }
+.sess { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border-radius: var(--r-sm); cursor: pointer; position: relative; }
 .sess:hover { background: var(--active); }
 .sess.active { background: var(--panel); box-shadow: var(--shadow-sm); }
 [data-theme='dark'] .sess.active { background: var(--elev); }
 .stitle { line-height: 1.4; }
 .sess.active .stitle { font-weight: 600; color: var(--accent-text); }
 .sinfo { font-size: var(--fs-xs); color: var(--text-3); flex: none; font-variant-numeric: tabular-nums; }
-.del { display: none; width: 24px; height: 24px; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
+.del { display: none; width: 24px; height: 24px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
 .sess:hover .del { display: inline-flex; }
 .sess:hover .sinfo { display: none; }
 .del:hover { background: var(--err); color: #fff; }
 .sess .dot { margin: 0 4px; flex: none; }
+/* 会话前面的状态图标：没状态时只占位，标题对齐 */
+.st { width: 8px; height: 8px; flex: none; margin-right: -2px; border-radius: 50%; position: relative; }
+.st.run { border: 2px solid var(--accent); border-right-color: transparent; width: 10px; height: 10px; margin: 0 -3px 0 -1px; animation: st-spin 0.8s linear infinite; }
+.st.new { background: var(--accent); }
+.st.wait { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent); }
+.st.busy { border: 1.5px solid var(--text-3); }
+@keyframes st-spin { to { transform: rotate(360deg); } }
 .empty { padding: 32px 12px; text-align: center; font-size: var(--fs-sm); color: var(--text-3); }
 .hint { font-size: var(--fs-xs); color: var(--text-3); padding: 4px 18px 6px; }
 .small { font-size: var(--fs-xs); }

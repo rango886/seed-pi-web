@@ -32,6 +32,13 @@ export class PiAgent extends EventEmitter {
     this.pending = new Map(); // 我们发出的命令 id -> {resolve, reject}
     this.uiPending = new Map(); // 还没回复的扩展弹窗请求，供刷新页面后重新显示
     this.uiState = new Map(); // 扩展设置的状态栏/小组件/标题（按 key 只留最新一条），新打开的页面也能看到
+    // 中途打开的页面靠这两样补上“进行中”的内容（get_messages 拿不到还没写完的那条消息）：
+    // live：上一条消息写完以后收到的事件；sticky：排队、重试、压缩这类“当前状态”，只留最新一条
+    this.live = [];
+    this.sticky = new Map();
+    this.owner = null; // 正在操作这个会话的窗口（clientId），其他窗口只能看
+    this.lastSettledAt = 0; // 最近一次回复完的时间，侧栏靠它显示“有新回复”
+    this.saved = false; // 会话文件写到磁盘上没有（pi 新会话要等有消息才写盘）
     this.reqSeq = 0;
   }
 
@@ -96,19 +103,92 @@ export class PiAgent extends EventEmitter {
     }
     if (rec.type === 'extension_ui_request' && DIALOG_METHODS.has(rec.method)) {
       this.uiPending.set(rec.id, rec);
-      if (rec.timeout) setTimeout(() => this.uiPending.delete(rec.id), rec.timeout + 500);
+      this.emit('info');
+      if (rec.timeout) setTimeout(() => this.uiPending.delete(rec.id) && this.emit('info'), rec.timeout + 500);
     }
+    this.#track(rec);
     if (rec.type === 'extension_ui_request') {
       const key = { setStatus: `s:${rec.statusKey}`, setWidget: `w:${rec.widgetKey}`, setTitle: 'title' }[rec.method];
       if (key) this.uiState.set(key, rec);
     }
     if (rec.type === 'agent_start') this.#setRunning(true);
-    if (rec.type === 'agent_settled') this.#setRunning(false);
+    if (rec.type === 'agent_settled') {
+      this.lastSettledAt = Date.now();
+      this.#setRunning(false);
+    }
     if (rec.type === 'session_info_changed') {
       this.sessionName = rec.name || null;
       this.emit('info');
     }
     this.emit('record', rec);
+  }
+
+  /** 记下“进行中”的事件，给中途打开的页面补放 */
+  #track(rec) {
+    switch (rec.type) {
+      case 'response':
+      case 'extension_ui_request':
+      case 'extension_error':
+        return;
+      case 'message_end': // 写完的消息 get_messages 能拿到，前面的事件就不用留了
+        this.live = [];
+        return;
+      case 'agent_settled':
+        this.live = [];
+        this.sticky.delete('retry');
+        this.sticky.delete('compaction');
+        return;
+      case 'queue_update':
+        this.sticky.set('queue', rec);
+        return;
+      case 'auto_retry_start':
+        this.sticky.set('retry', rec);
+        return;
+      case 'auto_retry_end':
+        this.sticky.delete('retry');
+        return;
+      case 'compaction_start':
+        this.sticky.set('compaction', rec);
+        return;
+      case 'compaction_end':
+        this.sticky.delete('compaction');
+        return;
+    }
+    // 连续的文字增量合成一条，回复再长 live 也不会攒太多条
+    const ev = rec.type === 'message_update' && rec.assistantMessageEvent;
+    const last = this.live[this.live.length - 1];
+    const lev = last?.type === 'message_update' && last.assistantMessageEvent;
+    if (ev && lev && /_delta$/.test(ev.type) && ev.type === lev.type && ev.contentIndex === lev.contentIndex && typeof ev.delta === 'string') {
+      this.live[this.live.length - 1] = { ...rec, assistantMessageEvent: { ...ev, delta: lev.delta + ev.delta } };
+      return;
+    }
+    this.live.push(rec);
+  }
+
+  /**
+   * 给新打开的页面拍一张“快照”：已经写完的消息 + 进行中的事件。
+   * get_messages 的回复在 pi 的输出流里有确定的位置，回复到达的那一刻（同步地）复制 live，
+   * 并调用 onSnap 让调用方马上开始转发后面的事件，这样不重不漏。
+   */
+  snapshot(onSnap) {
+    const id = `w${++this.reqSeq}`;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, {
+        resolve: (rec) => {
+          const live = [...this.sticky.values(), ...this.live];
+          onSnap?.();
+          if (!rec.success) return reject(new Error(rec.error || 'get_messages 失败'));
+          resolve({ messages: rec.data?.messages || [], live, running: this.running });
+        },
+        reject,
+      });
+      try {
+        this.write({ type: 'get_messages', id });
+      } catch (e) {
+        this.pending.delete(id);
+        reject(e);
+      }
+    });
   }
 
   #setRunning(v) {
@@ -139,7 +219,7 @@ export class PiAgent extends EventEmitter {
 
   /** 回复扩展弹窗 */
   respondUi(msg) {
-    this.uiPending.delete(msg.id);
+    if (this.uiPending.delete(msg.id)) this.emit('info');
     this.write({ ...msg, type: 'extension_ui_response' });
   }
 
@@ -161,6 +241,10 @@ export class PiAgent extends EventEmitter {
       sessionName: this.sessionName,
       running: this.running,
       alive: this.alive,
+      owner: this.owner,
+      saved: this.saved,
+      waitingUi: this.uiPending.size > 0,
+      lastSettledAt: this.lastSettledAt,
     };
   }
 
