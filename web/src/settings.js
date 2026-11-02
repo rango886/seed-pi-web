@@ -1,5 +1,6 @@
 // 界面设置：保存在 localStorage，改了立刻生效（写到 <html> 的 CSS 变量上）
 import { reactive, watch } from 'vue';
+import { resetDiagramCache } from './util.js';
 
 // “系统默认字体”这一串：真实字体名写在前面，system-ui 这类通用关键字只留最后兜底。
 // -apple-system / BlinkMacSystemFont 不是字体名，是 macOS / iOS 上的“系统字体暗号”，
@@ -239,6 +240,10 @@ const FALLBACK = `${WENKAI_SCREEN}, 'PingFang SC', 'Microsoft YaHei UI', 'Noto S
 const MONO_FALLBACK = `${WENKAI_MONO_SCREEN}, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace`;
 const mql = window.matchMedia('(prefers-color-scheme: dark)');
 
+// 图（mermaid）是先把文字量一遍再算尺寸的，所以字体或字号一变就得重新量、重画。
+// 颜色那边不用管：pele 的颜色全走 CSS 变量，换主题不用重画
+let lastFontKey = '';
+
 function apply() {
   const r = document.documentElement;
   const dark = UI.theme === 'dark' || (UI.theme === 'auto' && mql.matches);
@@ -258,6 +263,11 @@ function apply() {
   set('--r', UI.radius + 'px');
   set('--s', String(UI.spacing));
   set('--chat-w', UI.chatWidth ? UI.chatWidth + 'px' : '100%');
+  const fontKey = `${UI.font}|${UI.codeFont}|${UI.fontSize}`;
+  if (fontKey !== lastFontKey) {
+    lastFontKey = fontKey;
+    resetDiagramCache();
+  }
   setFavicon();
 }
 

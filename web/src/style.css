@@ -328,6 +328,40 @@ a:hover { text-decoration: underline; }
 .md hr { border: 0; border-top: 1px solid var(--line); margin: 1.2em 0; }
 .md img { max-width: 100%; border-radius: var(--r-sm); }
 
+/* ---- 数学公式（Temml 出 MathML，浏览器原生排版）----
+   颜色交给 currentColor，深色主题下自动跟着变；宽度超出就横向滚，不撑破气泡 */
+.md .md-math { font-size: 1.02em; }
+.md .md-math.block { display: block; margin: var(--para) 0; text-align: center; overflow-x: auto; overflow-y: hidden; }
+.md .md-math math { color: inherit; }
+.md .tex-error { font-family: var(--font-code); color: var(--err); }
+
+/* ---- mermaid 图示（pele 画的自包含 SVG）----
+   pele 包内没有样式文件，全部靠 CSS 变量：这里把它接到我们自己的主题上，
+   换主题/切深色不用重画图 */
+.md .md-diagram {
+  --pele-bg: var(--panel);
+  --pele-fg: var(--text);
+  --pele-fg-on-light: #1f2329;
+  --pele-fg-on-dark: #fff;
+  --pele-muted: var(--text-3);
+  --pele-line: var(--text-2);
+  --pele-surface: var(--panel-2);
+  --pele-surface-alt: var(--chat-bg);
+  --pele-border: var(--text-3);
+  --pele-accent: var(--accent);
+  --pele-critical: var(--err);
+  --pele-error: var(--err);
+  --pele-font: var(--font);
+  --pele-font-mono: var(--font-code);
+  --pele-radius: var(--r-sm);
+  margin: var(--para) 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.md .md-diagram svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+.md .md-diagram.loading { display: flex; align-items: center; justify-content: center; min-height: 64px; color: var(--text-3); font-size: var(--fs-sm); border: 1px dashed var(--line); border-radius: var(--r-md); }
+.md .md-diagram.err { color: var(--err); font-family: var(--font-code); font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-all; padding: var(--sp2) var(--pad-x); background: var(--err-bg); border-radius: var(--r-sm); }
+
 /* ---- highlight.js ---- */
 .hljs { color: var(--text); background: none; }
 .hljs-comment, .hljs-quote { color: var(--hl-comment); font-style: italic; }
