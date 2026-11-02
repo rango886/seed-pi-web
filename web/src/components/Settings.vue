@@ -230,6 +230,21 @@ const layoutSliders = [
             <p class="dim tip">小技巧：双击滑块恢复该项默认值。随时按 <b>Ctrl + ,</b> 打开这里。</p>
           </section>
 
+          <!-- 临时会话 -->
+          <section>
+            <h3>临时会话</h3>
+            <div class="card">
+              <div class="item col">
+                <span class="label">缓存目录</span>
+                <input v-model.lazy.trim="UI.tempSessionDir" class="input mono" :placeholder="DEFAULTS.tempSessionDir" @change="!UI.tempSessionDir && (UI.tempSessionDir = DEFAULTS.tempSessionDir)" />
+                <span class="dim small-tip">
+                  侧栏的「临时会话」每点一次，就在这里建一个带时间戳的新目录当工作目录。可以用 <code>{tmp}</code> 系统临时目录、<code>{home}</code> 用户目录、<code>{date}</code> 日期；相对路径按用户目录算。
+                </span>
+              </div>
+            </div>
+            <p class="dim tip">适合丢个草稿、试一段代码这类不想把文件弄进项目目录的活。目录不会自动删，不用了自己到文件管理器里清掉。</p>
+          </section>
+
           <!-- 附件 -->
           <section>
             <h3>附件</h3>

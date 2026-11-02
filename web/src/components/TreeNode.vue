@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue';
-import { S, openFile, attachFromTree } from '../store.js';
+import { S, openFile, attachFromTree, isFav, toggleFavorite } from '../store.js';
+import { openMenu } from '../settings.js';
 import { http } from '../api.js';
 import { iconOf } from '../util.js';
 import Icon from './Icon.vue';
@@ -32,6 +33,17 @@ watch(
 );
 onMounted(() => props.root && load());
 
+// 右键：目录可以收藏 / 取消收藏（顺带能拷个路径）
+function menu(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const dir = !!props.entry.dir;
+  openMenu(e.clientX, e.clientY, [
+    ...(dir ? [{ label: isFav(props.entry.path) ? '取消收藏这个文件夹' : '收藏这个文件夹', run: () => toggleFavorite(props.entry.path) }] : []),
+    { label: '复制路径', run: () => navigator.clipboard.writeText(props.entry.path) },
+  ]);
+}
+
 // 拖到输入框上：带上真实路径，输入框那边直接当附件，不用上传
 function onDragStart(e) {
   e.dataTransfer.effectAllowed = 'copy';
@@ -41,7 +53,7 @@ function onDragStart(e) {
 </script>
 
 <template>
-  <div v-if="!root" class="node sel" :style="{ paddingLeft: depth * 14 + 4 + 'px' }" :title="entry.path" draggable="true" @dragstart="onDragStart" @click="click">
+  <div v-if="!root" class="node sel" :style="{ paddingLeft: depth * 14 + 4 + 'px' }" :title="entry.path" draggable="true" @dragstart="onDragStart" @click="click" @contextmenu="menu">
     <span class="arrow" :class="{ open }"><svg v-if="entry.dir" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg></span>
     <span class="fic" :class="{ dir: entry.dir }"><Icon :name="iconOf(entry.name, entry.dir)" :size="14" /></span>
     <span class="ellipsis grow" :class="{ dim: entry.name.startsWith('.'), d: entry.dir }">{{ entry.name }}</span>

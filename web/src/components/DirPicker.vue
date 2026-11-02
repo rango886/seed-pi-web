@@ -4,7 +4,7 @@
 // 选好以后要么在当前标签页打开 / 开新会话，要么丢到新标签页去（Ctrl+点击也行）
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
-import { S, openDir, newSessionIn, openInNewTab, toast } from '../store.js';
+import { S, openDir, newSessionIn, openInNewTab, toast, isFav, toggleFavorite } from '../store.js';
 import { openMenu } from '../settings.js';
 import { http } from '../api.js';
 import { relTime } from '../util.js';
@@ -116,13 +116,18 @@ function onPathKey(e) {
   if (atEnd && (e.key === 'Tab' || e.key === 'ArrowRight') && acceptGhost()) e.preventDefault();
 }
 
-/** 树上的右键：展开/折叠这一棵子树；“展开所有”这种就是整棵树 */
+/** 树上的右键：收藏 / 展开 / 折叠；“展开所有”这种就是整棵树 */
 function treeMenu(e, path) {
   const all = !path;
   openMenu(e.clientX, e.clientY, [
+    ...(all ? [] : [{ label: isFav(path) ? '取消收藏这个文件夹' : '收藏这个文件夹', run: () => toggleFavorite(path) }]),
     { label: all ? '全部展开' : '展开所有子目录', run: () => (cmd.value = { mode: 'expand', target: path }) },
     { label: all ? '全部折叠' : '折叠所有子目录', run: () => (cmd.value = { mode: 'collapse', target: path }) },
   ]);
+}
+/** 左边收藏列表里的右键：只是取消收藏 */
+function favMenu(e, p) {
+  openMenu(e.clientX, e.clientY, [{ label: '取消收藏', run: () => toggleFavorite(p) }]);
 }
 
 // ---- 打开 / 新建 ----
@@ -182,6 +187,22 @@ function onKey(e) {
       <div class="modal-body">
         <div class="main">
           <aside class="left">
+            <div class="grp fav">收藏</div>
+            <div
+              v-for="p in S.favorites"
+              :key="p"
+              class="item"
+              :class="{ active: same(p, current) }"
+              :title="p"
+              @click="reveal(p)"
+              @dblclick="openNow(p)"
+              @contextmenu.prevent.stop="favMenu($event, p)"
+            >
+              <span class="grow path">{{ p }}</span>
+              <button class="favdel" title="取消收藏" @click.stop="toggleFavorite(p)"><Icon name="close" :size="12" /></button>
+            </div>
+            <div v-if="!S.favorites.length" class="dim pad">在右边的树里右键文件夹就能收藏</div>
+
             <div class="grp">最近使用</div>
             <div v-for="r in recent" :key="r.cwd" class="item" :class="{ active: same(r.cwd, current) }" :title="r.cwd" @click="reveal(r.cwd)" @dblclick="openNow(r.cwd)">
               <span class="grow path">{{ r.cwd }}</span>
@@ -236,14 +257,20 @@ function onKey(e) {
 .main { flex: 1; min-height: 0; display: flex; gap: 10px; }
 .left { width: 268px; flex: none; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); overflow-y: auto; padding: 4px 6px 10px; }
 .grp { font-size: var(--fs-xs); color: var(--text-3); padding: 10px 8px 4px; }
+/* “收藏”这个小标题比“最近使用”亮一档，一眼能看出这块是自己整理的 */
+.grp.fav { color: var(--text-2); }
 .item { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer; }
 .item:hover { background: var(--hover); }
 .item.active { background: var(--accent-soft); }
 .item.active .path { color: var(--accent-text); }
+/* 取消收藏：平时不占眼力，悬停才淡出来；位置留着，免得鼠标一上去就跳 */
+.favdel { flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s; }
+.item:hover .favdel { opacity: 1; }
+.favdel:hover { background: var(--err); color: #fff; }
 /* 左边一律显示完整路径，太长就换行显示，不截断 */
 .path { font-family: var(--font-code); font-size: var(--fs-xs); line-height: 1.35; white-space: normal; word-break: break-all; }
 .tiny { font-size: var(--fs-xs); }
-.pad { padding: 4px 10px; }
+.pad { padding: 4px 10px; font-size: var(--fs-xs); line-height: 1.6; }
 .small { font-size: var(--fs-sm); }
 
 .right { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); overflow: hidden; }

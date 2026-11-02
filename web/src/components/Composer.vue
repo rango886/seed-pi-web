@@ -5,6 +5,7 @@ import { UI, view } from '../settings.js';
 import { http, rawUrl } from '../api.js';
 import { fmtTokens, levelName, joinPath, fmtSize } from '../util.js';
 import ModelMenu from './ModelMenu.vue';
+import AttTooltip from './AttTooltip.vue';
 import Icon from './Icon.vue';
 
 const ta = ref(null);
@@ -254,11 +255,23 @@ function chipDragOver(e, i) {
     dragAtt.value = i;
   }
 }
-function attTitle(a) {
-  if (a.status === 'uploading') return `${a.name}\n正在上传 ${Math.round(a.progress * 100)}%`;
-  const info = [ORIGIN_LABEL[a.origin] || '', a.size != null ? fmtSize(a.size) : ''].filter(Boolean).join(' · ');
-  return `${a.path}\n${info}\n拖动调整顺序${a.kind === 'dir' ? '' : '，点击打开'}`;
+// 附件的悬停浮层：图片附件平时只露个缩略图，名字、完整路径、大小这些都放这里
+const tip = ref(null); // { anchor, index, name, path, info }，位置由 AttTooltip 自己算
+// 浮层里最后一行：正在上传就报进度，否则报来源和大小
+function tipInfo(a) {
+  if (a.status === 'uploading') return `正在上传 ${Math.round((a.progress || 0) * 100)}%`;
+  return [ORIGIN_LABEL[a.origin] || '', a.size != null ? fmtSize(a.size) : ''].filter(Boolean).join(' · ');
 }
+function showTip(e, a, i) {
+  tip.value = { anchor: e.currentTarget.getBoundingClientRect(), index: i + 1, name: a.name, path: a.path, info: tipInfo(a) };
+}
+const hideTip = () => (tip.value = null);
+// 附件变了（发送、清空、删除）就把浮层收起来，别让它留在半空
+watch(
+  () => atts.value.map((a) => a.id).join(),
+  () => hideTip(),
+);
+const isImage = (a) => a.kind === 'image' && !a.broken && !!(a.preview || a.path);
 function openAtt(a) {
   if (a.status === 'ready' && a.path && a.kind !== 'dir') openFile(a.path);
 }
@@ -292,7 +305,7 @@ const modelLabel = computed(() => (model.value ? model.value.name || model.value
 const thinking = computed(() => S.state?.thinkingLevel);
 const ctx = computed(() => S.stats?.contextUsage);
 const ctxPct = computed(() => (ctx.value?.percent != null ? Math.min(100, Math.max(0, ctx.value.percent)) : null));
-const ctxColor = computed(() => (ctxPct.value == null ? 'var(--text-3)' : ctxPct.value > 85 ? 'var(--err)' : ctxPct.value > 65 ? 'var(--warn)' : 'var(--accent)'));
+const pctText = computed(() => (ctxPct.value != null ? Math.round(ctxPct.value) + '%' : '?'));
 const busy = computed(() => S.running || !!S.bashLive);
 // 输入框上面那一行小字：花费、缓存命中、token
 const usage = computed(() => {
@@ -304,10 +317,55 @@ const usage = computed(() => {
     cost: s.cost != null ? `$${s.cost.toFixed(s.cost < 1 ? 4 : 2)}` : '',
     hit: inAll && t.cacheRead ? Math.round((t.cacheRead / inAll) * 100) : null,
     inTok: fmtTokens(inAll),
+    cacheTok: fmtTokens(t.cacheRead || 0),
     outTok: fmtTokens(t.output || 0),
   };
 });
+// 输入框上面那一整条状态：一个胶囊里从头排到尾
+// 输入 → 输出 → 缓存读 → 缓存率 → 花费 → 上下文百分比 → 上下文比例
+const statusItems = computed(() => {
+  const out = [];
+  const u = usage.value;
+  if (u) {
+    out.push({ label: '输入', text: u.inTok, title: '累计输入 tokens' });
+    out.push({ label: '输出', text: u.outTok, title: '累计输出 tokens' });
+    out.push({ label: '缓存读', text: u.cacheTok, title: '输入里来自缓存的那部分 tokens' });
+    if (u.hit != null) out.push({ label: '缓存率', text: `${u.hit}%`, title: '缓存命中率（缓存读 / 全部输入）' });
+    if (u.cost) out.push({ label: '花费', text: u.cost, title: '本会话花费，点击看详情', run: showSessionInfo });
+  }
+  if (ctx.value) {
+    out.push({ label: '上下文', text: pctText.value, title: `当前上下文占用 ${pctText.value}，点击压缩`, run: compact });
+    out.push({ text: `${fmtTokens(ctx.value.tokens)} / ${fmtTokens(ctx.value.contextWindow)}`, title: '当前上下文 tokens / 窗口大小' });
+  }
+  if (otherAgents.value) out.push({ label: '后台', text: `${otherAgents.value} 个在跑`, title: '其他会话还有几个 pi 进程在跑' });
+  for (const [k, v] of Object.entries(S.statusItems)) out.push({ text: v, title: `${k}: ${v}` });
+  return out;
+});
+/** 状态栏里的一小段被点了：自己有动作（花费 / 上下文）就干自己的事，并拦住冒泡；
+ *  没动作的（输入、输出…）就放它冒上去，让整条框去打开会话详情 */
+function onItemClick(it, e) {
+  if (!it.run) return;
+  e.stopPropagation();
+  it.run();
+}
 
+// 模型 / 思考强度那两个弹窗贴着各自 chip 的右边缘弹出来：
+// 量一下 chip 离输入框右边缘有多远，把这个距离给弹窗当 right。
+// 窄屏上这么量可能会顶出左边界，就夹一下：最多夹到「弹窗左边缘正好贴着输入框左边缘」
+const boxEl = ref(null);
+const modelChip = ref(null);
+const thinkChip = ref(null);
+const popRight = ref(0);
+const POP_W = { model: 400, thinking: 220 }; // 和各自 CSS 里的 width 对齐
+function alignPop() {
+  const name = menu.value;
+  const chip = name === 'model' ? modelChip.value : name === 'thinking' ? thinkChip.value : null;
+  const box = boxEl.value?.getBoundingClientRect();
+  if (!chip || !box) return;
+  const r = chip.getBoundingClientRect();
+  const w = Math.min(POP_W[name], box.width);
+  popRight.value = Math.max(0, Math.min(box.right - r.right, box.width - w));
+}
 function toggleMenu(name) {
   menu.value = menu.value === name ? null : name;
 }
@@ -321,14 +379,12 @@ function closeMenus(e) {
 }
 onMounted(() => window.addEventListener('mousedown', closeMenus));
 onUnmounted(() => window.removeEventListener('mousedown', closeMenus));
-watch(menu, (v) => !v && nextTick(() => ta.value?.focus()));
+// 窗口大小变了（或者菜单是从 Ctrl+L 直接打开的，没经过 chip 的点击）：重新量一次位置
+const onResize = () => menu.value && alignPop();
+onMounted(() => window.addEventListener('resize', onResize));
+onUnmounted(() => window.removeEventListener('resize', onResize));
+watch(menu, (v) => (v ? nextTick(alignPop) : nextTick(() => ta.value?.focus())));
 
-const placeholder = computed(() => {
-  if (S.detached) return '这个会话只读：先选个新目录才能继续聊';
-  if (viewer.value) return '其他窗口正在使用这个会话，这里只能看';
-  if (busy.value) return view.mobile ? '继续输入，发送 = 插话' : '继续输入：发送 = 插话，Alt+Enter = 等它做完再发';
-  return view.mobile ? '给 pi 发消息…' : '/ 查看命令  ! 执行 shell  @ 引用文件';
-});
 const disabled = computed(() => !S.agentId || !!S.agentExited || viewer.value);
 
 async function onTakeOver() {
@@ -374,8 +430,8 @@ async function onTakeOver() {
       </div>
     </div>
 
-    <ModelMenu v-if="menu === 'model'" @close="menu = null" />
-    <div v-if="menu === 'thinking'" class="pop think-pop">
+    <ModelMenu v-if="menu === 'model'" :offset="popRight" @close="menu = null" />
+    <div v-if="menu === 'thinking'" class="pop think-pop" :style="{ right: popRight + 'px' }">
       <div class="pop-title">思考强度</div>
       <div v-for="l in S.thinkingLevels" :key="l" class="lv" :class="{ cur: l === thinking }" @click="chooseThinking(l)">
         <span class="check">{{ l === thinking ? '✓' : '' }}</span>
@@ -385,16 +441,17 @@ async function onTakeOver() {
     </div>
 
     <!-- 花费/token/上下文：放在输入框外面、上面一行（悬浮在对话上面的那块区域里），默认收起；
-         点顶部栏的状态按钮或右键菜单展开 -->
+         点顶部栏的状态按钮或右键菜单展开。里面是一整条，不再拆成一个个胶囊；
+         点这一整条就看会话详情（花费、上下文那几小段自己还有点小动作，所以用 .stop 拦住冒泡） -->
     <div v-if="UI.showUsage && hasStatus" class="usage">
-      <template v-if="usage">
-        <span v-if="usage.cost" class="u click" title="本会话花费，点击看详情" @click="showSessionInfo"><i>花费</i>{{ usage.cost }}</span>
-        <span v-if="usage.hit != null" class="u" title="缓存命中率（缓存读 / 全部输入）"><i>缓存</i>{{ usage.hit }}%</span>
-        <span class="u" title="累计输入 / 输出 tokens"><i>输入</i>{{ usage.inTok }}<i class="gap">输出</i>{{ usage.outTok }}</span>
-      </template>
-      <span v-if="ctx" class="u" title="当前上下文占用"><i>上下文</i>{{ fmtTokens(ctx.tokens) }} / {{ fmtTokens(ctx.contextWindow) }}</span>
-      <span v-if="otherAgents" class="u"><i>后台</i>{{ otherAgents }} 个在跑</span>
-      <span v-for="(v, k) in S.statusItems" :key="k" class="u ext" :title="`${k}: ${v}`">{{ v }}</span>
+      <div class="u click" @click="showSessionInfo()">
+        <template v-for="(it, i) in statusItems" :key="i">
+          <span v-if="i" class="sep" />
+          <span class="it" :class="{ click: !!it.run }" :title="it.title" @click="onItemClick(it, $event)">
+            <i v-if="it.label">{{ it.label }}</i>{{ it.text }}
+          </span>
+        </template>
+      </div>
     </div>
 
     <div v-if="viewer" class="viewer">
@@ -403,40 +460,42 @@ async function onTakeOver() {
       <button class="btn sm primary" title="把操作权拿到这个窗口，另一个窗口变成只能看" @click="onTakeOver">接管</button>
     </div>
 
-    <div class="box" :class="{ focused, dragging, disabled, big }">
+    <div ref="boxEl" class="box" :class="{ focused, dragging, disabled, big }">
       <button class="expand" :class="{ on: big }" :title="big ? '还原输入框高度' : '放大输入框（写长消息用）'" @click="toggleBig">
         <Icon :name="big ? 'collapse' : 'expand'" :size="14" />
       </button>
-      <!-- 附件：顺序就是发送时的编号，可以拖动调整；悬停看路径 -->
+      <!-- 附件：顺序就是发送时的编号（在悬停浮层里看），可以拖动调整 -->
       <div v-if="atts.length" class="atts">
         <div
           v-for="(a, i) in atts"
           :key="a.id"
           class="att"
-          :class="{ up: a.status === 'uploading', moving: dragAtt === i, link: a.kind !== 'dir' }"
-          :title="attTitle(a)"
+          :class="{ up: a.status === 'uploading', moving: dragAtt === i, link: a.kind !== 'dir', img: isImage(a) }"
           draggable="true"
-          @dragstart="chipDragStart($event, i)"
+          @mouseenter="showTip($event, a, i)"
+          @mouseleave="hideTip()"
+          @dragstart="chipDragStart($event, i), hideTip()"
           @dragover="chipDragOver($event, i)"
           @drop.prevent.stop
           @dragend="dragAtt = -1"
           @click="openAtt(a)"
         >
-          <span class="no">{{ i + 1 }}</span>
-          <img v-if="a.kind === 'image' && !a.broken && (a.preview || a.path)" class="pic" :src="a.preview || rawUrl(a.path)" draggable="false" alt="" @error="a.broken = true" />
+          <img v-if="isImage(a)" class="pic" :src="a.preview || rawUrl(a.path)" draggable="false" alt="" @error="a.broken = true" />
           <span v-else class="fic"><Icon :name="a.kind === 'dir' ? 'folder' : 'file'" :size="15" /></span>
-          <span class="aname ellipsis">{{ a.name }}</span>
+          <span v-if="!isImage(a)" class="aname ellipsis">{{ a.name }}</span>
           <span v-if="a.status === 'uploading'" class="prog"><i :style="{ width: Math.round(a.progress * 100) + '%' }" /></span>
-          <button class="x" title="移除" @click.stop="removeAttachment(a)">✕</button>
+          <button class="x" title="移除" @click.stop="removeAttachment(a), hideTip()"><Icon name="close" :size="11" /></button>
         </div>
         <button v-if="atts.length > 1" class="att-clear" title="移除全部附件" @click="clearAttachments">清空</button>
       </div>
+
+      <!-- 悬停浮层：编号、全名、完整路径、来源和大小都在这（图片附件平时只有缩略图） -->
+      <AttTooltip :tip="tip" />
       <textarea
         ref="ta"
         v-model="S.composer.text"
         class="ta"
         rows="1"
-        :placeholder="placeholder"
         :disabled="disabled"
         autofocus
         @keydown="onKey"
@@ -454,31 +513,20 @@ async function onTakeOver() {
         </button>
         <input ref="fileInput" type="file" multiple hidden @change="onPickFiles" />
 
+        <!-- 工作目录 / 模型 / 思考强度靠右，和发送按钮排在一起 -->
+        <div class="grow" />
+
         <button class="chip dir" :title="`工作目录：${S.cwd}\n点击切换`" @click="openDirPicker('switch')">
           <span class="ellipsis">{{ dirName }}</span>
         </button>
 
-        <button class="chip" :class="{ on: menu === 'model' }" title="切换模型 (Ctrl+L)" :disabled="disabled" @click="toggleMenu('model')">
+        <button ref="modelChip" class="chip" :class="{ on: menu === 'model' }" title="切换模型 (Ctrl+L)" :disabled="disabled" @click="toggleMenu('model')">
           <span class="ellipsis">{{ modelLabel }}</span>
-          <span class="caret">▾</span>
+          <Icon name="caret" :size="14" class="caret" />
         </button>
-        <button v-if="S.thinkingLevels.length > 1" class="chip" :class="{ on: menu === 'thinking' }" title="思考强度" :disabled="disabled" @click="toggleMenu('thinking')">
+        <button v-if="S.thinkingLevels.length > 1" ref="thinkChip" class="chip" :class="{ on: menu === 'thinking' }" title="思考强度" :disabled="disabled" @click="toggleMenu('thinking')">
           <span>{{ levelName(thinking) }}</span>
-          <span class="caret">▾</span>
-        </button>
-        <div class="grow" />
-
-        <button
-          v-if="ctx"
-          class="ring"
-          :title="`上下文 ${ctxPct != null ? Math.round(ctxPct) + '%' : '?'}（${fmtTokens(ctx.tokens)} / ${fmtTokens(ctx.contextWindow)}），点击压缩`"
-          @click="compact()"
-        >
-          <svg width="22" height="22" viewBox="0 0 36 36">
-            <circle cx="18" cy="18" r="14" fill="none" stroke="var(--line)" stroke-width="4" />
-            <circle cx="18" cy="18" r="14" fill="none" :stroke="ctxColor" stroke-width="4" stroke-linecap="round" pathLength="100" :stroke-dasharray="`${ctxPct ?? 0} 100`" transform="rotate(-90 18 18)" />
-          </svg>
-          <span>{{ ctxPct != null ? Math.round(ctxPct) + '%' : '?' }}</span>
+          <Icon name="caret" :size="14" class="caret" />
         </button>
 
         <template v-if="busy">
@@ -489,7 +537,7 @@ async function onTakeOver() {
           </button>
         </template>
         <button v-else class="round send" :disabled="disabled || !hasInput" title="发送" @click="send(false)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
         </button>
       </div>
     </div>
@@ -500,7 +548,7 @@ async function onTakeOver() {
 .composer { position: relative; flex: none; pointer-events: none; }
 /* 输入框整个悬在对话上面，只有卡片本身（和弹出的菜单）接鼠标事件，中间空白处让滚轮穿透给下面的对话 */
 .box, .usage, .pop { pointer-events: auto; }
-.box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow); padding: var(--sp3) var(--sp3) calc(var(--sp2) + 2px); transition: border-color 0.15s, box-shadow 0.15s; }
+.box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow); padding: var(--sp2) var(--sp3); transition: border-color 0.15s, box-shadow 0.15s; }
 .expand { position: absolute; top: 10px; right: 10px; width: 26px; height: 26px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-sm); color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; opacity: 0; box-shadow: var(--shadow-sm); transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s; }
 .box:hover .expand, .box.focused .expand, .expand.on { opacity: 1; }
 .expand:hover { color: var(--text); border-color: var(--text-3); }
@@ -510,8 +558,9 @@ async function onTakeOver() {
 .box.disabled { opacity: 0.6; }
 .viewer { pointer-events: auto; display: flex; align-items: center; gap: 8px; margin-bottom: var(--sp2); padding: 6px 6px 6px 12px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border-radius: var(--r-md); font-size: var(--fs-sm); color: var(--text-2); box-shadow: var(--shadow-sm); }
 .vdot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
-.ta { display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 2px 34px 4px 2px; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 10px); max-height: 40vh; overflow-y: hidden; }
-.ta::placeholder { color: var(--text-3); }
+/* 上下留白都按同一个数来：卡片 8px + 输入框 6px，再加上行高自带的半行空隙，文字上下一样宽。
+   min-height 也只留一行的量（内容 + 上下 padding），不然单行时下面会多出一截空的，看着上紧下松 */
+.ta { display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 6px 34px 6px 2px; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 12px); max-height: 40vh; overflow-y: hidden; }
 .box.big .ta { min-height: 32vh; max-height: 72vh; }
 
 .bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -524,18 +573,23 @@ async function onTakeOver() {
 .chip.dir { max-width: 220px; }
 .chip:hover, .chip.on { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
 .chip:disabled { opacity: 0.5; pointer-events: none; }
-.caret { font-size: 10px; opacity: 0.6; }
-.usage { display: flex; align-items: center; gap: var(--sp2); padding: 0 0 var(--sp2); font-size: 11.5px; line-height: 16px; color: var(--text-2); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
-/* 每一项都是个小胶囊：对话从下面淡过时，它还是一块看得清的 UI，不会跟背景文字混在一起 */
-.u { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 var(--pad-x); border-radius: var(--r-pill); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-sm); flex: none; }
+/* 下拉箭头：用线画的小折线，比 ▾ 这种字体符号更匀称，跟着 chip 颜色走 */
+.chip .caret { flex: none; color: var(--text-3); margin-right: -2px; transition: color 0.15s; }
+.chip:hover .caret, .chip.on .caret { color: var(--accent-text); }
+.usage { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp2); padding: 0 0 var(--sp2); font-size: 11.5px; line-height: 16px; color: var(--text-2); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+/* 一整条状态：一个胶囊装下所有项，项之间用细竖线隔开；对话从下面淡过时它还是一块看得清的 UI，
+   不会跟背景文字混在一起 */
+.u { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 var(--pad-x); border-radius: var(--r-pill); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-sm); flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.u .it { display: inline-flex; align-items: center; gap: 4px; flex: none; white-space: nowrap; }
 .u i { font-style: normal; color: var(--text-3); }
-.u i.gap { margin-left: 4px; }
+.u .sep { flex: none; width: 1px; height: 11px; background: var(--line); }
+.u .it.click { cursor: pointer; }
+.u .it.click:hover { color: var(--text); }
+/* 整条都能点（打开会话详情）：悬停时把边框提一提，告诉用户这块是能点的 */
 .u.click { cursor: pointer; }
-.u.click:hover { background: var(--hover); color: var(--text); }
-.u.ext { flex: 0 1 auto; min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 24px; color: var(--text-3); }
-.ring { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--text-3); cursor: pointer; font-size: var(--fs-xs); padding: 0 6px; height: 30px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums; }
-.ring:hover { background: var(--hover); color: var(--text-2); }
-.round { width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background 0.15s, transform 0.1s; }
+.u.click:hover { border-color: var(--text-3); }
+/* 发送 / 停止：跟旁边的 chip 一样高（都是一排 30px），圆形 */
+.round { width: 30px; height: 30px; border-radius: 50%; border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background 0.15s, transform 0.1s; }
 .round:active { transform: scale(0.94); }
 .send { background: var(--accent); color: #fff; }
 .send:hover { background: var(--accent-hover); }
@@ -543,20 +597,28 @@ async function onTakeOver() {
 .stop { background: var(--text); color: var(--panel); }
 .stop:hover { background: var(--err); color: #fff; }
 
-.atts { display: flex; gap: 6px; padding: 2px 34px 8px 0; flex-wrap: wrap; }
+.atts { display: flex; gap: 6px; padding: 2px 34px 8px 0; flex-wrap: wrap; align-items: flex-start; }
 .att { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 36px; max-width: 220px; padding: 0 10px 0 4px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-md); font-size: var(--fs-sm); color: var(--text-2); cursor: grab; user-select: none; overflow: hidden; transition: border-color 0.15s, background 0.15s; }
 .att:hover { border-color: var(--text-3); color: var(--text); }
 .att.moving { opacity: 0.45; border-style: dashed; border-color: var(--accent); }
 .att.up { color: var(--text-3); }
-.att .no { flex: none; min-width: 18px; height: 18px; padding: 0 4px; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent-text); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
 .att .pic { flex: none; width: 28px; height: 28px; object-fit: cover; border-radius: var(--r-xs); border: 1px solid var(--line-2); display: block; background: var(--hover); }
 .att .fic { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); border-radius: var(--r-xs); background: var(--hover); }
 .att .aname { min-width: 0; }
+/* 图片附件：只露一张缩略图，文件名、序号都等悬停浮层再说 */
+.att.img { width: 56px; height: 56px; padding: 0; gap: 0; background: transparent; border-color: transparent; overflow: visible; }
+.att.img:hover { border-color: var(--line-2); }
+.att.img .pic { width: 100%; height: 100%; border-radius: inherit; border: 1px solid var(--line-2); }
+.att.img.up .pic { opacity: 0.45; }
+/* 悬停浮层的样式在 AttTooltip.vue 里（消息里的附件也用它） */
 .att .prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--line-2); }
 .att .prog i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
-.att .x { position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 50%; border: 0; background: var(--text); color: var(--panel); font-size: 9px; cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; }
-.att:hover .x { display: inline-flex; }
-.att-clear { height: 36px; padding: 0 10px; border: 1px dashed var(--line); background: transparent; border-radius: var(--r-md); color: var(--text-3); font-size: var(--fs-xs); cursor: pointer; }
+/* 移除：圆形，压在右上角；中间的叉用图标画（字形的 ✕ 靠基线会歪，圆形里居中不了） */
+.att .x { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: var(--elev); color: var(--text-2); cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; box-shadow: var(--shadow-sm); z-index: 2; transition: background 0.12s, border-color 0.12s, color 0.12s; }
+.att:hover .x, .att:focus-within .x { display: inline-flex; }
+.att .x:hover { background: var(--err); border-color: var(--err); color: #fff; }
+/* “清空”：高度跟图片缩略图一样（56），文字水平和垂直都居中，字号不变 */
+.att-clear { width: 56px; height: 56px; padding: 0; border: 1px dashed var(--line); background: transparent; border-radius: var(--r-md); color: var(--text-3); font-size: var(--fs-xs); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .att-clear:hover { color: var(--err); border-color: var(--err); }
 .at-ic { flex: none; color: var(--text-3); }
 .at-name { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); color: var(--text); }
@@ -569,7 +631,7 @@ async function onTakeOver() {
 .desc { color: var(--text-2); font-size: var(--fs-sm); }
 .src { font-size: 11px; color: var(--text-3); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 0 6px; line-height: 18px; flex: none; }
 
-.think-pop { bottom: calc(100% + 8px); left: 200px; width: 220px; }
+.think-pop { bottom: calc(100% + 8px); right: 0; left: auto; width: 220px; }
 .pop-title { font-size: var(--fs-xs); color: var(--text-3); padding: 4px 8px 6px; }
 .lv { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 6px; border-radius: var(--r-sm); cursor: pointer; }
 .lv:hover { background: var(--hover); }
@@ -577,12 +639,9 @@ async function onTakeOver() {
 .check { width: 16px; text-align: center; flex: none; }
 .small { font-size: var(--fs-xs); font-weight: normal; }
 @media (max-width: 768px) {
-  .think-pop { left: auto; right: 0; }
   .bar { gap: 4px; }
   .chip { max-width: none; min-width: 0; flex-shrink: 1; padding: 0 9px; }
   .chip.dir { max-width: 34vw; }
-  .ring span { display: none; }
-  .ring { padding: 0 4px; }
   .box { border-radius: var(--r-xl); padding: 10px 10px 6px; }
 }
 /* 触屏没有悬停，放大按钮、附件的删除按钮得一直看得到 */

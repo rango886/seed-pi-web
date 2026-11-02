@@ -225,7 +225,7 @@
 :root[data-ui='github'] .input:focus { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 
 /* 标签页：GitHub 仓库页那种底部橙色下划线 */
-:root[data-ui='github'] .tab.active { background: transparent; color: var(--text); box-shadow: inset 0 -2px 0 var(--gh-tab); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+:root[data-ui='github'] .tab.active { background: var(--panel); border-color: var(--line); color: var(--text); border-radius: var(--r-sm) var(--r-sm) 0 0; }
 
 /* 列表选中：浅灰底 + 左侧一根蓝色竖条（GitHub ActionList 的样子） */
 :root[data-ui='github'] .sel.active { background: var(--active); }

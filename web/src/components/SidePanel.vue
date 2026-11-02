@@ -1,16 +1,11 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
-import { S, loadSessions, openSession, newSession, deleteSession, renameSession, sessionStatus } from '../store.js';
-import { view, toggleSide, closeDrawer, openMenu, togglePanel } from '../settings.js';
+import { ref, computed } from 'vue';
+import { S, openSession, newSession, tempSession, deleteSession, renameSession, sessionStatus, setSessionMode, isFav } from '../store.js';
+import { view, UI, DEFAULTS, toggleSide, closeDrawer, openMenu, togglePanel } from '../settings.js';
 import Icon from './Icon.vue';
 
 const q = ref('');
 const searchEl = ref(null);
-
-watch(
-  () => S.showAllSessions,
-  () => loadSessions(),
-);
 const base = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
 const others = computed(() => S.agents.filter((a) => a.running && a.id !== S.agentId).length);
 
@@ -29,9 +24,11 @@ const norm = (p) => (p || '').replace(/[\\/]+$/, '').replace(/\\/g, '/').toLower
 const unsaved = computed(() => {
   const known = new Set(S.sessions.map((s) => norm(s.file)));
   return S.agents
-    .filter((a) => a.sessionFile && !known.has(norm(a.sessionFile)) && (S.showAllSessions || norm(a.cwd) === norm(S.cwd)))
+    .filter((a) => a.sessionFile && !known.has(norm(a.sessionFile)) && inMode(a.cwd))
     .map((a) => ({ file: a.sessionFile, cwd: a.cwd, title: a.sessionName || '新会话', modified: new Date().toISOString(), messages: 0, unsaved: true }));
 });
+/** 这三种看法（当前目录 / 全部 / 收藏）里，这个目录该不该出现 */
+const inMode = (cwd) => (S.sessionMode === 'all' ? true : S.sessionMode === 'fav' ? isFav(cwd) : norm(cwd) === norm(S.cwd));
 
 // 会话前面的状态图标
 function stat(s) {
@@ -77,21 +74,32 @@ function dirMenu(e) {
     { label: '只显示文件夹名称', check: dirLabel.value === 'name', run: () => setDirLabel('name') },
   ]);
 }
-// 列表空白处的右键：显示全部目录时接管，否则交回页面自己的菜单
+// 列表空白处的右键：按目录分组时接管，否则交回页面自己的菜单
 function listMenu(e) {
-  if (!S.showAllSessions) return;
+  if (!byDir.value) return;
   e.preventDefault();
   e.stopPropagation();
   dirMenu(e);
 }
 
-// 会话分组：显示全部目录时按目录分组，只看当前目录时按时间分组；组内再按当前排序方式排
+// 当前目录 / 全部 / 收藏：全部和收藏都是“按目录分组”，结构一样，只是数据范围不同
+const byDir = computed(() => S.sessionMode !== 'dir');
+// 列表空的时候说人话：搜了关键词就说没搜到，否则说这个看法下为什么没东西
+const emptyText = computed(() => {
+  if (q.value.trim()) return '没有匹配的会话';
+  if (S.sessionMode === 'all') return '还没有历史会话';
+  if (S.sessionMode === 'fav') return S.favorites.length ? '收藏的目录还没有会话' : '还没有收藏的文件夹：在右侧文件树里右键一个文件夹就能收藏';
+  return '这个目录还没有历史会话';
+});
+
+// 会话分组：按目录看（全部 / 收藏）时按目录分组，只看当前目录时按时间分组；组内再按当前排序方式排
 const groups = computed(() => {
   const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
-  const list = [...unsaved.value, ...S.sessions].filter((s) => words.every((w) => `${s.title} ${s.cwd || ''}`.toLowerCase().includes(w)));
+  let list = [...unsaved.value, ...S.sessions].filter((s) => words.every((w) => `${s.title} ${s.cwd || ''}`.toLowerCase().includes(w)));
+  if (S.sessionMode === 'fav') list = list.filter((s) => isFav(s.cwd)); // 收藏：只要收藏目录里的会话
   const cmp = sortBy.value === 'name' ? byName : byTime;
 
-  if (S.showAllSessions) {
+  if (byDir.value) {
     const by = new Map();
     for (const s of list) {
       const k = s.cwd || '';
@@ -143,10 +151,13 @@ const groups = computed(() => {
   }
   return buckets.filter((b) => b.items.length);
 });
+// 右边那列时间/日期：今天显示 HH:MM，其余显示 MM/DD。
+// 月日都补成两位（11/1 → 11/01），这样每行的长度一致，右侧那一列才能对齐
 const timeOf = (iso) => {
   const d = new Date(iso);
+  const p2 = (n) => String(n).padStart(2, '0');
   const today = new Date().toDateString() === d.toDateString();
-  return today ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : `${d.getMonth() + 1}/${d.getDate()}`;
+  return today ? `${p2(d.getHours())}:${p2(d.getMinutes())}` : `${p2(d.getMonth() + 1)}/${p2(d.getDate())}`;
 };
 
 function open(s) {
@@ -155,6 +166,12 @@ function open(s) {
 }
 function onNew() {
   newSession(); // 现在会先弹目录选择窗口，选完才建会话
+  closeDrawer();
+}
+// 临时会话：不用选目录，后端直接在设置的缓存目录里建一个新目录当工作目录。
+// （侧栏里那个按钮暂时注释掉了，需要时把那行 div 取消注释就能回来）
+function onTemp() {
+  tempSession();
   closeDrawer();
 }
 function sessionMenu(e, s) {
@@ -181,6 +198,8 @@ function focusSearch() {
     </div>
 
     <div class="nav">
+      <!-- 临时会话按钮先藏起来（功能和后端都还在，要恢复就把这行取消注释），下面那个是普通的新会话 -->
+      <!-- <div class="nv" :title="`在缓存目录里新建一个工作目录开会话：${UI.tempSessionDir || DEFAULTS.tempSessionDir}`" @click="onTemp()"><Icon name="archive" /><span>临时会话</span></div> -->
       <div class="nv" @click="onNew()"><Icon name="newchat" /><span>新会话</span></div>
     </div>
 
@@ -189,14 +208,16 @@ function focusSearch() {
       <div class="search">
         <Icon name="search" :size="15" />
         <input ref="searchEl" v-model="q" placeholder="搜索会话" @keydown.esc="q = ''" />
-        <button class="ib sm" :class="{ on: S.showAllSessions }" :title="S.showAllSessions ? '正在显示所有目录的会话（按目录分组）' : '只显示当前目录，点击显示全部目录'" @click="S.showAllSessions = !S.showAllSessions">
-          <Icon name="globe" :size="15" />
-        </button>
         <button class="sbtn" :title="`当前按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
       </div>
+      <!-- 三种看法：当前目录 / 全部目录 / 收藏的目录。全部和收藏都是按目录分组，只是数据范围不同 -->
+      <div class="modes">
+        <button class="mode" :class="{ on: S.sessionMode === 'dir' }" title="只看当前目录的会话" @click="setSessionMode('dir')">当前目录</button>
+        <button class="mode" :class="{ on: S.sessionMode === 'all' }" title="所有目录的会话，按目录分组" @click="setSessionMode('all')">全部</button>
+        <button class="mode" :class="{ on: S.sessionMode === 'fav' }" :title="`只看收藏目录的会话${S.favorites.length ? '（' + S.favorites.length + ' 个目录）' : ''}`" @click="setSessionMode('fav')">收藏</button>
+      </div>
       <div class="list" @contextmenu="listMenu">
-        <div v-if="!S.sessions.length && !unsaved.length" class="empty">{{ S.showAllSessions ? '还没有历史会话' : '这个目录还没有历史会话' }}</div>
-        <div v-else-if="!groups.length" class="empty">没有匹配的会话</div>
+        <div v-if="!groups.length" class="empty">{{ emptyText }}</div>
         <template v-for="g in groups" :key="g.path || g.name">
           <!-- 目录：像文件夹一样，点一下折叠/展开；右键可以全部展开折叠、切路径显示 -->
           <div v-if="g.path" class="dirhead" :class="{ closed: collapsed.has(g.path) }" :title="g.path" @click="toggleDir(g.path)" @contextmenu.prevent.stop="dirMenu($event)">
@@ -252,12 +273,12 @@ function focusSearch() {
 .nv.dis { opacity: 0.45; cursor: default; }
 .nv :deep(.icon) { color: var(--text-2); }
 
-.seg { display: flex; gap: 2px; margin: 4px 12px 6px; padding: 3px; background: var(--active); border-radius: var(--r-md); flex: none; }
-.st { flex: 1; text-align: center; height: 28px; line-height: 28px; border-radius: var(--r-sm); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); }
-.st:hover { color: var(--text); }
-.st.on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }
-[data-theme='dark'] .st.on { background: var(--elev); }
-.cnt { margin-left: 4px; font-size: 11px; background: var(--active); padding: 0 6px; border-radius: var(--r-pill); color: var(--text-2); }
+/* 会话列表的三种看法（当前目录 / 全部 / 收藏）：一格一格的小按钮，选了的那格浮起来 */
+.modes { display: flex; gap: 2px; margin: 0 12px 6px; padding: 3px; background: var(--active); border-radius: var(--r-sm); flex: none; }
+.mode { flex: 1; min-width: 0; height: 26px; padding: 0; border: 0; background: transparent; border-radius: calc(var(--r-sm) - 2px); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; white-space: nowrap; }
+.mode:hover { color: var(--text); }
+.mode.on { background: var(--panel); color: var(--accent-text); font-weight: 600; box-shadow: var(--shadow-sm); }
+[data-theme='dark'] .mode.on { background: var(--elev); }
 
 .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .search { display: flex; align-items: center; gap: 6px; margin: 2px 12px 4px; padding: 0 4px 0 10px; height: 34px; border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--text-3); flex: none; }
@@ -283,7 +304,7 @@ function focusSearch() {
 [data-theme='dark'] .sess.active { background: var(--elev); }
 .stitle { line-height: 1.4; }
 .sess.active .stitle { font-weight: 600; color: var(--accent-text); }
-.sinfo { font-size: var(--fs-xs); color: var(--text-3); flex: none; font-variant-numeric: tabular-nums; }
+.sinfo { font-size: var(--fs-xs); color: var(--text-3); flex: none; font-variant-numeric: tabular-nums; text-align: right; }
 .del { display: none; width: 24px; height: 24px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
 .sess:hover .del { display: inline-flex; }
 .sess:hover .sinfo { display: none; }

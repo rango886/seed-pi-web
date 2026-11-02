@@ -3,10 +3,16 @@ import { reactive, watch } from 'vue';
 
 // “系统默认字体”这一串：真实字体名写在前面，system-ui 这类通用关键字只留最后兜底。
 // -apple-system / BlinkMacSystemFont 不是字体名，是 macOS / iOS 上的“系统字体暗号”，
-// 别的系统不认，会往后落到 Segoe UI（拉丁）+ 苹方 / 微软雅黑 UI（中文）。
-export const SYSTEM_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif";
+// 别的系统不认，会往后落到 Segoe UI（拉丁）+ 后面的中文字体。
+// 中文首选霞鹜文楷屏幕阅读版：装了就用，没装就自动往后落到苹方 / 微软雅黑 UI，跟以前一模一样。
+// Windows 上这个字体注册的名字是中文的“霞鹜文楷 屏幕阅读版”，macOS / Linux 那边发布的叫 LXGW WenKai Screen，两个都写上。
+export const WENKAI_SCREEN = "'LXGW WenKai Screen', '霞鹜文楷 屏幕阅读版'";
+export const SYSTEM_FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', ${WENKAI_SCREEN}, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif`;
 export const GITHUB_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif";
-export const GITHUB_MONO = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace";
+// 等宽字体同理：拉丁字符还是前面的 Cascadia / Consolas（对齐不乱），
+// 只有这些字体里没有的汉字落到霞鹜文楷等宽屏幕阅读版；没装则照旧落到系统 monospace。
+export const WENKAI_MONO_SCREEN = "'LXGW WenKai Mono Screen', '霞鹜文楷等宽 屏幕阅读版'";
+export const GITHUB_MONO = `ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', ${WENKAI_MONO_SCREEN}, monospace`;
 
 export const DEFAULTS = {
   // 整体样式：现代 | 微信 | GitHub。选一次会把主题色、Markdown 排版、字体、字号行高这些一起换掉（见 STYLES）
@@ -37,6 +43,8 @@ export const DEFAULTS = {
   uploadDir: '{tmp}/pi-web/{session}', // 拖进来/粘贴的文件上传到哪：{tmp} {cwd} {session} {date} {home}，相对路径按 cwd 解析
   uploadMaxMB: 500, // 单个文件上传上限
   keepAttachments: true, // 发送后附件留在输入框上面，下一轮接着带
+  // 临时会话：侧栏那个「临时会话」按钮每点一次，就在这个目录下面建一个带时间戳的子目录当工作目录
+  tempSessionDir: '{tmp}/pi-web/temporary', // 支持 {tmp} {home} {date}，相对路径按用户目录解析
 };
 
 /** 整体样式：每个样式就是一整套设置（配色名、Markdown 排版、字体、字号行高、圆角…）。
@@ -114,6 +122,7 @@ export const ACCENT_NAMES = { '#0969da': 'GitHub 蓝', '#07c160': '微信绿', '
 /** 字体下拉框：一个选项就是一款字体，不往里塞一串（缺字、缺等宽的兜底交给 apply() 统一补） */
 export const FONT_PRESETS = [
   { label: '系统默认', value: SYSTEM_FONT },
+  { label: '霞鹜文楷屏幕阅读版 LXGW WenKai Screen', value: WENKAI_SCREEN },
   { label: '霞鹜文楷 LXGW WenKai', value: "'LXGW WenKai'" },
   { label: '苹方 PingFang SC', value: "'PingFang SC'" },
   { label: '微软雅黑 Microsoft YaHei', value: "'Microsoft YaHei'" },
@@ -126,6 +135,7 @@ export const FONT_PRESETS = [
 /** 等宽字体：同样一款一个。只有“系统默认等宽”那项得靠 ui-monospace 这类关键字，拆不开 */
 export const MONO_PRESETS = [
   { label: '系统默认等宽', value: GITHUB_MONO },
+  { label: '霞鹜文楷等宽屏幕阅读版 LXGW WenKai Mono Screen', value: WENKAI_MONO_SCREEN },
   { label: '霞鹜文楷等宽 LXGW WenKai Mono', value: "'LXGW WenKai Mono'" },
   { label: 'Cascadia Mono', value: "'Cascadia Mono'" },
   { label: 'Consolas', value: "'Consolas'" },
@@ -136,7 +146,7 @@ export const MONO_PRESETS = [
 ];
 
 const KEY = 'pi-web-settings';
-const VER = 9; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷
+const VER = 11; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版
 let saved = {};
 try {
   saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -165,6 +175,16 @@ if ((saved.__v || 1) < 9) {
   const gone = { "'Sarasa Term SC'": GITHUB_MONO, "'Sarasa Mono SC'": GITHUB_MONO, "'Sarasa Gothic SC'": SYSTEM_FONT, "'Sarasa UI SC'": SYSTEM_FONT };
   if (saved.font in gone) saved.font = gone[saved.font];
   if (saved.codeFont in gone) saved.codeFont = gone[saved.codeFont];
+}
+if ((saved.__v || 1) < 10) {
+  // “系统默认字体”那一串里插进了霞鹜文楷屏幕阅读版：存的就是旧那串的话等于没改过，删掉让新的字体栈生效
+  const oldSys = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif";
+  if (saved.font === oldSys) delete saved.font;
+}
+if ((saved.__v || 1) < 11) {
+  // “系统默认等宽”那一串加了霞鹜文楷等宽屏幕阅读版，同理把存着的旧值删掉
+  const oldMono = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace";
+  if (saved.codeFont === oldMono) delete saved.codeFont;
 }
 delete saved.__v;
 
@@ -212,8 +232,11 @@ export function resetSettings() {
   Object.assign(UI, DEFAULTS);
 }
 
-const FALLBACK = "'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', sans-serif";
-const MONO_FALLBACK = "'Cascadia Mono', Consolas, 'Liberation Mono', monospace";
+/** 中文字体的兜底链：用户的字体里没有汉字（比如选了 Segoe UI）时，中文按这个顺序找。
+ *  首选霞鹜文楷屏幕阅读版，没装再落到苹方 / 雅黑 */
+const FALLBACK = `${WENKAI_SCREEN}, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', sans-serif`;
+/** 等宽的兜底链：用户的等宽字体里没有汉字时，先找霞鹜文楷等宽屏幕阅读版 */
+const MONO_FALLBACK = `${WENKAI_MONO_SCREEN}, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace`;
 const mql = window.matchMedia('(prefers-color-scheme: dark)');
 
 function apply() {

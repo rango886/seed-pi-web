@@ -5,6 +5,7 @@ import { UI } from '../settings.js';
 import { rawUrl } from '../api.js';
 import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText, splitAttachments } from '../util.js';
 import ToolCard from './ToolCard.vue';
+import AttTooltip from './AttTooltip.vue';
 import Icon from './Icon.vue';
 
 const props = defineProps({ m: Object });
@@ -16,11 +17,16 @@ const userParts = computed(() => splitAttachments(textOf(props.m.content)));
 const userText = computed(() => userParts.value.text);
 const atts = computed(() => userParts.value.attachments);
 const broken = ref({}); // 文件已经不在的图片，缩略图换成图标
-const attTitle = (a) => `${a.path}\n${a.kind === 'dir' ? '点击不会打开目录' : '点击打开'}`;
+const isImg = (a) => a.kind === 'image' && !broken[a.n];
+const KIND_LABEL = { image: '图片', file: '文件', dir: '文件夹' };
+// 悬停浮层：编号、全名、完整路径都放这（图片附件平时只有一张缩略图）
+const tip = ref(null);
+function showTip(e, a) {
+  tip.value = { anchor: e.currentTarget.getBoundingClientRect(), index: a.n, name: a.name, path: a.path, info: KIND_LABEL[a.kind] || '' };
+}
 const openAtt = (a) => a.kind !== 'dir' && openFile(a.path);
 const images = computed(() => imagesOf(props.m.content));
-const blocks = computed(() => (Array.isArray(props.m.content) ? props.m.content.filter(Boolean) : []));
-// 空内容的思考块直接不画（有的模型只会发一个空的 thinking 块，比如 opus 系列），
+const blocks = computed(() => (Array.isArray(props.m.content) ? props.m.content.filter(Boolean) : []));// 空内容的思考块直接不画（有的模型只会发一个空的 thinking 块，比如 opus 系列），
 // 留个空框在那里没意义，还占地方
 const showThinking = (b) => b.type === 'thinking' && (!!b.redacted || !!(b.thinking || '').trim());
 const streaming = computed(() => props.m.stopReason === 'pending');
@@ -60,12 +66,20 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
     <div class="col">
       <div class="bubble me-bubble">
         <div v-if="atts.length" class="atts">
-          <div v-for="a in atts" :key="a.n" class="att" :class="{ link: a.kind !== 'dir' }" :title="attTitle(a)" @click="openAtt(a)">
-            <span class="no">{{ a.n }}</span>
-            <img v-if="a.kind === 'image' && !broken[a.n]" class="pic" :src="rawUrl(a.path)" alt="" @error="broken[a.n] = true" />
+          <div
+            v-for="a in atts"
+            :key="a.n"
+            class="att"
+            :class="{ link: a.kind !== 'dir', img: isImg(a) }"
+            @click="openAtt(a)"
+            @mouseenter="showTip($event, a)"
+            @mouseleave="tip = null"
+          >
+            <img v-if="isImg(a)" class="pic" :src="rawUrl(a.path)" alt="" @error="broken[a.n] = true" />
             <span v-else class="fic"><Icon :name="a.kind === 'dir' ? 'folder' : 'file'" :size="14" /></span>
-            <span class="aname ellipsis">{{ a.name }}</span>
+            <span v-if="!isImg(a)" class="aname ellipsis">{{ a.name }}</span>
           </div>
+          <AttTooltip :tip="tip" />
         </div>
         <div v-if="userText.trim()" class="pre">{{ userText }}</div>
         <div v-if="images.length" class="imgs">
@@ -84,7 +98,7 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
         <!-- 思考过程：和工具调用用同一套 .blk 卡片样式 -->
         <details v-if="showThinking(b)" class="blk prose" :open="UI.thinkingOpen || (streaming && i === blocks.length - 1)">
           <summary class="blk-head">
-            <span class="blk-chip soft">Thinking{{ b.redacted ? ' (hidden)' : '' }}</span>
+            <span class="blk-chip">Thinking{{ b.redacted ? ' (hidden)' : '' }}</span>
             <!-- 折叠时像工具调用那样在后面跟一行灰字预览；展开了由 CSS 藏起来，免得和下面的内容重复 -->
             <span v-if="thinkPrev(b)" class="ellipsis grow blk-sum think-prev" :title="thinkPrev(b)">{{ thinkPrev(b) }}</span>
             <span v-if="streaming && i === blocks.length - 1" class="spin" />
@@ -152,21 +166,24 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
 .ai .col { align-items: flex-start; }
 
 .bubble { border-radius: var(--r-bubble); padding: calc(var(--sp2) + 2px) var(--pad-x); line-height: var(--lh); max-width: 100%; }
-.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); }
-.ai-bubble { background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); }
+.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); padding: calc(var(--sp2) - 1px) calc(var(--pad-x) - 2px); font-size: calc(var(--fs) - 1px); line-height: 1.6; }
+/* 正文跟上面那些思考/工具块拉开一点：它们是一个个紧凑的小块，正文比块与块之间松一点才不挤 */
+.ai-bubble { background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); margin-top: var(--sp1); }
 /* 正文一直带个框，和思考/工具卡片一个样子，一眼能看出这块属于哪条回复。设置里能关 */
 .ai-bubble.boxed { align-self: stretch; padding: calc(var(--sp2) - 1px) var(--pad-x); border: 1px solid color-mix(in srgb, var(--text-3) 45%, var(--line)); border-radius: var(--r-md); }
 .pre { white-space: pre-wrap; word-break: break-word; }
 .imgs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .imgs img { max-height: 160px; max-width: 260px; border-radius: var(--r-sm); display: block; }
 /* 消息里带的附件：和输入框上面那一排长得一样，只是不能拖、不能删 */
-.atts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.atts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; align-items: flex-start; }
 .atts:last-child { margin-bottom: 0; }
 .att { display: inline-flex; align-items: center; gap: 6px; height: 34px; max-width: 220px; padding: 0 10px 0 4px; border-radius: var(--r-md); background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text-2); border: 1px solid var(--line-2); font-size: var(--fs-sm); }
 .att.link { cursor: pointer; }
 .att.link:hover { color: var(--text); border-color: var(--text-3); }
-.att .no { flex: none; min-width: 18px; height: 18px; padding: 0 4px; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent-text); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
-.att .pic { flex: none; width: 26px; height: 26px; object-fit: cover; border-radius: var(--r-xs); display: block; }
+/* 图片附件跟输入框里一个样：只露一张缩略图，文件名和编号都在悬停浮层里 */
+.att.img { width: 64px; height: 64px; padding: 0; gap: 0; background: transparent; border-color: transparent; }
+.att.img:hover { border-color: var(--line-2); }
+.att.img .pic { flex: none; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; border: 1px solid var(--line-2); display: block; }
 .att .fic { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); }
 .att .aname { min-width: 0; }
 
@@ -174,7 +191,7 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
 .note-sm { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); }
 /* 打开后才显示的模型/用量 */
 .meta { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
-/* 思考折叠时那一行预览：字体在 style.css 的 .blk.prose 里统一给成正文字体 */
+/* 思考折叠时那一行预览：字体跟工具调用一样是等宽（.blk-sum），展开后藏起来免得和下面的内容重复 */
 .blk[open] .think-prev { display: none; }
 
 /* 卡片类：shell、系统消息 */

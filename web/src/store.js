@@ -4,6 +4,16 @@ import { connect, call, fire, http, rawUrl, upload, CID } from './api.js';
 import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments } from './util.js';
 import { view, UI } from './settings.js';
 
+const FAV_KEY = 'pi-web-favorites';
+function readFavorites() {
+  try {
+    const list = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+    return Array.isArray(list) ? list.filter((p) => typeof p === 'string' && p.trim()) : [];
+  } catch {
+    return [];
+  }
+}
+
 export const S = reactive({
   connected: false,
   info: { home: '', sep: '/', platform: '', terminal: false },
@@ -40,7 +50,10 @@ export const S = reactive({
   activeTab: 'chat', // 'chat' | 文件路径 | 'term:<终端id>'
   fsEpoch: 0,
   sessions: [],
-  showAllSessions: false,
+  // 侧栏会话列表的三种看法：dir 只看当前目录 / all 全部目录 / fav 只看收藏的目录
+  sessionMode: localStorage.getItem('pi-web-session-mode') || 'dir',
+  // 收藏的文件夹（目录选择窗口和右侧文件树右键都能加），存 localStorage
+  favorites: readFavorites(),
   terms: [],
   activeTerm: null, // 最近一次看的终端（Ctrl+` 切回去用）
   connEpoch: 0,
@@ -465,9 +478,32 @@ async function loadCommands() {
 
 export async function loadSessions() {
   if (!S.cwd) return;
-  // 只看当前目录时带 cwd；看全部目录时只传 all，后端才不会按 cwd 过滤
-  const query = S.showAllSessions ? { all: 1 } : { cwd: S.cwd };
+  // 只看当前目录时带 cwd；看全部 / 看收藏时都要拿全量，收藏是在前端按目录筛的
+  const query = S.sessionMode === 'dir' ? { cwd: S.cwd } : { all: 1 };
   S.sessions = await http.get('/api/sessions', query).catch(() => []);
+}
+
+// ---------------- 收藏的文件夹 ----------------
+const saveFavorites = () => localStorage.setItem(FAV_KEY, JSON.stringify(S.favorites));
+
+/** 这个目录是不是已经收藏了（大小写、末尾分隔符不算区别） */
+export const isFav = (p) => !!p && S.favorites.some((f) => normPath(f) === normPath(p));
+
+/** 收藏 / 取消收藏一个文件夹；新收藏的放在最前面 */
+export function toggleFavorite(p) {
+  if (!p) return;
+  const fav = isFav(p);
+  S.favorites = fav ? S.favorites.filter((f) => normPath(f) !== normPath(p)) : [p, ...S.favorites];
+  saveFavorites();
+  toast(fav ? `已取消收藏 ${p}` : `已收藏 ${p}`);
+}
+
+/** 侧栏换一种看法（当前目录 / 全部 / 收藏），顺手把列表重新拉一遍 */
+export function setSessionMode(m) {
+  if (!m || m === S.sessionMode) return;
+  S.sessionMode = m;
+  localStorage.setItem('pi-web-session-mode', m);
+  loadSessions();
 }
 
 export async function loadModels() {
@@ -983,6 +1019,12 @@ const requireIdle = () => {
 };
 
 export const newSession = guard(async () => openDirPicker('new'));
+
+/** 临时会话：后端在设置的缓存目录里建一个新目录，拿它当工作目录开新会话 */
+export const tempSession = guard(async () => {
+  await attachResult(await call('create_temp_session', { dir: UI.tempSessionDir }));
+  toast(`临时工作目录：${S.cwd}`);
+});
 
 /** 打开目录选择窗口。mode='new' 时选完目录就在那里开个新会话 */
 export function openDirPicker(mode = 'switch') {

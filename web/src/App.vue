@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { S, closeTab, closeAllTabs, pickSession, pickModel, stop, renameSession, newSession, sessionTitle, toggleTerminal, openTerminal, termTab, termIdOf } from './store.js';
 import { view, toggleSide, openMenu, togglePanel, UI } from './settings.js';
 import { mainMenu, contextExtras, openModelMenu } from './menus.js';
@@ -36,9 +36,22 @@ function drag(e) {
   window.addEventListener('mouseup', up);
 }
 
-// 顶部标签页：对话 + 打开的文件 + 终端
+/* 顶部标签页：对话 + 打开的文件 + 终端 */
+const tabsEl = ref(null);
 const inTerm = computed(() => !!termIdOf(S.activeTab));
 const hasTabs = computed(() => S.tabs.length > 0 || S.terms.length > 0);
+// 打开的文件多了就横向滚：竖向滚轮在这一条上换成横向滚
+function onTabsWheel(e) {
+  const el = e.currentTarget;
+  if (!e.deltaY || el.scrollWidth <= el.clientWidth + 1) return;
+  el.scrollLeft += e.deltaY;
+  e.preventDefault();
+}
+// 切到某个标签时把它滚到看得见的地方（tab 多了不至于被挤到外面）
+watch(
+  () => [S.activeTab, S.tabs.length, S.terms.length],
+  () => nextTick(() => tabsEl.value?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })),
+);
 function tabMenu(e, key) {
   openMenu(e.clientX, e.clientY, [
     { label: '关闭', run: () => closeTab(key) },
@@ -161,40 +174,42 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
       </header>
 
       <div v-if="hasTabs" class="tabbar">
-        <div class="tab" :class="{ active: S.activeTab === 'chat' }" @click="S.activeTab = 'chat'">
-          <span v-if="S.running" class="spin" /><Icon v-else name="chat" :size="15" />对话
+        <div ref="tabsEl" class="tabs" @wheel="onTabsWheel">
+          <div class="tab" :class="{ active: S.activeTab === 'chat' }" @click="S.activeTab = 'chat'">
+            <span v-if="S.running" class="spin" /><Icon v-else name="chat" :size="15" />对话
+          </div>
+          <div
+            v-for="t in S.tabs"
+            :key="t.path"
+            class="tab"
+            :class="{ active: S.activeTab === t.path }"
+            :title="t.path"
+            @click="S.activeTab = t.path"
+            @mousedown.middle.prevent="closeTab(t.path)"
+            @contextmenu.prevent.stop="tabMenu($event, t.path)"
+          >
+            <Icon name="file" :size="15" />
+            <span class="ellipsis">{{ t.name }}</span>
+            <span class="x" title="关闭" @click.stop="closeTab(t.path)"><Icon name="close" :size="11" /></span>
+          </div>
+          <div
+            v-for="t in S.terms"
+            :key="t.id"
+            class="tab"
+            :class="{ active: S.activeTab === termTab(t.id) }"
+            :title="t.cwd"
+            @click="S.activeTab = termTab(t.id)"
+            @mousedown.middle.prevent="closeTab(termTab(t.id))"
+            @contextmenu.prevent.stop="tabMenu($event, termTab(t.id))"
+          >
+            <Icon name="terminal" :size="15" />
+            <span class="ellipsis">{{ t.title }}</span>
+            <span class="x" title="关闭" @click.stop="closeTab(termTab(t.id))"><Icon name="close" :size="11" /></span>
+          </div>
+          <div v-if="S.info.terminal" class="tab add" title="在当前目录开新终端" @click="openTerminal()"><Icon name="plus" :size="15" /></div>
         </div>
-        <div
-          v-for="t in S.tabs"
-          :key="t.path"
-          class="tab"
-          :class="{ active: S.activeTab === t.path }"
-          :title="t.path"
-          @click="S.activeTab = t.path"
-          @mousedown.middle.prevent="closeTab(t.path)"
-          @contextmenu.prevent.stop="tabMenu($event, t.path)"
-        >
-          <Icon name="file" :size="15" />
-          <span class="ellipsis">{{ t.name }}</span>
-          <span class="x" @click.stop="closeTab(t.path)">✕</span>
-        </div>
-        <div
-          v-for="t in S.terms"
-          :key="t.id"
-          class="tab"
-          :class="{ active: S.activeTab === termTab(t.id) }"
-          :title="t.cwd"
-          @click="S.activeTab = termTab(t.id)"
-          @mousedown.middle.prevent="closeTab(termTab(t.id))"
-          @contextmenu.prevent.stop="tabMenu($event, termTab(t.id))"
-        >
-          <Icon name="terminal" :size="15" />
-          <span class="ellipsis">{{ t.title }}</span>
-          <span class="x" @click.stop="closeTab(termTab(t.id))">✕</span>
-        </div>
-        <div v-if="S.info.terminal" class="tab add" title="在当前目录开新终端" @click="openTerminal()"><Icon name="plus" :size="15" /></div>
-        <div class="grow" />
-        <button class="ib sm" title="关闭全部标签页" @click="closeAllTabs()"><Icon name="closeall" :size="16" /></button>
+        <!-- “关闭全部”钉在右边，不跟着标签一起滚走 -->
+        <button class="tab-close-all" title="关闭全部标签页" @click="closeAllTabs()"><Icon name="closeall" :size="16" /></button>
       </div>
 
       <ChatView v-show="S.activeTab === 'chat'" />
@@ -233,16 +248,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 .mask.show { opacity: 1; pointer-events: auto; }
 
 /* 顶部标题栏 */
-.top { height: 52px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 10px; border-bottom: 1px solid var(--line); background: var(--chat-bg); }
-.ttl { flex: 1; min-width: 0; text-align: center; cursor: pointer; padding: 0 8px; }
+.top { height: 44px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px 0 8px; border-bottom: 1px solid var(--line); background: var(--chat-bg); }
+.ttl { flex: 1; min-width: 0; text-align: center; cursor: pointer; padding: 0 6px; }
 .t1 { font-weight: 600; line-height: 1.3; }
-.ib { width: 36px; height: 36px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ib { width: 30px; height: 30px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .ib:hover { background: var(--active); color: var(--text); }
 .ib.on { color: var(--accent-text); background: var(--accent-soft); }
 .ib:disabled { opacity: 0.4; pointer-events: none; }
 .ib.sm { width: 28px; height: 28px; border-radius: var(--r-sm); }
 
-.tabbar { background: var(--chat-bg); padding: 6px 10px; }
-.tab { height: 28px; font-size: var(--fs-sm); }
-.tab.add { padding: 0 8px; color: var(--text-3); }
+.tabbar { background: var(--chat-bg); }
 </style>

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted } from 'vue';
-import { S, openSession, sessionStatus } from '../store.js';
-import { view } from '../settings.js';
+import { S, openSession, sessionStatus, isFav, toggleFavorite } from '../store.js';
+import { view, openMenu } from '../settings.js';
 import TreeNode from './TreeNode.vue';
 import Icon from './Icon.vue';
 
@@ -17,6 +17,13 @@ function onDown(e) {
   // 面板自己、顶栏上的开关按钮、右键菜单、弹窗里点击都不算“外面”
   if (e.target.closest('.rpanel, .panel-btn, .ctxmenu, .modal-mask')) return;
   view.panel = null;
+}
+// 文件面板顶上那行路径：右键能把当前工作目录收藏起来（树里根节点本身不画，所以给它留个入口）
+function cwdMenu(e) {
+  openMenu(e.clientX, e.clientY, [
+    { label: isFav(S.cwd) ? '取消收藏这个目录' : '收藏这个目录', run: () => toggleFavorite(S.cwd) },
+    { label: '复制路径', run: () => navigator.clipboard.writeText(S.cwd) },
+  ]);
 }
 onMounted(() => window.addEventListener('mousedown', onDown));
 onUnmounted(() => window.removeEventListener('mousedown', onDown));
@@ -36,7 +43,7 @@ onUnmounted(() => window.removeEventListener('mousedown', onDown));
 
       <!-- 两个面板都用 v-show 挂着：来回切换不用重新读目录 -->
       <div v-show="view.panel === 'files'" class="pane">
-        <div class="sub ellipsis" :title="S.cwd">{{ S.cwd }}</div>
+        <div class="sub ellipsis" :title="`${S.cwd}\n右键可以收藏这个目录`" @contextmenu.prevent.stop="cwdMenu($event)">{{ S.cwd }}</div>
         <div class="list tree">
           <TreeNode v-if="S.cwd" :key="S.cwd" :entry="{ name: base(S.cwd), path: S.cwd, dir: true }" :depth="0" root />
         </div>
@@ -69,7 +76,7 @@ onUnmounted(() => window.removeEventListener('mousedown', onDown));
 
 <style scoped>
 .rpanel { position: absolute; z-index: 30; top: 58px; right: 8px; bottom: 8px; width: min(340px, calc(100% - 16px)); display: flex; flex-direction: column; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; user-select: none; }
-.rpanel.low { top: 98px; }
+.rpanel.low { top: 86px; }
 .rhead { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 6px 0 14px; flex: none; color: var(--text-2); border-bottom: 1px solid var(--line-2); }
 .rtitle { font-weight: 600; color: var(--text); }
 .cnt { font-size: 11px; background: var(--active); padding: 0 6px; border-radius: var(--r-pill); color: var(--text-2); }

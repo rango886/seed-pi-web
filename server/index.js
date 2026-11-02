@@ -10,7 +10,7 @@ import { WebSocketServer } from 'ws';
 import { PiAgent } from './pi-agent.js';
 import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionMessages } from './sessions.js';
 import { TerminalManager, terminalAvailable } from './terminal.js';
-import { isLocalRequest, readClipboardFiles, resolveUploadDir, saveUpload, listProjectFiles, warmClipboard } from './attachments.js';
+import { isLocalRequest, readClipboardFiles, resolveUploadDir, expandPath, saveUpload, listProjectFiles, warmClipboard } from './attachments.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 8787);
@@ -199,6 +199,25 @@ async function createSession(cwd, ws) {
   const reusable = (a) => a.alive && !a.saved && !a.running && samePath(a.cwd, cwd) && (a === cur || (!a.owner && !watchers(a).length));
   const idle = [...agents.values()].find(reusable);
   return idle || createAgent({ cwd });
+}
+
+// ---------- 临时会话：在设置的缓存目录里建一个新目录，拿它当工作目录 ----------
+/** 设置里没填的话建在这里 */
+const TEMP_SESSION_DIR = '{tmp}/pi-web/temporary';
+const pad2 = (n) => String(n).padStart(2, '0');
+
+/**
+ * 临时会话的缓存目录：把设置里的模板（{tmp} {home} {date}…）展开、建出来，
+ * 再在里面建一个带时间戳的新目录（重名的那一秒靠 mkdtemp 补随机后缀拉开）。
+ * 相对路径按用户目录算：这里还没有工作目录可以当基准。
+ */
+async function makeTempDir(template) {
+  const now = new Date();
+  const base = expandPath(template, { tmp: os.tmpdir(), home: os.homedir(), date: now.toISOString().slice(0, 10) }, { fallback: TEMP_SESSION_DIR });
+  if (base === path.parse(base).root) throw new Error('不能把磁盘根目录当临时目录');
+  await fsp.mkdir(base, { recursive: true });
+  const stamp = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}-${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
+  return fsp.mkdtemp(path.join(base, `${stamp}-`));
 }
 
 /**
@@ -459,6 +478,10 @@ wss.on('connection', (ws, req) => {
     // 新会话：起一个新进程，原来的会话不受影响
     async create_session({ cwd }, ctx) {
       return attachWs(ws, await createSession(path.resolve(cwd), ws), ctx);
+    },
+    // 临时会话：先在设置的缓存目录里建一个新目录，再拿它当工作目录开会话
+    async create_temp_session({ dir }, ctx) {
+      return attachWs(ws, await createSession(await makeTempDir(String(dir || '')), ws), ctx);
     },
     // 把操作权拿过来（比如另一台电脑上忘了关的窗口）
     async take_over({ agentId }) {

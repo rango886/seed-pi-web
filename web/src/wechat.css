@@ -74,7 +74,7 @@
 :root[data-ui='wechat'] .send:disabled { background: var(--line); color: var(--text-3); }
 :root[data-ui='wechat'] .box.focused { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); box-shadow: var(--shadow); }
 :root[data-ui='wechat'] .input:focus { border-color: var(--accent); box-shadow: none; }
-:root[data-ui='wechat'] .tab.active { background: var(--accent-soft); color: var(--accent-text); }
+:root[data-ui='wechat'] .tab.active { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); }
 :root[data-ui='wechat'] .sess.active { background: var(--panel); box-shadow: var(--shadow-sm); }
 :root[data-ui='wechat'] .sess.active .stitle { color: var(--accent-text); }
 :root[data-ui='wechat'] .blk-head:hover { background: var(--hover); }

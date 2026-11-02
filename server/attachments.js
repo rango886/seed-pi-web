@@ -141,6 +141,17 @@ export async function readClipboardFiles() {
 const safePart = (s) => String(s || '').replace(/[^\w.-]+/g, '_').slice(0, 80);
 
 /**
+ * 把设置里的路径模板展开成绝对路径。占位符从 vars 里取（{tmp} {home} {date}…），
+ * 认识不了的占位符原样留着；~ 开头换成用户目录，相对路径按 base 算，模板是空的就用 fallback
+ */
+export function expandPath(template, vars = {}, { base = os.homedir(), fallback = '' } = {}) {
+  let p = (template || '').trim() || fallback;
+  p = p.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
+  if (p === '~' || p.startsWith('~/') || p.startsWith('~\\')) p = path.join(os.homedir(), p.slice(1));
+  return path.resolve(base, p);
+}
+
+/**
  * 上传目录（设置里可以改）。支持变量：
  *   {tmp} 系统临时目录   {cwd} 当前工作目录   {session} 会话 id   {date} 今天的日期   {home} 用户目录
  * 相对路径按 cwd 解析，~ 开头按用户目录解析
@@ -148,10 +159,7 @@ const safePart = (s) => String(s || '').replace(/[^\w.-]+/g, '_').slice(0, 80);
 export function resolveUploadDir(template, { cwd, session }) {
   const base = cwd && path.isAbsolute(cwd) ? cwd : os.homedir();
   const vars = { tmp: os.tmpdir(), cwd: base, session: safePart(session) || 'default', date: new Date().toISOString().slice(0, 10), home: os.homedir() };
-  let p = (template || '').trim() || '{tmp}/pi-web/{session}';
-  p = p.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
-  if (p === '~' || p.startsWith('~/') || p.startsWith('~\\')) p = path.join(os.homedir(), p.slice(1));
-  return path.resolve(base, p);
+  return expandPath(template, vars, { base, fallback: '{tmp}/pi-web/{session}' });
 }
 
 // 文件名里去掉系统不允许的字符，保留原名（中文也保留），方便模型和人看懂
