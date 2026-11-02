@@ -165,6 +165,27 @@ const VISION_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
 export const attachKind = (name, dir = false) => (dir ? 'dir' : VISION_EXT.test(name || '') ? 'image' : 'file');
 export const baseName = (p) => String(p || '').split(/[\\/]/).filter(Boolean).pop() || String(p || '');
 
+// ---------- 文件类型图标 ----------
+// 文件树/附件前面那个小图标：目录给 folder，其余按扩展名猜，认不出来就是通用文件图标。
+// 返回的是 Icon.vue 里的图标名，所以这里只管名字，不管怎么画
+const EXT_ICONS = [
+  ['image', /\.(png|jpe?g|gif|webp|bmp|ico|svg|avif|tiff?)$/i],
+  ['code', /\.(js|mjs|cjs|jsx|ts|tsx|vue|svelte|py|pyi|rs|go|java|kt|kts|c|h|cc|cpp|hpp|cs|php|rb|swift|lua|dart|scala|sql|css|scss|sass|less|html?|xml)$/i],
+  ['data', /\.(json|jsonl|jsonc|ya?ml|ini|cfg|conf|env|properties|csv|tsv|toml)$/i],
+  ['doc', /\.(md|markdown|mdx|txt|rst|pdf|docx?|xlsx?|pptx?|rtf|tex|log)$/i],
+  ['terminal', /\.(sh|bash|zsh|fish|ps1|bat|cmd)$/i],
+  ['archive', /\.(zip|tar|gz|tgz|bz2|xz|7z|rar|jar|whl|exe|msi|dmg)$/i],
+  ['media', /\.(mp3|wav|flac|m4a|ogg|opus|aac|mp4|mkv|avi|mov|webm)$/i],
+];
+const LOCK_FILES = /^(package-lock\.json|yarn\.lock|pnpm-lock\.ya?ml|cargo\.lock|poetry\.lock|pipfile\.lock|composer\.lock|gemfile\.lock)$/i;
+export function iconOf(name, dir = false) {
+  const n = baseName(name);
+  if (dir) return 'folder';
+  if (LOCK_FILES.test(n)) return 'lock';
+  const hit = EXT_ICONS.find(([, re]) => re.test(n));
+  return hit ? hit[0] : 'file';
+}
+
 export function buildAttachmentBlock(list) {
   const lines = list.map((a, i) => `[${i + 1}] ${a.kind}: ${a.path}`);
   return `<attachments>\n${ATT_NOTE}\n${lines.join('\n')}\n</attachments>`;
