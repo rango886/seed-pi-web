@@ -3,7 +3,10 @@ import { ref, computed, onMounted, nextTick } from 'vue';
 import { S, loadModels, setModel, toast } from '../store.js';
 
 // 输入框上方弹出的模型菜单：搜索 + 最近使用 + 按 provider 分组
-const props = defineProps({ offset: { type: Number, default: 0 } }); // 右边缘对齐用：离输入框右边的距离
+const props = defineProps({
+  // 位置由外面量好传进来：right = 距输入区右边缘，bottom = 距输入区下边缘（不是相对整个输入框算的）
+  pos: { type: Object, default: () => ({ right: 0, bottom: 0 }) },
+});
 const emit = defineEmits(['close']);
 const q = ref('');
 const sel = ref(0);
@@ -69,7 +72,7 @@ const ctxLabel = (m) => (m.contextWindow ? (m.contextWindow >= 1e6 ? `${(m.conte
 </script>
 
 <template>
-  <div class="pop mm" :style="{ right: props.offset + 'px' }">
+  <div class="pop mm" :style="{ right: props.pos.right + 'px', bottom: props.pos.bottom + 'px' }">
     <div class="search">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
       <input ref="input" v-model="q" placeholder="搜索模型…" @keydown="onKey" @input="sel = 0" />
@@ -99,7 +102,7 @@ const ctxLabel = (m) => (m.contextWindow ? (m.contextWindow >= 1e6 ? `${(m.conte
 </template>
 
 <style scoped>
-.mm { bottom: calc(100% + 8px); right: 0; width: 400px; max-width: calc(100vw - 32px); padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.mm { bottom: 0; right: 0; width: 400px; max-width: calc(100vw - 32px); padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .search { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--text-3); }
 .search input { flex: 1; border: 0; outline: none; background: transparent; height: 42px; color: var(--text); }
 .list { max-height: 360px; overflow-y: auto; padding: 4px 6px 6px; }

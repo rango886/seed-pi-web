@@ -349,22 +349,28 @@ function onItemClick(it, e) {
   it.run();
 }
 
-// 模型 / 思考强度那两个弹窗贴着各自 chip 的右边缘弹出来：
-// 量一下 chip 离输入框右边缘有多远，把这个距离给弹窗当 right。
-// 窄屏上这么量可能会顶出左边界，就夹一下：最多夹到「弹窗左边缘正好贴着输入框左边缘」
+// 模型 / 思考强度那两个弹窗贴着各自 chip：右边对齐按钮的右边缘，底边就在按钮上方 6px。
+// 注意不能用 CSS 的 bottom:100% —— 那是相对整块输入区（含上面的用量条）算的，框会跑到输入框顶上。
+// 窄屏上横向可能会顶出左边界，就夹一下
+const composerEl = ref(null);
 const boxEl = ref(null);
 const modelChip = ref(null);
 const thinkChip = ref(null);
-const popRight = ref(0);
+const popPos = ref({ right: 0, bottom: 0 });
 const POP_W = { model: 400, thinking: 220 }; // 和各自 CSS 里的 width 对齐
+const POP_GAP = 6; // 弹窗底边到 chip 上边的距离
 function alignPop() {
   const name = menu.value;
   const chip = name === 'model' ? modelChip.value : name === 'thinking' ? thinkChip.value : null;
   const box = boxEl.value?.getBoundingClientRect();
-  if (!chip || !box) return;
+  const root = composerEl.value?.getBoundingClientRect();
+  if (!chip || !box || !root) return;
   const r = chip.getBoundingClientRect();
   const w = Math.min(POP_W[name], box.width);
-  popRight.value = Math.max(0, Math.min(box.right - r.right, box.width - w));
+  popPos.value = {
+    right: Math.max(0, Math.min(root.right - r.right, box.width - w)),
+    bottom: Math.max(0, root.bottom - r.top + POP_GAP),
+  };
 }
 function toggleMenu(name) {
   menu.value = menu.value === name ? null : name;
@@ -394,7 +400,7 @@ async function onTakeOver() {
 </script>
 
 <template>
-  <div class="composer" @dragover="onDragOver" @dragleave.self="dragging = false" @drop="onDrop">
+  <div ref="composerEl" class="composer" @dragover="onDragOver" @dragleave.self="dragging = false" @drop="onDrop">
     <!-- @ 引用文件 -->
     <div v-if="atItems.length" ref="atEl" class="pop slash">
       <div class="pop-title">选中的文件会加到附件里 · Enter 选中 · Tab 进入目录 · Esc 关闭</div>
@@ -430,8 +436,8 @@ async function onTakeOver() {
       </div>
     </div>
 
-    <ModelMenu v-if="menu === 'model'" :offset="popRight" @close="menu = null" />
-    <div v-if="menu === 'thinking'" class="pop think-pop" :style="{ right: popRight + 'px' }">
+    <ModelMenu v-if="menu === 'model'" :pos="popPos" @close="menu = null" />
+    <div v-if="menu === 'thinking'" class="pop think-pop" :style="{ right: popPos.right + 'px', bottom: popPos.bottom + 'px' }">
       <div class="pop-title">思考强度</div>
       <div v-for="l in S.thinkingLevels" :key="l" class="lv" :class="{ cur: l === thinking }" @click="chooseThinking(l)">
         <span class="check">{{ l === thinking ? '✓' : '' }}</span>
@@ -631,7 +637,7 @@ async function onTakeOver() {
 .desc { color: var(--text-2); font-size: var(--fs-sm); }
 .src { font-size: 11px; color: var(--text-3); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 0 6px; line-height: 18px; flex: none; }
 
-.think-pop { bottom: calc(100% + 8px); right: 0; left: auto; width: 220px; }
+.think-pop { bottom: 0; right: 0; left: auto; width: 220px; }
 .pop-title { font-size: var(--fs-xs); color: var(--text-3); padding: 4px 8px 6px; }
 .lv { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 6px; border-radius: var(--r-sm); cursor: pointer; }
 .lv:hover { background: var(--hover); }
