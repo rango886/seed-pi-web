@@ -82,7 +82,7 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
     <div class="col">
       <template v-for="(b, i) in blocks" :key="i">
         <!-- 思考过程：和工具调用用同一套 .blk 卡片样式 -->
-        <details v-if="showThinking(b)" class="blk" :open="UI.thinkingOpen || (streaming && i === blocks.length - 1)">
+        <details v-if="showThinking(b)" class="blk prose" :open="UI.thinkingOpen || (streaming && i === blocks.length - 1)">
           <summary class="blk-head">
             <span class="blk-chip soft">Thinking{{ b.redacted ? ' (hidden)' : '' }}</span>
             <!-- 折叠时像工具调用那样在后面跟一行灰字预览；展开了由 CSS 藏起来，免得和下面的内容重复 -->
@@ -174,8 +174,7 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
 .note-sm { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); }
 /* 打开后才显示的模型/用量 */
 .meta { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
-/* 思考折叠时那一行预览：跟工具调用的摘要同色，但用正文字体 */
-.think-prev { font-family: var(--font); }
+/* 思考折叠时那一行预览：字体在 style.css 的 .blk.prose 里统一给成正文字体 */
 .blk[open] .think-prev { display: none; }
 
 /* 卡片类：shell、系统消息 */

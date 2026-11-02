@@ -255,6 +255,12 @@ a:hover { text-decoration: underline; }
 .blk-body { margin: 2px 0; padding: var(--sp2) var(--pad-x); background: var(--code-bg); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; font-size: var(--fs-sm); font-family: var(--font-code); line-height: 1.6; max-height: 380px; overflow: auto; }
 /* 散文类内容（思考过程）不用等宽字体，也不用面板底色：缩进的一段灰字，和正文分开就够了 */
 .blk-body.prose { font-family: var(--font); line-height: var(--lh); background: none; }
+/* 思考过程这一块整个都是散文：标签、折叠时那行预览、展开后的正文，全部用正文字体。
+   挂在 .blk.prose 上把优先级提到比 .blk-chip / .blk-sum / .blk-body 的单类规则还高，
+   就不用靠样式表先后顺序赢，免得换个构建顺序、或者组件里的散规则一变就退回成等宽 */
+.blk.prose .blk-chip,
+.blk.prose .blk-sum,
+.blk.prose .blk-body { font-family: var(--font); }
 .blk-body.dim { color: var(--text-3); }
 
 /* spinner / 状态点 */
