@@ -4,6 +4,7 @@ import { S, openFile } from '../store.js';
 import { UI } from '../settings.js';
 import { rawUrl } from '../api.js';
 import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText, delMsgText, splitAttachments } from '../util.js';
+import { vMarkdownHtml } from '../markdown-html.js';
 import ToolCard from './ToolCard.vue';
 import AttTooltip from './AttTooltip.vue';
 import Icon from './Icon.vue';
@@ -121,7 +122,7 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
           </summary>
           <div class="blk-body prose dim">{{ (b.thinking || '').trim() }}</div>
         </details>
-        <div v-else-if="b.type === 'text' && b.text" class="bubble ai-bubble md" :class="{ boxed: UI.hoverBox }" v-html="md(b, i)" />
+        <div v-else-if="b.type === 'text' && b.text" class="bubble ai-bubble md" :class="{ boxed: UI.hoverBox }" v-markdown-html="md(b, i)" />
         <ToolCard v-else-if="b.type === 'toolCall'" :call="b" :exec="S.tools[b.id]" :streaming="streaming" />
       </template>
       <div v-if="m.stopReason === 'error'" class="errbox">出错：{{ stripAnsi(m.errorMessage || '未知错误') }}</div>

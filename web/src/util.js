@@ -311,12 +311,11 @@ export function mediaKind(href) {
 }
 function mediaHtml(kind, href, label) {
   const name = escapeHtml(label || baseName(String(href).split(/[?#]/)[0]));
-  // 还在流式输出时 v-html 每 50ms 整个重写一遍，放个真播放器就会不停地重新请求文件：先放个占位
-  if (parseLive) return `<span class="md-media-ph">${kind === 'video' ? '视频' : '音频'} · ${name}</span>`;
+  // 流式更新由 v-markdown-html 保留播放器；生成期间不主动预加载文件。
   const src = escapeHtml(assetUrl(href, parseBase));
   // 用 span 包：图片语法是行内元素，外面套着 <p>，放 div / figure 会把段落拆碎。
   // 控件不在这里画：media.js 看到页面上出现 <video>/<audio> 就会套上自绘的播放器
-  return `<span class="md-media"><${kind} src="${src}" preload="metadata"${kind === 'video' ? ' playsinline' : ''} data-name="${name}"></${kind}></span>`;
+  return `<span class="md-media"><${kind} src="${src}" preload="${parseLive ? 'none' : 'metadata'}"${kind === 'video' ? ' playsinline' : ''} data-name="${name}"></${kind}></span>`;
 }
 
 // 原始 HTML 里的本地地址（<img src="C:/a.png">、<video src="out/a.mp4">、<source src=…>、poster）：
@@ -580,6 +579,7 @@ const I_COPY = 'M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 
 const I_OK = 'M5 12.5l4.5 4.5L19 7.5';
 const I_CODE = 'M9 7l-5 5 5 5M15 7l5 5-5 5';
 const I_DIAGRAM = 'M4 4h6v5H4zM14 15h6v5h-6zM7 9v3.5h10V15';
+const I_FULL = 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5';
 
 /** 图的源码：默认藏着，右上角按钮或“画不出来”的时候才露出来（带复制按钮） */
 function diagramSourceHtml(src, label = 'mermaid') {
@@ -594,9 +594,10 @@ function diagramErrorHtml(src, msg) {
   return `<div class="dgm-err">图示没法画：${escapeHtml(msg)}</div>${diagramSourceHtml(src)}`;
 }
 
-// 右上角的小工具条：复制源码 + 源码/图示切换（点击由 diagram.js 统一接管，图不是 Vue 组件）
+// 右上角的小工具条：全屏查看 + 复制源码 + 源码/图示切换（点击由 diagram.js 统一接管，图不是 Vue 组件）
 const dgBar = (fixed) =>
   '<div class="dgm-bar">' +
+  `<button class="dgm-btn" type="button" data-dgm-full title="全屏查看（可缩放、拖动）" aria-label="全屏查看">${svgIcon(I_FULL, 'i-full')}</button>` +
   `<button class="dgm-btn" type="button" data-dgm-copy title="复制 mermaid 源码" aria-label="复制源码">${svgIcon(I_COPY, 'i-copy')}${svgIcon(I_OK, 'i-ok')}</button>` +
   `<button class="dgm-btn" type="button" data-dgm-toggle aria-label="切换源码 / 图示" title="${
     fixed ? '查看源码 / 图示（原图标签没加引号，已自动补上）' : '查看源码 / 图示（Ctrl+滚轮缩放，双击放大）'
@@ -618,6 +619,8 @@ function enhance(html) {
     el.textContent = '';
     const hit = diagramCache.get(currentFontSig() + '|' + src);
     if (hit?.svg) {
+      // 原位更新 Markdown 时凭此保留成图；字体变化则必须换一张。
+      el.setAttribute('data-dgm-key', currentFontSig() + '|' + src);
       // pele 的缩放（enableZoom）要求容器的第一个子元素就是 svg，所以 svg 必须排在最前面；
       // 容器里也不能再塞会占高度的东西（它一旦变高就会触发“容器尺寸变了 → 重算”，缩放会被还原）
       el.innerHTML = hit.svg + diagramSourceHtml(src, hit.fixed ? 'mermaid（原图标签没加引号，已自动补上）' : 'mermaid') + dgBar(hit.fixed);

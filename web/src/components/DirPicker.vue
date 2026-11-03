@@ -4,7 +4,7 @@
 // 选好以后要么在当前标签页打开 / 开新会话，要么丢到新标签页去（Ctrl+点击也行）
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
-import { S, openDir, newSessionIn, openInNewTab, toast, isFav, toggleFavorite, moveFavorite } from '../store.js';
+import { S, openDir, newSessionIn, chooseDirectory, openInNewTab, toast, isFav, toggleFavorite, moveFavorite } from '../store.js';
 import { openMenu } from '../settings.js';
 import { http } from '../api.js';
 import { relTime } from '../util.js';
@@ -184,7 +184,7 @@ function onFavDrop(e) {
 function close() {
   S.dirPicker = false;
 }
-const verb = computed(() => (mode.value === 'new' ? '创建会话' : '打开目录'));
+const verb = computed(() => (mode.value === 'switch' ? '打开目录' : '使用此目录'));
 
 /** 主操作：当前选中的目录在当前标签页打开 / 开新会话；按住 Ctrl 就丢新标签页 */
 function openCurrent(e) {
@@ -192,6 +192,7 @@ function openCurrent(e) {
   if (!p) return;
   if (e?.ctrlKey || e?.metaKey) return newTab();
   if (mode.value === 'new') newSessionIn(p);
+  else if (mode.value === 'compose') chooseDirectory(p);
   else openDir(p);
   close();
 }
@@ -202,7 +203,7 @@ function openNow(p) {
 }
 function newTab() {
   if (!current.value) return;
-  openInNewTab(current.value, { newSession: mode.value === 'new' });
+  openInNewTab(current.value, { newSession: mode.value !== 'switch' });
   close();
 }
 
@@ -231,7 +232,7 @@ function onKey(e) {
     <div class="modal dirs">
       <div class="modal-title">
         <Icon name="folder" :size="17" />
-        {{ mode === 'new' ? '选个目录开新会话' : '切换工作目录' }}
+        {{ mode === 'new' ? '选个目录开新会话' : mode === 'compose' ? '选择工作目录' : '切换工作目录' }}
       </div>
 
       <div class="modal-body">

@@ -1,10 +1,11 @@
 <script setup>
 import { ref, toRef, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, otherAgents, viewer, takeOver, openDirPicker, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL, warmUp } from '../store.js';
+import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, otherAgents, viewer, takeOver, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL, warmUp } from '../store.js';
 import { UI, view, openMenu } from '../settings.js';
 import { http, rawUrl } from '../api.js';
 import { fmtTokens, levelName, joinPath, fmtSize } from '../util.js';
 import ModelMenu from './ModelMenu.vue';
+import DirectoryMenu from './DirectoryMenu.vue';
 import AttTooltip from './AttTooltip.vue';
 import Icon from './Icon.vue';
 
@@ -308,7 +309,7 @@ watch(
 
 // ---- 下方工具栏 ----
 const model = computed(() => S.state?.model);
-const dirName = computed(() => (S.cwd || '').split(/[\\/]/).filter(Boolean).pop() || S.cwd || '选择目录');
+watch(() => S.composerFocus, () => nextTick(() => ta.value?.focus()));
 const modelLabel = computed(() => (model.value ? model.value.name || model.value.id : '选择模型'));
 const thinking = computed(() => S.state?.thinkingLevel);
 const ctx = computed(() => S.stats?.contextUsage);
@@ -407,7 +408,7 @@ onMounted(() => window.addEventListener('resize', onResize));
 onUnmounted(() => window.removeEventListener('resize', onResize));
 watch(menu, (v) => (v ? nextTick(alignPop) : nextTick(() => ta.value?.focus())));
 
-// 还没起进程（S.lazy）也能打字：一打字就在后台把 pi 起起来
+// 只看的历史会话在输入时预热；新会话草稿等发送时再启动
 const disabled = computed(() => !(S.agentId || S.lazy) || !!S.agentExited || viewer.value);
 function onInput() {
   syncCaret();
@@ -549,9 +550,7 @@ async function onTakeOver() {
         <div class="grow" />
         <span v-if="S.starting" class="dim small starting" title="这个会话之前没有 pi 进程，正在启动">启动 pi…</span>
 
-        <button class="chip dir" :title="`工作目录：${S.cwd}\n点击切换`" @click="openDirPicker('switch')">
-          <span class="ellipsis">{{ dirName }}</span>
-        </button>
+        <DirectoryMenu />
 
         <button ref="modelChip" class="chip" :class="{ on: menu === 'model' }" title="切换模型 (Ctrl+L)" :disabled="disabled" @click="toggleMenu('model')">
           <span class="ellipsis">{{ modelLabel }}</span>
@@ -606,7 +605,6 @@ async function onTakeOver() {
 .ibtn { width: 30px; height: 30px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-pill); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: border-color 0.15s, color 0.15s, background 0.15s; }
 .ibtn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
 .chip { height: 30px; max-width: 260px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-pill); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); transition: all 0.15s; }
-.chip.dir { max-width: 220px; }
 .chip:hover, .chip.on { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
 .chip:disabled { opacity: 0.5; pointer-events: none; }
 /* 下拉箭头：用线画的小折线，比 ▾ 这种字体符号更匀称，跟着 chip 颜色走 */
@@ -685,7 +683,6 @@ async function onTakeOver() {
 @media (max-width: 768px) {
   .bar { gap: 4px; }
   .chip { max-width: none; min-width: 0; flex-shrink: 1; padding: 0 9px; }
-  .chip.dir { max-width: 34vw; }
   .box { border-radius: var(--r-xl); padding: 10px 10px 6px; }
 }
 /* 触屏没有悬停，放大按钮、附件的删除按钮得一直看得到 */

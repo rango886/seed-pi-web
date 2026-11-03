@@ -6,13 +6,39 @@
 // 图是 v-html 塞进来的，不是 Vue 组件，没法在模板里挂事件，所以这里用 MutationObserver
 // 盯新出现的 .md-diagram，出现一张接一张；右上角工具条的按钮用事件委托统一处理。
 
+import { openLightbox } from './settings.js';
+
 let peleP = null;
 const pele = () => (peleP ||= import('pele/lazy'));
+let fullSeq = 0;
+
+/** 把页面上这张图复制一份给灯箱用：
+ *  - pele 的缩放会改 viewBox 和内联宽高，先还原成刚画出来的样子
+ *  - 图里的 id（箭头 marker、渐变……）换个前缀，免得和原图重名；原图在“看源码”时是藏起来的，引用到它身上就画不出来 */
+function fullItem(box) {
+  const svg = box.querySelector(':scope > svg');
+  if (!svg) return null;
+  const c = svg.cloneNode(true);
+  const vb = box.dataset.vb || c.getAttribute('viewBox') || `0 0 ${c.getAttribute('width')} ${c.getAttribute('height')}`;
+  const [, , w, h] = vb.split(/[\s,]+/).map(Number);
+  c.setAttribute('viewBox', vb);
+  for (const p of ['width', 'height', 'max-width', 'margin', 'display', 'cursor', 'user-select', 'touch-action']) c.style.removeProperty(p);
+  c.removeAttribute('tabindex');
+  const pre = `lb${++fullSeq}-`;
+  const ids = [...c.querySelectorAll('[id]')].map((n) => n.id).sort((a, b) => b.length - a.length);
+  let s = c.outerHTML;
+  for (const id of ids) {
+    const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    s = s.replace(new RegExp(`(id="|#)${esc}(?![\\w-])`, 'g'), `$1${pre}${id}`);
+  }
+  return { svg: s, w: w || svg.clientWidth || 400, h: h || svg.clientHeight || 300, alt: 'mermaid 图示', name: `diagram-${Date.now()}.svg` };
+}
 
 /** 给一张图接上缩放；同一张图只接一次（dataset 标记跟着元素走，元素被重画才会再来） */
 function bind(box) {
   if (box.dataset.dgm || box.firstElementChild?.localName !== 'svg') return; // 报错卡片没有 svg，不用接
   box.dataset.dgm = '1';
+  box.dataset.vb = box.firstElementChild.getAttribute('viewBox') || ''; // 记下原始 viewBox：放大以后 pele 会改它
   pele()
     .then(({ enableZoom }) => {
       if (!box.isConnected) return; // 等着加载的这几毫秒里可能已经被新的渲染换掉了
@@ -31,10 +57,15 @@ function scan(root) {
 }
 
 function onClick(e) {
-  const btn = e.target.closest?.('[data-dgm-toggle], [data-dgm-copy]');
+  const btn = e.target.closest?.('[data-dgm-toggle], [data-dgm-copy], [data-dgm-full]');
   if (!btn) return;
   const box = btn.closest('.md-diagram');
   if (!box) return;
+  if (btn.hasAttribute('data-dgm-full')) {
+    const it = fullItem(box);
+    if (it) openLightbox([it]);
+    return;
+  }
   if (btn.hasAttribute('data-dgm-copy')) {
     const src = box.querySelector('.dgm-code code')?.textContent || '';
     navigator.clipboard?.writeText(src).then(() => {

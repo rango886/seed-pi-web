@@ -1,5 +1,5 @@
 // 全局状态 + 所有动作。组件只负责显示，逻辑都在这里，方便看懂。
-import { reactive, computed, watch } from 'vue';
+import { reactive, computed, watch, nextTick } from 'vue';
 import { connect, call, fire, http, rawUrl, upload, CID } from './api.js';
 import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments, setAssetBase, levelName } from './util.js';
 import { view, UI } from './settings.js';
@@ -49,7 +49,8 @@ export const S = reactive({
   toasts: [],
   picker: null,
   dirPicker: false,
-  dirPickerMode: 'switch', // 'switch' 切工作目录 / 'new' 选个目录开新会话
+  dirPickerMode: 'switch', // switch 打开目录 / new 在目录新建 / compose 选择输入框工作目录
+  composerFocus: 0, // 新会话或目录选择完成后，把焦点交回输入框
   tabs: [], // 打开的文件
   activeTab: 'chat', // 'chat' | 文件路径 | 'term:<终端id>'
   fsEpoch: 0,
@@ -467,9 +468,9 @@ export function ensureAgent() {
   return ensuring;
 }
 
-/** 用户开始打字、加附件了：多半马上要发，提前把 pi 起起来，点发送时就不用等 */
+/** 历史会话开始编辑时预热；新会话草稿等首次发送（或修改模型等操作）才启动。 */
 export function warmUp() {
-  if (S.agentId || !S.lazy || ensuring) return;
+  if (S.agentId || !S.lazy?.file || ensuring) return;
   ensureAgent().catch((e) => toast(e.message, 'error'));
 }
 
@@ -1210,7 +1211,11 @@ const requireIdle = () => {
   if (S.running) throw new Error('pi 正在运行，先停止或等它结束');
 };
 
-export const newSession = guard(async () => openDirPicker('new'));
+export const newSession = guard(async () => {
+  const cwd = S.cwd || S.info.home;
+  if (!cwd) return openDirPicker('new');
+  await newSessionRaw(cwd);
+});
 
 /** 打开目录选择窗口。mode='new' 时选完目录就在那里开个新会话 */
 export function openDirPicker(mode = 'switch') {
@@ -1218,9 +1223,32 @@ export function openDirPicker(mode = 'switch') {
   S.dirPicker = true;
 }
 
-/** 在指定目录里开始一个新会话（当前标签页）。先不起进程，开始打字时才起；原来的会话在后台接着跑 */
-export const newSessionIn = guard(async (cwd) => {
+/** 在指定目录里开始一个新会话（当前标签页）。原来的会话在后台接着跑。 */
+async function newSessionRaw(cwd) {
   await present(await call('create_session', { cwd: cwd || S.cwd }));
+  S.composer.text = '';
+  S.activeTab = 'chat';
+  S.composerFocus++;
+}
+export const newSessionIn = guard(newSessionRaw);
+
+/** 输入前换目录：保留正在写的内容；已有消息时，明确另开一个会话。 */
+export const chooseDirectory = guard(async (cwd) => {
+  if (normPath(cwd) === normPath(S.cwd) && !S.detached) {
+    S.composerFocus++;
+    return;
+  }
+  const isDraft = !S.messages.length && !S.agent?.saved && !S.lazy?.file && !S.detached;
+  const text = S.composer.text;
+  const attachments = S.composer.attachments;
+  await newSessionRaw(cwd);
+  if (isDraft) {
+    await nextTick(); // 先让会话附件的切换完成，再迁移这份未发送的草稿
+    S.composer.text = text;
+    S.composer.attachments = attachments;
+  } else {
+    toast('已在所选目录开始新会话，原对话已保留');
+  }
 });
 
 export const pickSession = guard(async () => {

@@ -3,8 +3,10 @@ import { ref, reactive, computed } from 'vue';
 import { S, openSession, newSession, deleteSession, renameSession, sessionStatus, setSessionMode, isFav } from '../store.js';
 import { view, toggleSide, closeDrawer, openMenu } from '../settings.js';
 import Icon from './Icon.vue';
+import DirectoryMenu from './DirectoryMenu.vue';
 
 const q = ref('');
+const newDirMenu = ref(null);
 const base = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
 
 // 排序方式：时间 / 名称，存 localStorage
@@ -200,7 +202,7 @@ function open(s) {
   closeDrawer();
 }
 function onNew() {
-  newSession(); // 现在会先弹目录选择窗口，选完才建会话
+  newSession(); // 默认沿用当前目录，不再弹目录选择窗口
   closeDrawer();
 }
 function sessionMenu(e, s) {
@@ -225,7 +227,10 @@ function sessionMenu(e, s) {
     </div>
 
     <div class="nav">
-      <div class="nv" @click="onNew()"><Icon name="newchat" /><span>新会话</span></div>
+      <div class="new-session" @contextmenu.prevent.stop="newDirMenu?.open()">
+        <button type="button" class="nv" title="在当前目录开始新会话" @click="onNew()"><Icon name="newchat" /><span>新会话</span></button>
+        <DirectoryMenu ref="newDirMenu" mode="new" compact label="选目录" @select="closeDrawer()" />
+      </div>
     </div>
 
     <!-- 左边只放会话；文件、进程在右边的浮动侧栏里（按钮在顶栏），终端在顶部标签页里 -->
@@ -286,6 +291,12 @@ function sessionMenu(e, s) {
 .ib.on { color: var(--accent-text); background: var(--accent-soft); }
 
 .nav { padding: 0 8px 6px; display: flex; flex-direction: column; gap: 1px; flex: none; }
+.new-session { display: flex; align-items: center; gap: 4px; }
+.new-session .nv { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; padding: 0 10px; border: 0; background: transparent; font: inherit; }
+.new-session .nv:hover { background: var(--active); }
+.new-session :deep(.directory-trigger.compact) { flex: 1; min-width: 0; width: auto; height: 38px; margin: 0; padding: 0 10px; justify-content: flex-start; gap: 8px; border-radius: var(--r-md); font-size: inherit; }
+.new-session :deep(.directory-trigger.compact:hover),
+.new-session :deep(.directory-trigger.compact.on) { background: var(--active); color: var(--text); }
 .nv { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 10px; border-radius: var(--r-md); cursor: pointer; color: var(--text); }
 .nv:hover { background: var(--active); }
 .nv.dis { opacity: 0.45; cursor: default; }

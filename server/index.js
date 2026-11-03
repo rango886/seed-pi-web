@@ -6,6 +6,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { Readable } from 'node:stream';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { PiAgent } from './pi-agent.js';
@@ -463,6 +464,37 @@ app.get('/api/fs/raw', (req, res) => {
   const file = path.resolve(String(req.query.path || ''));
   res.sendFile(file, { dotfiles: 'allow' }, (err) => err && !res.headersSent && res.status(404).end());
 });
+
+// 代下载：网页里的链接右键“下载”，跨域地址浏览器不让直接存成文件，由后端取回来再以附件形式转给浏览器
+function downloadName(r, u) {
+  const cd = r.headers.get('content-disposition') || '';
+  const star = /filename\*\s*=\s*(?:UTF-8'[^']*')?([^;]+)/i.exec(cd);
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(cd);
+  let name = '';
+  try {
+    name = star ? decodeURIComponent(star[1].trim().replace(/^"|"$/g, '')) : plain ? plain[1].trim() : decodeURIComponent(new URL(r.url || u).pathname.split('/').pop() || '');
+  } catch {}
+  name = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim();
+  return name || new URL(r.url || u).hostname || 'download';
+}
+app.get(
+  '/api/download',
+  wrap(async (req, res) => {
+    const u = new URL(String(req.query.url || ''));
+    if (!/^https?:$/.test(u.protocol)) throw new Error('只支持 http / https 地址');
+    const ac = new AbortController();
+    res.on('close', () => ac.abort());
+    const r = await fetch(u, { redirect: 'follow', signal: ac.signal, headers: { 'user-agent': 'Mozilla/5.0 seed-pi-web' } });
+    if (!r.ok || !r.body) return res.status(r.status || 502).json({ error: `下载失败：${r.status} ${r.statusText}` });
+    const name = downloadName(r, u);
+    const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
+    res.setHeader('Content-Type', r.headers.get('content-type') || 'application/octet-stream');
+    const len = r.headers.get('content-length');
+    if (len && !r.headers.get('content-encoding')) res.setHeader('Content-Length', len);
+    res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+    Readable.fromWeb(r.body).on('error', () => res.destroy()).pipe(res);
+  }),
+);
 
 // ---------- 附件：上传 / 读剪贴板里复制的文件 / @ 补全用的文件列表 ----------
 // 上传：请求体就是文件内容本身（不走 base64 / JSON），边收边写盘

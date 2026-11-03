@@ -340,7 +340,8 @@ a:hover { text-decoration: underline; }
 /* ---- mermaid 图示（pele 画的自包含 SVG）----
    pele 包内没有样式文件，全部靠 CSS 变量：这里把它接到我们自己的主题上，
    换主题/切深色不用重画图 */
-.md .md-diagram {
+.md .md-diagram,
+.lb-svg {
   --pele-bg: var(--panel);
   --pele-fg: var(--text);
   --pele-fg-on-light: #1f2329;
@@ -356,6 +357,8 @@ a:hover { text-decoration: underline; }
   --pele-font: var(--font);
   --pele-font-mono: var(--font-code);
   --pele-radius: var(--r-sm);
+}
+.md .md-diagram {
   /* pele 的缩放按钮默认在右上角，那里现在留给“图示”和“复制”，所以挪到右下角 */
   --pele-zoom-top: auto;
   --pele-zoom-right: 6px;

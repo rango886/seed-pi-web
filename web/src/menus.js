@@ -24,6 +24,7 @@ import {
 } from './store.js';
 import { view, toggleSide, togglePanel, UI } from './settings.js';
 import { levelName, getMsgText } from './util.js';
+import { saveLink, saveLocalFile } from './download.js';
 
 const hotkeys = () => BUILTINS.find((b) => b.name === 'hotkeys').run();
 
@@ -123,10 +124,12 @@ export function contextExtras(target) {
     out.push({ label: '在标签页中打开', run: () => fileA.click() });
     out.push({ label: '复制文件路径', run: () => navigator.clipboard.writeText(p) });
     out.push({ label: '加到附件（@ 引用）', run: () => attachFromTree(p) });
+    out.push({ label: '下载文件', run: () => saveLocalFile(p) });
   }
   if (a && /^https?:/.test(a.href)) {
     out.push({ label: '在新标签页打开链接', run: () => window.open(a.href, '_blank', 'noopener') });
     out.push({ label: '复制链接地址', run: () => navigator.clipboard.writeText(a.href) });
+    if (!fileA) out.push({ label: '下载链接', run: () => saveLink(a.href) });
   }
   const code = target.closest?.('pre')?.querySelector('code');
   if (code && !sel) out.push({ label: '复制这段代码', run: () => navigator.clipboard.writeText(code.innerText) });

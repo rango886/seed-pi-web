@@ -3,6 +3,7 @@
 defineProps({ name: String, size: { type: [Number, String], default: 18 } });
 const P = {
   plus: 'M12 5v14M5 12h14',
+  minus: 'M5 12h14',
   chat: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
   edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',
   newchat: 'M12 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-6M18.4 2.6a2 2 0 0 1 3 3L12 15l-4 1 1-4z',
