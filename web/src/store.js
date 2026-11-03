@@ -1,7 +1,7 @@
 // 全局状态 + 所有动作。组件只负责显示，逻辑都在这里，方便看懂。
 import { reactive, computed, watch } from 'vue';
 import { connect, call, fire, http, rawUrl, upload, CID } from './api.js';
-import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments, setAssetBase } from './util.js';
+import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments, setAssetBase, levelName } from './util.js';
 import { view, UI } from './settings.js';
 
 const FAV_KEY = 'pi-web-favorites';
@@ -33,6 +33,10 @@ export const S = reactive({
   compacting: false,
   retry: null,
   detached: null, // 目录已不存在的会话：{ file, cwd }，只读看历史，不能对话
+  // 还没起 pi 进程的会话：{ cwd, file }（file 为空 = 还没说过话的新会话）。
+  // 历史是后端直接读会话文件拿到的；开始打字、发消息、换模型时才起进程（ensureAgent）
+  lazy: null,
+  starting: false, // 正在起 pi 进程
   queue: { steering: [], followUp: [] },
   bashLive: null,
   // 扩展 UI
@@ -78,7 +82,11 @@ export function toast(text, kind = 'info', ms = 4000) {
 }
 
 async function rpc(cmd) {
-  if (!S.agentId) throw new Error('还没有打开目录');
+  if (!S.agentId) {
+    if (!S.lazy) throw new Error('还没有打开目录');
+    await ensureAgent(); // 只看的会话：要用了，先把 pi 起起来
+    if (!S.agentId) throw new Error('pi 进程没有启动起来');
+  }
   if (viewer.value && !/^get_/.test(cmd.type) && cmd.type !== 'export_html') throw new Error('其他窗口正在使用这个会话，点「接管」以后才能操作');
   const res = await call('rpc', { agentId: S.agentId, cmd });
   if (!res.success) throw new Error(res.error || `${cmd.type} 失败`);
@@ -166,6 +174,10 @@ function onServerMsg(msg) {
       S.agents = msg.list;
       // 别的会话回复完了、新会话第一次写盘了：侧栏列表要更新（条数、时间、标题）
       if (msg.list.some((a) => { const p = prev.get(a.id); return p && (p.lastSettledAt !== a.lastSettledAt || p.saved !== a.saved || p.sessionName !== a.sessionName); })) loadSessionsSoon();
+      // 正在“只看”的会话被别的窗口起了进程：直接连上去（不会多起进程），那边写的新内容这里也能看到
+      if (!S.agentId && S.lazy?.file && msg.list.some((a) => a.alive && a.sessionFile && normPath(a.sessionFile) === normPath(S.lazy.file))) {
+        ensureAgent().catch(() => {});
+      }
       if (S.agentId) {
         const a = msg.list.find((x) => x.id === S.agentId);
         if (a) {
@@ -192,6 +204,11 @@ function onServerMsg(msg) {
         // 别的窗口重启了 pi（/reload）：等它起来以后重新连上同一个会话
         if (msg.restart) {
           if (!restarting && msg.sessionFile) setTimeout(() => reopenSession(msg.sessionFile, msg.cwd), 1500);
+          break;
+        }
+        // 闲置回收、手动关闭：不算出错，退回“只看”，内容照旧显示，要用时再起进程
+        if (msg.quiet) {
+          openLazy({ cwd: msg.cwd, file: msg.saved ? msg.sessionFile : null }, { keep: true });
           break;
         }
         S.agentExited = { code: msg.code, stderr: msg.stderr };
@@ -336,12 +353,14 @@ export function syncTitle() {
   document.title = t.length > 28 ? t.slice(0, 28) + '…' : t;
 }
 
-/** 连上一个 pi 进程。后端的回复里带着快照：写完的消息 + 进行中的事件（正在吐的字、正在跑的工具） */
-async function attachResult({ agent, uiPending, uiState, messages, live }) {
+/** 连上一个 pi 进程。后端的回复里带着快照：写完的消息 + 进行中的事件（正在吐的字、正在跑的工具）。
+ *  keep：从“只看”接上进程，消息和已经显示的一样就不重新渲染（长对话重新解析 Markdown 会卡一下） */
+async function attachResult({ agent, uiPending, uiState, messages, live }, { keep = false } = {}) {
   S.agentId = agent.id;
   S.agent = agent;
   S.agentExited = null;
   S.detached = null;
+  S.lazy = null;
   S.dialogs = S.dialogs.filter((d) => d._resolve).concat(uiPending || []);
   S.statusItems = {};
   S.widgets = {};
@@ -352,7 +371,7 @@ async function attachResult({ agent, uiPending, uiState, messages, live }) {
   S.bashLive = null;
   S.running = !!agent.running;
   setCwd(agent.cwd);
-  setMessages(messages);
+  if (!(keep && !live?.length && sameMessages(messages))) setMessages(messages);
   // 补放进行中的事件：和一直开着这个窗口的效果一样
   for (const rec of live || []) onRec(rec);
   flushDeltas();
@@ -360,17 +379,116 @@ async function attachResult({ agent, uiPending, uiState, messages, live }) {
   loadSessions();
 }
 
+/** pi 给的消息和现在显示的是不是同一份（条数、角色、时间都对得上） */
+function sameMessages(list) {
+  const f = (list || []).filter((m) => m.role !== 'system' && m.role !== 'toolResult');
+  return f.length === S.messages.length && f.every((m, i) => m.role === S.messages[i].role && m.timestamp === S.messages[i].timestamp);
+}
+
+// “只看”时没法问 pi 的东西，用上次问到的顺着显示：思考强度有哪几档、每个会话的上下文占用
+const LEVELS_KEY = 'pi-web-thinking-levels';
+const CTX_KEY = 'pi-web-context-usage';
+const readJson = (k, d) => {
+  try {
+    return JSON.parse(localStorage.getItem(k)) ?? d;
+  } catch {
+    return d;
+  }
+};
+function rememberCtx(file, usage) {
+  if (!file) return;
+  const m = readJson(CTX_KEY, {});
+  delete m[normPath(file)];
+  if (usage) m[normPath(file)] = usage;
+  const keys = Object.keys(m);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 200))) delete m[k];
+  localStorage.setItem(CTX_KEY, JSON.stringify(m));
+}
+
+/**
+ * “只看”一个会话：不起 pi 进程，内容是后端从会话文件里读的。
+ * keep：进程刚被回收，界面上的消息、模型、用量都还对，原样留着
+ */
+function openLazy({ cwd, file, messages, state, stats }, { keep = false } = {}) {
+  S.agentId = null;
+  S.lazy = { cwd, file: file || null };
+  S.agent = { id: null, cwd, sessionFile: file || null, sessionName: (keep ? S.state?.sessionName : state?.sessionName) || null, alive: false, saved: !!file, running: false, owner: null, lazy: true };
+  S.agentExited = null;
+  S.detached = null;
+  S.dialogs = S.dialogs.filter((d) => d._resolve);
+  S.statusItems = {};
+  S.widgets = {};
+  S.retry = null;
+  S.compacting = false;
+  S.queue = { steering: [], followUp: [] };
+  S.bashLive = null;
+  S.running = false;
+  if (S.state) S.state.isStreaming = false;
+  if (!keep) {
+    S.state = state || null;
+    S.stats = stats ? { ...stats, contextUsage: file ? readJson(CTX_KEY, {})[normPath(file)] : undefined } : null;
+    S.thinkingLevels = readJson(LEVELS_KEY, []);
+    setMessages(messages);
+  }
+  setCwd(cwd);
+  syncTitle();
+  loadSessions();
+}
+
+/**
+ * 把“只看”的会话变成能用的：后端起一个 pi 进程（已经有就直接连上）。
+ * 同时只会有一次启动，几处一起调用等的是同一个
+ */
+let ensuring = null;
+let adoptDraft = false; // 新会话起了进程以后有了会话文件：输入框上已经加的附件跟着它走
+export function ensureAgent() {
+  if (S.agentId) return Promise.resolve();
+  if (!S.lazy) return Promise.reject(new Error('还没有打开目录'));
+  if (ensuring) return ensuring;
+  const lz = S.lazy;
+  S.starting = true;
+  ensuring = (async () => {
+    const res = await call('ensure_agent', { cwd: lz.cwd, file: lz.file });
+    // 等进程的时候已经切到别的会话了：这个进程先不看了（没人用会被自动回收）
+    if (S.lazy !== lz) {
+      call('leave', { agentId: res.agent.id }).catch(() => {});
+      return;
+    }
+    adoptDraft = !lz.file;
+    try {
+      await attachResult(res, { keep: true });
+    } finally {
+      adoptDraft = false;
+    }
+  })().finally(() => {
+    ensuring = null;
+    S.starting = false;
+  });
+  return ensuring;
+}
+
+/** 用户开始打字、加附件了：多半马上要发，提前把 pi 起起来，点发送时就不用等 */
+export function warmUp() {
+  if (S.agentId || !S.lazy || ensuring) return;
+  ensureAgent().catch((e) => toast(e.message, 'error'));
+}
+
+/** 后端打开会话 / 目录的回复：可能是连上了进程，也可能只看（lazy）、目录不在了（detached） */
+async function present(res) {
+  if (res?.lazy) return openLazy(res.lazy);
+  if (res?.detached) return openDetached(res.detached);
+  await attachResult(res);
+}
+
 async function openDirRaw(cwd, force = false, sessionFile) {
-  if (!force && S.agent?.alive && !S.agentExited && normPath(S.agent.cwd) === normPath(cwd)) return;
+  if (!force && (S.lazy || (S.agent?.alive && !S.agentExited)) && normPath(S.agent?.cwd || '') === normPath(cwd)) return;
   // sessionFile：undefined = 用这个目录上次的会话；null = 不指定，由后端挑
-  await attachResult(await call('attach', { cwd, sessionFile: sessionFile === undefined ? lastSessionOf(cwd) : sessionFile }));
+  await present(await call('attach', { cwd, sessionFile: sessionFile === undefined ? lastSessionOf(cwd) : sessionFile }));
 }
 export const openDir = guard(openDirRaw);
 
 async function openSessionRaw(file) {
-  const res = await call('open_session', { file });
-  if (res?.detached) return openDetached(res.detached);
-  await attachResult(res);
+  await present(await call('open_session', { file }));
 }
 export const openSession = guard(openSessionRaw);
 
@@ -391,6 +509,7 @@ function openDetached({ file, cwd, messages }) {
   S.agent = null;
   S.agentExited = null;
   S.detached = { file, cwd };
+  S.lazy = null;
   S.state = null;
   S.stats = null;
   S.thinkingLevels = [];
@@ -413,7 +532,12 @@ function openDetached({ file, cwd, messages }) {
 let restarting = false;
 export const restartAgent = guard(async () => {
   if (S.running) return toast('正在运行，先停止再重新加载', 'warning');
-  if (!S.agentId || S.agentExited) return reopenSession(S.agent?.sessionFile, S.cwd);
+  // 还没起进程：现在起一个就是最新的扩展、技能、设置
+  if (S.lazy) {
+    await ensureAgent();
+    return toast('已启动 pi');
+  }
+  if (!S.agentId || S.agentExited) return restartExited();
   if (viewer.value) throw new Error('其他窗口正在使用这个会话，点「接管」以后才能操作');
   restarting = true;
   try {
@@ -424,8 +548,19 @@ export const restartAgent = guard(async () => {
   toast('已重新加载 pi（扩展、技能、设置）');
 });
 
-/** 进程退出以后的「重新启动」：回到同一个会话 */
-export const restartExited = () => reopenSession(S.agent?.sessionFile, S.cwd);
+/** 进程退出以后的「重新启动」：回到同一个会话，马上把 pi 起起来 */
+export const restartExited = guard(async () => {
+  const file = S.agent?.saved ? S.agent.sessionFile : null;
+  openLazy({ cwd: S.cwd, file }, { keep: true });
+  await ensureAgent();
+});
+
+/** 进程面板上的“强行关闭”：不管是谁在操作、是不是正在跑，直接把这个 pi 进程关掉（会话文件不删）。点了就关，不弹确认框 */
+export const killAgent = guard(async (a) => {
+  const name = a.sessionName || (a.saved ? '未命名会话' : '新会话');
+  await call('force_stop', { agentId: a.id });
+  toast(`已关闭「${name}」的进程`);
+});
 
 export async function reload() {
   await Promise.all([loadMessages(), loadState(), loadCommands(), loadStats()]);
@@ -454,26 +589,33 @@ function setMessages(list) {
 }
 
 async function loadMessages() {
+  if (!S.agentId) return;
   const d = await rpc({ type: 'get_messages' }).catch(() => ({ messages: [] }));
   setMessages(d.messages);
 }
 
+// 下面几个只是刷新显示：没有进程就算了，不为这个去起 pi
 async function loadState() {
+  if (!S.agentId) return;
   try {
     S.state = await rpc({ type: 'get_state' });
     S.running = !!S.state.isStreaming;
     S.compacting = !!S.state.isCompacting;
     const t = await rpc({ type: 'get_available_thinking_levels' });
     S.thinkingLevels = t.levels || [];
+    localStorage.setItem(LEVELS_KEY, JSON.stringify(S.thinkingLevels));
     syncTitle();
   } catch {}
 }
 
 async function loadStats() {
+  if (!S.agentId) return;
   S.stats = await rpc({ type: 'get_session_stats' }).catch(() => null);
+  if (S.stats && S.agent?.sessionFile) rememberCtx(S.agent.sessionFile, S.stats.contextUsage);
 }
 
 async function loadCommands() {
+  if (!S.agentId) return;
   const d = await rpc({ type: 'get_commands' }).catch(() => ({ commands: [] }));
   S.commands = d.commands || [];
 }
@@ -498,6 +640,24 @@ export function toggleFavorite(p) {
   S.favorites = fav ? S.favorites.filter((f) => normPath(f) !== normPath(p)) : [p, ...S.favorites];
   saveFavorites();
   toast(fav ? `已取消收藏 ${p}` : `已收藏 ${p}`);
+}
+
+/**
+ * 拖动收藏列表调整顺序：把 from 这一条挪到 to 那一行；after 为真就插在它后面。
+ * 顺序本身就存在 localStorage 的数组里，改完写回去就行
+ */
+export function moveFavorite(from, to, after = false) {
+  const key = (p) => normPath(p);
+  const i = S.favorites.findIndex((f) => key(f) === key(from));
+  if (i < 0) return;
+  const item = S.favorites[i];
+  const rest = S.favorites.filter((_, k) => k !== i); // 先把自己摘出来，后面的位置才算得准
+  const j = rest.findIndex((f) => key(f) === key(to));
+  if (j < 0) return;
+  rest.splice(after ? j + 1 : j, 0, item);
+  if (rest.every((p, k) => p === S.favorites[k])) return; // 落回原处：不用白存一次
+  S.favorites = rest;
+  saveFavorites();
 }
 
 /** 侧栏换一种看法（当前目录 / 全部 / 收藏），顺手把列表重新拉一遍 */
@@ -526,6 +686,21 @@ export const setModel = guard(async (m) => {
 export const setThinking = guard(async (level) => {
   await rpc({ type: 'set_thinking_level', level });
   if (S.state) S.state.thinkingLevel = level;
+});
+
+/**
+ * 把某个模型设为“新会话的默认”：pi 的 RPC 里没有这个命令（set_model 只改当前会话），
+ * 所以让后端去改它的全局 settings.json，下次 pi 启动时读的就是它
+ */
+export const setDefaultModel = guard(async (m) => {
+  await http.post('/api/settings/default', { provider: m.provider, modelId: m.id });
+  toast(`新会话的默认模型已设为 ${m.name || m.id}`);
+});
+
+/** 把某一档思考强度设为“新会话的默认”（同样写 settings.json 的 defaultThinkingLevel） */
+export const setDefaultThinking = guard(async (level) => {
+  await http.post('/api/settings/default', { thinkingLevel: level });
+  toast(`新会话的默认思考强度已设为${levelName(level)}`);
 });
 
 // ---------------- 处理 pi 推过来的事件 ----------------
@@ -833,7 +1008,10 @@ export function attachPaths(list, origin = 'path') {
     S.composer.attachments.push(makeAtt({ ...it, origin: it.origin || origin }));
     added++;
   }
-  if (added) S.activeTab = 'chat';
+  if (added) {
+    S.activeTab = 'chat';
+    warmUp();
+  }
   return added;
 }
 
@@ -847,6 +1025,7 @@ function pastedName(f) {
 /** 浏览器里的文件（拿不到路径）：上传到后端的临时目录，用上传后的路径。pasted：剪贴板里的截图，没有像样的文件名 */
 export function uploadFiles(files, { pasted = false } = {}) {
   const max = (Number(UI.uploadMaxMB) || 0) * 1048576;
+  if (files.length) warmUp();
   for (const f of files) {
     if (max && f.size > max) {
       toast(`${f.name} 太大了（上限 ${UI.uploadMaxMB}MB，可以在设置里改）`, 'warning');
@@ -917,7 +1096,8 @@ try {
 } catch {}
 const attLive = new Map(); // 内存里的：切走时还在上传的也能接着传完
 let attCur = '';
-const attKeyOf = () => S.agent?.sessionFile || S.detached?.file || '';
+// 还没说过话、也没起进程的新会话没有会话文件：按目录算一份草稿
+const attKeyOf = () => S.agent?.sessionFile || S.detached?.file || (S.lazy ? `draft:${normPath(S.lazy.cwd)}` : '');
 function saveAtt() {
   if (!attCur) return;
   const list = S.composer.attachments.filter((a) => a.status === 'ready' && a.path).map(({ kind, name, path, size, origin }) => ({ kind, name, path, size, origin }));
@@ -929,6 +1109,15 @@ function saveAtt() {
 }
 watch(attKeyOf, (k) => {
   if (k === attCur) return;
+  // 草稿变成了真的会话（新会话刚起了进程）：附件不动，只是换个地方存
+  if (adoptDraft && attCur.startsWith('draft:')) {
+    adoptDraft = false;
+    delete attSaved[attCur];
+    attLive.delete(attCur);
+    attCur = k;
+    saveAtt();
+    return;
+  }
   attLive.set(attCur, S.composer.attachments);
   attCur = k;
   S.composer.attachments = attLive.get(k) || (attSaved[k] || []).map(makeAtt);
@@ -958,6 +1147,7 @@ async function runBash(text) {
 
 /** Esc / 停止按钮：和终端版一样，先把排队的消息拿回输入框，再中断 */
 export const stop = guard(async () => {
+  if (!S.agentId) return;
   if (S.bashLive) return rpc({ type: 'abort_bash' });
   if (S.retry) await rpc({ type: 'abort_retry' }).catch(() => {});
   const q = await rpc({ type: 'clear_queue' }).catch(() => null);
@@ -1022,21 +1212,15 @@ const requireIdle = () => {
 
 export const newSession = guard(async () => openDirPicker('new'));
 
-/** 临时会话：后端在设置的缓存目录里建一个新目录，拿它当工作目录开新会话 */
-export const tempSession = guard(async () => {
-  await attachResult(await call('create_temp_session', { dir: UI.tempSessionDir }));
-  toast(`临时工作目录：${S.cwd}`);
-});
-
 /** 打开目录选择窗口。mode='new' 时选完目录就在那里开个新会话 */
 export function openDirPicker(mode = 'switch') {
   S.dirPickerMode = mode;
   S.dirPicker = true;
 }
 
-/** 在指定目录里开始一个新会话（当前标签页）。新会话是一个新的 pi 进程，原来的会话在后台接着跑 */
+/** 在指定目录里开始一个新会话（当前标签页）。先不起进程，开始打字时才起；原来的会话在后台接着跑 */
 export const newSessionIn = guard(async (cwd) => {
-  await attachResult(await call('create_session', { cwd: cwd || S.cwd }));
+  await present(await call('create_session', { cwd: cwd || S.cwd }));
 });
 
 export const pickSession = guard(async () => {
@@ -1160,7 +1344,12 @@ export const showSessionInfo = guard(async () => {
 });
 
 export const copyLast = guard(async () => {
-  const d = await rpc({ type: 'get_last_assistant_text' });
+  // 还没起进程：直接从显示的消息里找，不为这个起 pi
+  const local = () => {
+    const m = [...S.messages].reverse().find((x) => x.role === 'assistant' && Array.isArray(x.content) && x.content.some((b) => b.type === 'text' && b.text));
+    return { text: m ? m.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n') : '' };
+  };
+  const d = S.agentId ? await rpc({ type: 'get_last_assistant_text' }) : local();
   if (!d?.text) return toast('还没有回复可以复制');
   await navigator.clipboard.writeText(d.text);
   toast('已复制最后一条回复');
@@ -1179,10 +1368,11 @@ export const changeDir = guard(async (arg) => {
 });
 
 export const quitAgent = guard(async () => {
-  if (!S.agentId) return;
+  if (!S.agentId) return toast('这个会话现在没有 pi 进程');
   if (viewer.value) throw new Error('其他窗口正在使用这个会话，点「接管」以后才能操作');
+  // 关掉以后后端会发 agent_exit（quiet），这里退回“只看”，再打字会重新起进程
   await call('stop', { agentId: S.agentId });
-  S.agentExited = { code: 0, stderr: '', manual: true };
+  toast('已关闭这个会话的 pi 进程');
 });
 
 function showHotkeys() {

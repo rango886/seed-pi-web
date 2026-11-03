@@ -4,7 +4,7 @@
 // 选好以后要么在当前标签页打开 / 开新会话，要么丢到新标签页去（Ctrl+点击也行）
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
-import { S, openDir, newSessionIn, openInNewTab, toast, isFav, toggleFavorite } from '../store.js';
+import { S, openDir, newSessionIn, openInNewTab, toast, isFav, toggleFavorite, moveFavorite } from '../store.js';
 import { openMenu } from '../settings.js';
 import { http } from '../api.js';
 import { relTime } from '../util.js';
@@ -17,6 +17,7 @@ const same = (a, b) => !!a && !!b && norm(a) === norm(b);
 
 const roots = ref([]);
 const current = ref(''); // 选中的目录（完整路径）
+const rowAt = ref(''); // 左栏里刚点的那一行（'fav:<路径>' / 'recent:<路径>'），用来决定高亮哪一个
 const pathInput = ref('');
 const error = ref('');
 const recent = ref([]);
@@ -27,20 +28,24 @@ const cmd = ref(null);
 // 新建目录以后 +1：已经展开着的节点重新读一遍子目录，新目录才会出现在树里
 const ver = ref(0);
 
-function select(p) {
+function select(p, row = '') {
   current.value = p;
   pathInput.value = p;
   cmd.value = null; // 手选了新目标：之前“展开所有”的惯性到此为止，别让它继续往新分支上滑
+  rowAt.value = row; // 左栏里哪一行是你刚点的（没点左栏就是空，一个都不亮）
 }
 const pickInTree = (p) => select(p);
+// 左边两个列表的行各自的 id：同一个目录既收藏了又在最近用过是常事，光看路径会两行同时亮
+const rowFav = (p) => 'fav:' + norm(p);
+const rowRecent = (p) => 'recent:' + norm(p);
 
-/** 把树展开到 p 并选中它（p 得是已经存在的目录） */
-async function reveal(p) {
+/** 把树展开到 p 并选中它（p 得是已经存在的目录）。row：从左栏的哪一行点进来的 */
+async function reveal(p, row = '') {
   if (!p) return;
   try {
     if (!roots.value.length) roots.value = await http.get('/api/fs/roots');
     if (!roots.value.some((r) => norm(p).startsWith(norm(r.path)))) throw new Error(`找不到 ${p} 所在的磁盘`);
-    select(p);
+    select(p, row);
     error.value = '';
   } catch (e) {
     error.value = e.message;
@@ -130,6 +135,51 @@ function favMenu(e, p) {
   openMenu(e.clientX, e.clientY, [{ label: '取消收藏', run: () => toggleFavorite(p) }]);
 }
 
+// ---- 拖动收藏调整顺序 ----
+// dragFav 是正被拖动的那一条；dropOn = { key: 落点那一行的归一化路径, after: 插在它下面还是上面 }
+// 不在行间来回挪动，只在落点那一行的上边 / 下边画一条线，看着稳当
+const dragFav = ref('');
+const dropOn = ref(null);
+const favCls = (p) => ({
+  active: rowAt === rowFav(p),
+  dragging: dragFav.value === p,
+  'drop-before': dropOn.value?.key === norm(p) && !dropOn.value.after,
+  'drop-after': dropOn.value?.key === norm(p) && dropOn.value.after,
+});
+
+function endFavDrag() {
+  dragFav.value = '';
+  dropOn.value = null;
+}
+function onFavDragStart(e, p) {
+  dragFav.value = p;
+  dropOn.value = null;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', p); // Firefox 不设这个不会真拖起来
+}
+function onFavDragOver(e, p) {
+  if (!dragFav.value) return; // 从外面拖文件进来不归这里管
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  if (norm(p) === norm(dragFav.value)) {
+    dropOn.value = null; // 拖到自己身上：不提示落点，松手也不动
+    return;
+  }
+  const r = e.currentTarget.getBoundingClientRect();
+  dropOn.value = { key: norm(p), after: e.clientY > r.top + r.height / 2 };
+}
+function onFavDragLeave(p) {
+  if (dropOn.value?.key === norm(p)) dropOn.value = null;
+}
+function onFavDrop(e) {
+  if (!dragFav.value) return;
+  e.preventDefault();
+  const from = dragFav.value;
+  const d = dropOn.value;
+  endFavDrag();
+  if (d) moveFavorite(from, d.key, d.after);
+}
+
 // ---- 打开 / 新建 ----
 function close() {
   S.dirPicker = false;
@@ -191,20 +241,26 @@ function onKey(e) {
             <div
               v-for="p in S.favorites"
               :key="p"
-              class="item"
-              :class="{ active: same(p, current) }"
-              :title="p"
-              @click="reveal(p)"
+              class="item fav-item"
+              :class="favCls(p)"
+              :title="`${p}\n拖动可以调整顺序`"
+              draggable="true"
+              @click="reveal(p, rowFav(p))"
               @dblclick="openNow(p)"
               @contextmenu.prevent.stop="favMenu($event, p)"
+              @dragstart="onFavDragStart($event, p)"
+              @dragover="onFavDragOver($event, p)"
+              @dragleave="onFavDragLeave(p)"
+              @drop="onFavDrop"
+              @dragend="endFavDrag"
             >
               <span class="grow path">{{ p }}</span>
-              <button class="favdel" title="取消收藏" @click.stop="toggleFavorite(p)"><Icon name="close" :size="12" /></button>
+              <button class="favdel" title="取消收藏" draggable="false" @click.stop="toggleFavorite(p)"><Icon name="close" :size="12" /></button>
             </div>
             <div v-if="!S.favorites.length" class="dim pad">在右边的树里右键文件夹就能收藏</div>
 
             <div class="grp">最近使用</div>
-            <div v-for="r in recent" :key="r.cwd" class="item" :class="{ active: same(r.cwd, current) }" :title="r.cwd" @click="reveal(r.cwd)" @dblclick="openNow(r.cwd)">
+            <div v-for="r in recent" :key="r.cwd" class="item" :class="{ active: rowAt === rowRecent(r.cwd) }" :title="r.cwd" @click="reveal(r.cwd, rowRecent(r.cwd))" @dblclick="openNow(r.cwd)">
               <span class="grow path">{{ r.cwd }}</span>
               <span class="tiny dim">{{ relTime(r.modified) }}</span>
             </div>
@@ -242,7 +298,6 @@ function onKey(e) {
       <div class="modal-foot foot">
         <span class="ellipsis mono tiny dim pick" :title="current">{{ current || '还没选目录' }}</span>
         <div class="grow" />
-        <span class="tiny dim hint">Ctrl+点击 = 在新标签页</span>
         <button class="btn" @click="newTab">在新标签页{{ verb }}</button>
         <button class="btn primary" @click="openCurrent">{{ verb }}</button>
       </div>
@@ -267,6 +322,13 @@ function onKey(e) {
 .favdel { flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s; }
 .item:hover .favdel { opacity: 1; }
 .favdel:hover { background: var(--err); color: #fff; }
+/* 收藏行可以直接拖着换位置：抓起来时整行淡下去，落点在哪行的上/下边就画一条线 */
+/* 鼠标形状不动，还是原来的手型指针 */
+.fav-item { position: relative; }
+.fav-item.dragging { opacity: 0.4; }
+.fav-item.drop-before::before, .fav-item.drop-after::after { content: ''; position: absolute; left: 4px; right: 4px; height: 2px; background: var(--accent); border-radius: 1px; pointer-events: none; }
+.fav-item.drop-before::before { top: -1px; }
+.fav-item.drop-after::after { bottom: -1px; }
 /* 左边一律显示完整路径，太长就换行显示，不截断 */
 .path { font-family: var(--font-code); font-size: var(--fs-xs); line-height: 1.35; white-space: normal; word-break: break-all; }
 .tiny { font-size: var(--fs-xs); }
@@ -285,12 +347,10 @@ function onKey(e) {
 
 .foot { align-items: center; gap: 8px; flex-wrap: wrap; }
 .pick { max-width: 100%; min-width: 0; flex: 0 1 auto; }
-.hint { white-space: nowrap; }
 
 @media (max-width: 768px) {
   .dirs { width: 96vw; height: 86vh; }
   .main { flex-direction: column; }
   .left { width: auto; flex: none; max-height: 30%; }
-  .hint { display: none; }
 }
 </style>
