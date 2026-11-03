@@ -258,6 +258,14 @@ function chipDragOver(e, i) {
 // 附件的悬停浮层：图片附件平时只露个缩略图，名字、完整路径、大小这些都放这里
 const tip = ref(null); // { anchor, index, name, path, info }，位置由 AttTooltip 自己算
 // 浮层里最后一行：正在上传就报进度，否则报来源和大小
+// 卡片第二行的小字：扩展名 + 大小（文件夹就写“文件夹”）
+function cardMeta(a) {
+  if (a.status === 'uploading') return `上传中 ${Math.round((a.progress || 0) * 100)}%`;
+  if (a.kind === 'dir') return '文件夹';
+  const dot = a.name.lastIndexOf('.');
+  const ext = dot > 0 ? a.name.slice(dot + 1).toLowerCase() : '';
+  return [ext, a.size != null ? fmtSize(a.size) : ''].filter(Boolean).join(' · ');
+}
 function tipInfo(a) {
   if (a.status === 'uploading') return `正在上传 ${Math.round((a.progress || 0) * 100)}%`;
   return [ORIGIN_LABEL[a.origin] || '', a.size != null ? fmtSize(a.size) : ''].filter(Boolean).join(' · ');
@@ -487,8 +495,13 @@ async function onTakeOver() {
           @click="openAtt(a)"
         >
           <img v-if="isImage(a)" class="pic" :src="a.preview || rawUrl(a.path)" draggable="false" alt="" @error="a.broken = true" />
-          <span v-else class="fic"><Icon :name="a.kind === 'dir' ? 'folder' : 'file'" :size="15" /></span>
-          <span v-if="!isImage(a)" class="aname ellipsis">{{ a.name }}</span>
+          <span v-if="!isImage(a)" class="atxt">
+            <span class="ameta ellipsis">{{ cardMeta(a) }}</span>
+            <span class="aline">
+              <Icon :name="a.kind === 'dir' ? 'folder' : 'file'" :size="12" />
+              <span class="aname ellipsis">{{ a.name }}</span>
+            </span>
+          </span>
           <span v-if="a.status === 'uploading'" class="prog"><i :style="{ width: Math.round(a.progress * 100) + '%' }" /></span>
           <button class="x" title="移除" @click.stop="removeAttachment(a), hideTip()"><Icon name="close" :size="11" /></button>
         </div>
@@ -555,7 +568,9 @@ async function onTakeOver() {
 /* 输入框整个悬在对话上面，只有卡片本身（和弹出的菜单）接鼠标事件，中间空白处让滚轮穿透给下面的对话 */
 .box, .usage, .pop { pointer-events: auto; }
 .box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow); padding: var(--sp2) var(--sp3); transition: border-color 0.15s, box-shadow 0.15s; }
-.expand { position: absolute; top: 10px; right: 10px; width: 26px; height: 26px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-sm); color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; opacity: 0; box-shadow: var(--shadow-sm); transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s; }
+/* 放大按钮：垂直居中对准输入框第一行文字（.ta 的 6px 上内边距 + 半行高）；
+   右边距也跟上下一致（= 卡片内边距 12），四个方向的留白看着一样 */
+.expand { position: absolute; top: calc(var(--sp2) + 6px + (var(--lh) * 1em - 26px) / 2); right: var(--sp3); width: 26px; height: 26px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-sm); color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; opacity: 0; box-shadow: var(--shadow-sm); transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s; }
 .box:hover .expand, .box.focused .expand, .expand.on { opacity: 1; }
 .expand:hover { color: var(--text); border-color: var(--text-3); }
 .expand.on { color: var(--accent-text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
@@ -594,6 +609,8 @@ async function onTakeOver() {
 /* 整条都能点（打开会话详情）：悬停时把边框提一提，告诉用户这块是能点的 */
 .u.click { cursor: pointer; }
 .u.click:hover { border-color: var(--text-3); }
+/* “排队 / 插话”：高度和圆角都跟两边的 chip、圆按钮一样（30 + 胶囊） */
+.bar .btn { height: 30px; padding: 0 12px; border-radius: var(--r-pill); }
 /* 发送 / 停止：跟旁边的 chip 一样高（都是一排 30px），圆形 */
 .round { width: 30px; height: 30px; border-radius: 50%; border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background 0.15s, transform 0.1s; }
 .round:active { transform: scale(0.94); }
@@ -603,28 +620,34 @@ async function onTakeOver() {
 .stop { background: var(--text); color: var(--panel); }
 .stop:hover { background: var(--err); color: #fff; }
 
-.atts { display: flex; gap: 6px; padding: 2px 34px 8px 0; flex-wrap: wrap; align-items: flex-start; }
-.att { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 36px; max-width: 220px; padding: 0 10px 0 4px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-md); font-size: var(--fs-sm); color: var(--text-2); cursor: grab; user-select: none; overflow: hidden; transition: border-color 0.15s, background 0.15s; }
+.atts { display: flex; gap: 8px; padding: 8px 36px 8px 0; flex-wrap: wrap; align-items: flex-start; }
+/* 附件：全是 72 高的方形磁贴 —— 图片是一张缩略图，文件/文件夹是“图标 + 名字 + 一行小字”，
+   高度一样排得整齐，顺序也跟发送编号对得上。overflow 不能藏（右上角的叉号半悬在角上） */
+.att { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 72px; max-width: 260px; padding: 0; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-md); color: var(--text-2); cursor: grab; user-select: none; overflow: visible; transition: border-color 0.15s, background 0.15s; }
 .att:hover { border-color: var(--text-3); color: var(--text); }
 .att.moving { opacity: 0.45; border-style: dashed; border-color: var(--accent); }
 .att.up { color: var(--text-3); }
-.att .pic { flex: none; width: 28px; height: 28px; object-fit: cover; border-radius: var(--r-xs); border: 1px solid var(--line-2); display: block; background: var(--hover); }
-.att .fic { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); border-radius: var(--r-xs); background: var(--hover); }
+.att .pic { flex: none; width: 36px; height: 36px; object-fit: cover; border-radius: var(--r-xs); border: 1px solid var(--line-2); display: block; background: var(--hover); }
+/* 文件/文件夹：中间那块放类型 + 大小（水平垂直都居中，占图片的那种“预览”位置）；
+   底部一条加深的横条，里面是图标 + 文件名，像缩略图底下的说明条 */
+.att .atxt { display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; }
+.att .ameta { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; padding: 0 10px; font-size: var(--fs-sm); line-height: 1.25; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.att .aline { flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 4px 10px 5px; border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px); background: var(--accent-soft); font-size: 11px; line-height: 1.3; color: var(--text-2); }
 .att .aname { min-width: 0; }
 /* 图片附件：只露一张缩略图，文件名、序号都等悬停浮层再说 */
-.att.img { width: 56px; height: 56px; padding: 0; gap: 0; background: transparent; border-color: transparent; overflow: visible; }
+.att.img { width: 72px; height: 72px; padding: 0; gap: 0; background: transparent; border-color: transparent; overflow: visible; }
 .att.img:hover { border-color: var(--line-2); }
 .att.img .pic { width: 100%; height: 100%; border-radius: inherit; border: 1px solid var(--line-2); }
 .att.img.up .pic { opacity: 0.45; }
 /* 悬停浮层的样式在 AttTooltip.vue 里（消息里的附件也用它） */
 .att .prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--line-2); }
 .att .prog i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
-/* 移除：圆形，压在右上角；中间的叉用图标画（字形的 ✕ 靠基线会歪，圆形里居中不了） */
-.att .x { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: var(--elev); color: var(--text-2); cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; box-shadow: var(--shadow-sm); z-index: 2; transition: background 0.12s, border-color 0.12s, color 0.12s; }
+/* 移除：圆形，圆心就落在右上角的角上（一半悬在外面）；中间的叉用图标画（字形的 ✕ 靠基线会歪，圆形里居中不了） */
+.att .x { position: absolute; top: -9px; right: -9px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: var(--elev); color: var(--text-2); cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; box-shadow: var(--shadow-sm); z-index: 2; transition: background 0.12s, border-color 0.12s, color 0.12s; }
 .att:hover .x, .att:focus-within .x { display: inline-flex; }
 .att .x:hover { background: var(--err); border-color: var(--err); color: #fff; }
-/* “清空”：高度跟图片缩略图一样（56），文字水平和垂直都居中，字号不变 */
-.att-clear { width: 56px; height: 56px; padding: 0; border: 1px dashed var(--line); background: transparent; border-radius: var(--r-md); color: var(--text-3); font-size: var(--fs-xs); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+/* “清空”：跟缩略图一样是 72 方块，虚线框 */
+.att-clear { width: 72px; height: 72px; padding: 0; border: 1px dashed var(--line); background: transparent; border-radius: var(--r-md); color: var(--text-3); font-size: var(--fs-xs); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .att-clear:hover { color: var(--err); border-color: var(--err); }
 .at-ic { flex: none; color: var(--text-3); }
 .at-name { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); color: var(--text); }

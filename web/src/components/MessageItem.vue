@@ -1,9 +1,9 @@
 <script setup>
-import { computed, ref, watchEffect } from 'vue';
+import { computed, ref, watchEffect, onUnmounted } from 'vue';
 import { S, openFile } from '../store.js';
 import { UI } from '../settings.js';
 import { rawUrl } from '../api.js';
-import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText, splitAttachments } from '../util.js';
+import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText, delMsgText, splitAttachments } from '../util.js';
 import ToolCard from './ToolCard.vue';
 import AttTooltip from './AttTooltip.vue';
 import Icon from './Icon.vue';
@@ -17,7 +17,7 @@ const userParts = computed(() => splitAttachments(textOf(props.m.content)));
 const userText = computed(() => userParts.value.text);
 const atts = computed(() => userParts.value.attachments);
 const broken = ref({}); // 文件已经不在的图片，缩略图换成图标
-const isImg = (a) => a.kind === 'image' && !broken[a.n];
+const isImg = (a) => a.kind === 'image' && !broken.value[a.n];
 const KIND_LABEL = { image: '图片', file: '文件', dir: '文件夹' };
 // 悬停浮层：编号、全名、完整路径都放这（图片附件平时只有一张缩略图）
 const tip = ref(null);
@@ -25,8 +25,15 @@ function showTip(e, a) {
   tip.value = { anchor: e.currentTarget.getBoundingClientRect(), index: a.n, name: a.name, path: a.path, info: KIND_LABEL[a.kind] || '' };
 }
 const openAtt = (a) => a.kind !== 'dir' && openFile(a.path);
+// 磁贴中间那行：文件夹写“文件夹”，文件写扩展名（消息里没有大小信息，扩展名之外就写“文件”）
+function attMeta(a) {
+  if (a.kind === 'dir') return '文件夹';
+  const dot = a.name.lastIndexOf('.');
+  return dot > 0 ? a.name.slice(dot + 1).toLowerCase() : '文件';
+}
 const images = computed(() => imagesOf(props.m.content));
-const blocks = computed(() => (Array.isArray(props.m.content) ? props.m.content.filter(Boolean) : []));// 空内容的思考块直接不画（有的模型只会发一个空的 thinking 块，比如 opus 系列），
+const blocks = computed(() => (Array.isArray(props.m.content) ? props.m.content.filter(Boolean) : []));
+// 空内容的思考块直接不画（有的模型只会发一个空的 thinking 块，比如 opus 系列），
 // 留个空框在那里没意义，还占地方
 const showThinking = (b) => b.type === 'thinking' && (!!b.redacted || !!(b.thinking || '').trim());
 const streaming = computed(() => props.m.stopReason === 'pending');
@@ -58,6 +65,9 @@ const customText = computed(() => (typeof props.m.content === 'string' ? props.m
 const copyText = computed(() => (role.value === 'user' ? userText.value : aiText.value));
 // 右键菜单统一在 App 层弹，所以只能把文本先存下来，菜单里按 DOM 上的 key 回来取
 watchEffect(() => setMsgText(props.m._k, copyText.value));
+onUnmounted(() => delMsgText(props.m._k));
+// 还在流式输出的最后一段字：渲染结果不进缓存（它每 50ms 就变一次）
+const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value && i === blocks.value.length - 1 });
 </script>
 
 <template>
@@ -76,8 +86,13 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
             @mouseleave="tip = null"
           >
             <img v-if="isImg(a)" class="pic" :src="rawUrl(a.path)" alt="" @error="broken[a.n] = true" />
-            <span v-else class="fic"><Icon :name="a.kind === 'dir' ? 'folder' : 'file'" :size="14" /></span>
-            <span v-if="!isImg(a)" class="aname ellipsis">{{ a.name }}</span>
+            <span v-else class="atxt">
+              <span class="ameta ellipsis">{{ attMeta(a) }}</span>
+              <span class="aline">
+                <Icon :name="a.kind === 'dir' ? 'folder' : 'file'" :size="12" />
+                <span class="aname ellipsis">{{ a.name }}</span>
+              </span>
+            </span>
           </div>
           <AttTooltip :tip="tip" />
         </div>
@@ -106,7 +121,7 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
           </summary>
           <div class="blk-body prose dim">{{ (b.thinking || '').trim() }}</div>
         </details>
-        <div v-else-if="b.type === 'text' && b.text" class="bubble ai-bubble md" :class="{ boxed: UI.hoverBox }" v-html="renderMarkdown(b.text)" />
+        <div v-else-if="b.type === 'text' && b.text" class="bubble ai-bubble md" :class="{ boxed: UI.hoverBox }" v-html="md(b, i)" />
         <ToolCard v-else-if="b.type === 'toolCall'" :call="b" :exec="S.tools[b.id]" :streaming="streaming" />
       </template>
       <div v-if="m.stopReason === 'error'" class="errbox">出错：{{ stripAnsi(m.errorMessage || '未知错误') }}</div>
@@ -168,23 +183,27 @@ watchEffect(() => setMsgText(props.m._k, copyText.value));
 .bubble { border-radius: var(--r-bubble); padding: calc(var(--sp2) + 2px) var(--pad-x); line-height: var(--lh); max-width: 100%; }
 .me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); padding: calc(var(--sp2) - 1px) calc(var(--pad-x) - 2px); font-size: calc(var(--fs) - 1px); line-height: 1.6; }
 /* 正文跟上面那些思考/工具块拉开一点：它们是一个个紧凑的小块，正文比块与块之间松一点才不挤 */
-.ai-bubble { background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); margin-top: var(--sp1); }
+/* align-self: stretch：正文铺满整栏，里面的代码块、图、表格才能真正两边填满（否则这块会缩到最长那行文字那么宽） */
+.ai-bubble { align-self: stretch; min-width: 0; background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); margin-top: var(--sp1); }
 /* 正文一直带个框，和思考/工具卡片一个样子，一眼能看出这块属于哪条回复。设置里能关 */
-.ai-bubble.boxed { align-self: stretch; padding: calc(var(--sp2) - 1px) var(--pad-x); border: 1px solid color-mix(in srgb, var(--text-3) 45%, var(--line)); border-radius: var(--r-md); }
+.ai-bubble.boxed { padding: calc(var(--sp2) - 1px) var(--pad-x); border: 1px solid color-mix(in srgb, var(--text-3) 45%, var(--line)); border-radius: var(--r-md); }
 .pre { white-space: pre-wrap; word-break: break-word; }
 .imgs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-.imgs img { max-height: 160px; max-width: 260px; border-radius: var(--r-sm); display: block; }
-/* 消息里带的附件：和输入框上面那一排长得一样，只是不能拖、不能删 */
-.atts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; align-items: flex-start; }
+.imgs img { max-height: 160px; max-width: 260px; border-radius: var(--r-md); display: block; cursor: zoom-in; }
+/* 消息里带的附件：和输入框上面那一排长得一样（中间是类型、底部一条淡色横条放图标 + 名字），
+   只是不能拖、不能删 */
+.atts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: flex-start; }
 .atts:last-child { margin-bottom: 0; }
-.att { display: inline-flex; align-items: center; gap: 6px; height: 34px; max-width: 220px; padding: 0 10px 0 4px; border-radius: var(--r-md); background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text-2); border: 1px solid var(--line-2); font-size: var(--fs-sm); }
+.att { display: inline-flex; align-items: center; height: 72px; max-width: 260px; padding: 0; border-radius: var(--r-md); background: color-mix(in srgb, var(--panel) 86%, transparent); color: var(--text-2); border: 1px solid var(--line-2); }
 .att.link { cursor: pointer; }
-.att.link:hover { color: var(--text); border-color: var(--text-3); }
+.att.link:hover { border-color: var(--text-3); }
 /* 图片附件跟输入框里一个样：只露一张缩略图，文件名和编号都在悬停浮层里 */
-.att.img { width: 64px; height: 64px; padding: 0; gap: 0; background: transparent; border-color: transparent; }
+.att.img { width: 72px; height: 72px; gap: 0; background: transparent; border-color: transparent; }
 .att.img:hover { border-color: var(--line-2); }
 .att.img .pic { flex: none; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; border: 1px solid var(--line-2); display: block; }
-.att .fic { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); }
+.att .atxt { display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; }
+.att .ameta { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; padding: 0 10px; font-size: var(--fs-sm); line-height: 1.25; color: var(--text-2); }
+.att .aline { flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 4px 10px 5px; border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px); background: var(--accent-soft); font-size: 11px; line-height: 1.3; color: var(--text-2); }
 .att .aname { min-width: 0; }
 
 .errbox { margin: 0 var(--pad-x); background: var(--err-bg); color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--r-md); padding: 8px var(--pad-x); white-space: pre-wrap; font-size: var(--fs-sm); }

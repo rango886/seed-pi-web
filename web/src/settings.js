@@ -199,11 +199,25 @@ export const view = reactive({
   mobile: false,
   ctx: null, // 右键菜单 { x, y, items }
   panel: null, // 右边的浮动侧栏：'files' | 'agents' | null
+  lightbox: null, // 图片灯箱：{ list: [{ src, alt }], i }，i 是当前看的是第几张
 });
 
 /** 右侧浮动侧栏（文件 / 进程）：再点一次同一个就关掉 */
 export function togglePanel(name) {
   view.panel = view.panel === name ? null : name;
+}
+
+/** 打开图片灯箱：list 是这个会话里能翻的所有图片，i 是点开的那一张。
+ *  一张也要打开（就是全屏看看大图），只是不显示左右按钮 */
+export function openLightbox(list, i = 0) {
+  if (!list?.length) return;
+  view.lightbox = { list, i: Math.min(Math.max(i, 0), list.length - 1) };
+}
+
+/** 灯箱里左右翻（到头绕回去） */
+export function stepLightbox(d) {
+  const lb = view.lightbox;
+  if (lb) lb.i = (lb.i + d + lb.list.length) % lb.list.length;
 }
 
 const narrow = window.matchMedia('(max-width: 768px)');

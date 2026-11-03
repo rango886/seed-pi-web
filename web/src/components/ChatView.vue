@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { S, openDirPicker, restartExited, viewer } from '../store.js';
 import MessageItem from './MessageItem.vue';
 import Composer from './Composer.vue';
-import { UI, view } from '../settings.js';
+import { UI, view, openLightbox } from '../settings.js';
 import Icon from './Icon.vue';
 import { splitAttachments } from '../util.js';
 
@@ -47,7 +47,7 @@ function jumpTo(top) {
 function onKey(e) {
   if (e.key !== 'Home' && e.key !== 'End') return;
   if (S.activeTab !== 'chat' || e.altKey || e.shiftKey || e.defaultPrevented) return;
-  if (S.picker || S.dialogs.length || S.dirPicker || view.settingsOpen || view.menu) return;
+  if (S.picker || S.dialogs.length || S.dirPicker || view.settingsOpen || view.menu || view.lightbox) return;
   const t = e.target;
   if (t.closest?.('.xterm')) return;
   if (t.closest?.('input, textarea, select, [contenteditable]')) {
@@ -94,15 +94,23 @@ watch(
   },
 );
 
-// 代码块的“复制”按钮
+// 点对话里的图片：全屏看大图，左右能翻这个会话里的所有图片（markdown 的图和用户发的图都算）
+function openImg(img) {
+  const all = [...(scroller.value?.querySelectorAll('.md img, .imgs img') || [])].filter((el) => el.complete && el.naturalWidth > 0);
+  const i = all.indexOf(img);
+  if (i < 0) return;
+  openLightbox(
+    all.map((el) => ({ src: el.currentSrc || el.src, alt: el.alt || el.title || '' })),
+    i,
+  );
+}
+
+// 点对话里的图片看大图；代码块的“复制”、文件链接由 md-actions.js 统一处理
 function onClick(e) {
-  const btn = e.target.closest('[data-copy]');
-  if (!btn) return;
-  const code = btn.closest('pre')?.querySelector('code');
-  if (code) {
-    navigator.clipboard.writeText(code.innerText);
-    btn.textContent = '已复制';
-    setTimeout(() => (btn.textContent = '复制'), 1200);
+  const img = e.target.closest?.('img');
+  if (img) {
+    e.preventDefault(); // 图片外面包着链接时只开灯箱，不跳走
+    openImg(img);
   }
 }
 

@@ -226,9 +226,9 @@ a:hover { text-decoration: underline; }
 .tab .x { opacity: 0; width: 18px; height: 18px; border-radius: var(--r-xs); display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); flex: none; margin-right: -2px; transition: opacity 0.12s, background 0.12s, color 0.12s; }
 .tab:hover .x, .tab.active .x { opacity: 1; }
 .tab .x:hover { background: var(--active); color: var(--text); }
-/* 末了的“新终端”：虚线小方块，跟旁边的标签区分开 */
-.tab.add { width: 26px; height: 26px; padding: 0; margin: 0 0 3px 6px; align-self: flex-end; justify-content: center; border: 1px dashed var(--line); border-bottom: 1px dashed var(--line); border-radius: var(--r-sm); color: var(--text-3); }
-.tab.add:hover { border-color: var(--text-3); color: var(--text); background: transparent; }
+/* 末了的“新终端”：不描边的小方块，跟旁边的标签区分开；悬停才浮出底色 */
+.tab.add { width: 26px; height: 26px; padding: 0; margin: 0 0 3px 6px; align-self: flex-end; justify-content: center; border: 1px solid transparent; border-radius: var(--r-sm); color: var(--text-3); }
+.tab.add:hover { color: var(--text); background: var(--hover); }
 /* “关闭全部”钉在右边，不跟着标签一起滚走 */
 .tab-close-all { flex: none; width: 28px; height: 28px; margin: 0 0 3px 6px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
 .tab-close-all:hover { background: var(--hover); color: var(--text); }
@@ -326,7 +326,9 @@ a:hover { text-decoration: underline; }
 .md tr:last-child td { border-bottom: 0; }
 .md th { background: var(--panel-2); font-weight: 600; }
 .md hr { border: 0; border-top: 1px solid var(--line); margin: 1.2em 0; }
-.md img { max-width: 100%; border-radius: var(--r-sm); }
+/* 图片：保持原比例，高度封顶（不然一张竖图就占满整个屏幕，对话看着很不均衡），
+   点了会打开全屏灯箱，所以鼠标是放大镜 */
+.md img { max-width: 100%; max-height: min(420px, 46vh); width: auto; height: auto; object-fit: contain; border-radius: var(--r-md); cursor: zoom-in; }
 
 /* ---- 数学公式（Temml 出 MathML，浏览器原生排版）----
    颜色交给 currentColor，深色主题下自动跟着变；宽度超出就横向滚，不撑破气泡 */
@@ -354,13 +356,85 @@ a:hover { text-decoration: underline; }
   --pele-font: var(--font);
   --pele-font-mono: var(--font-code);
   --pele-radius: var(--r-sm);
+  /* pele 的缩放按钮默认在右上角，那里现在留给“图示”和“复制”，所以挪到右下角 */
+  --pele-zoom-top: auto;
+  --pele-zoom-right: 6px;
+  --pele-zoom-bottom: 6px;
+  position: relative;
   margin: var(--para) 0;
   max-width: 100%;
   overflow-x: auto;
 }
 .md .md-diagram svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
 .md .md-diagram.loading { display: flex; align-items: center; justify-content: center; min-height: 64px; color: var(--text-3); font-size: var(--fs-sm); border: 1px dashed var(--line); border-radius: var(--r-md); }
-.md .md-diagram.err { color: var(--err); font-family: var(--font-code); font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-all; padding: var(--sp2) var(--pad-x); background: var(--err-bg); border-radius: var(--r-sm); }
+.md .md-diagram .dgm-err { color: var(--err); background: var(--err-bg); border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--r-sm); padding: var(--sp2) var(--pad-x); font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-word; }
+.md .md-diagram .dgm-err + pre.code { margin-top: var(--sp2); }
+
+/* 右上角小工具条：复制 + 源码/图示切换。两个纯图标按钮装在一个圆角小底板里，
+   平时藏着，鼠标移到图上才浮出来（触屏设备上一直显示） */
+.md .md-diagram .dgm-bar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(4px);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.md .md-diagram:hover .dgm-bar,
+.md .md-diagram:focus-within .dgm-bar,
+.md .md-diagram.show-src .dgm-bar { opacity: 1; transform: none; }
+@media (hover: none) {
+  .md .md-diagram .dgm-bar { opacity: 1; transform: none; }
+}
+.md .md-diagram .dgm-btn {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--r-sm) - 2px);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.md .md-diagram .dgm-btn:hover { background: var(--hover); color: var(--text); }
+.md .md-diagram .dgm-btn svg { display: block; }
+/* 一个按钮里放两个图标，按状态只露一个：复制→对勾；看图时显示“</>”，看源码时显示“图” */
+.md .md-diagram .dgm-btn .i-ok,
+.md .md-diagram .dgm-btn .i-dgm,
+.md .md-diagram .dgm-btn.done .i-copy,
+.md .md-diagram.show-src .dgm-btn .i-src { display: none; }
+.md .md-diagram .dgm-btn.done .i-ok,
+.md .md-diagram.show-src .dgm-btn .i-dgm { display: block; }
+.md .md-diagram .dgm-btn.done { color: var(--ok); }
+.md .md-diagram.show-src [data-dgm-toggle] { color: var(--accent-text); }
+
+/* 源码默认收起来，点了按钮才显示；画不出来的时候错误卡片里直接摆出来 */
+.md .md-diagram .dgm-code { display: none; margin: 0; }
+.md .md-diagram.show-src .dgm-code,
+.md .md-diagram.err .dgm-code { display: block; }
+/* 画出来的图：源码标题栏自己的“复制”不要了（工具条里有），右边给工具条让位 */
+.md .md-diagram:not(.err) .dgm-code .copy-btn { display: none; }
+.md .md-diagram:not(.err) .dgm-code .code-bar { padding-right: 72px; }
+.md .md-diagram.show-src > svg { display: none; }
+.md .md-diagram.show-src .pele-zoom { display: none !important; }
+
+/* 回复里提到的本地文件：点了在顶部标签页打开。行内代码样式保留，平时不加下划线，鼠标划过才出现一条实线提示能点 */
+.md a.file-link { cursor: pointer; text-decoration: none; }
+.md a.file-link:hover { text-decoration: underline; text-decoration-style: solid; text-decoration-color: currentColor; text-underline-offset: 3px; }
+.md a.file-link > code { color: var(--accent-text); }
 
 /* ---- highlight.js ---- */
 .hljs { color: var(--text); background: none; }

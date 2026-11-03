@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { rawUrl } from './api.js';
 import temml from 'temml';
 import { ref } from 'vue';
 import hljs from 'highlight.js/lib/common';
@@ -64,6 +65,8 @@ export const imagesOf = (content) => (Array.isArray(content) ? content.filter((c
 const msgTexts = new Map();
 export const setMsgText = (k, text) => k != null && msgTexts.set(String(k), text || '');
 export const getMsgText = (k) => msgTexts.get(String(k)) || '';
+/** 消息组件卸载时删掉，不然切会话切多了这张表只增不减 */
+export const delMsgText = (k) => msgTexts.delete(String(k));
 
 /** 工具卡片标题里显示的一行摘要：不认识的工具也能显示个大概 */
 const SUMMARY_KEYS = ['command', 'path', 'file_path', 'filePath', 'file', 'pattern', 'query', 'url', 'name', 'prompt'];
@@ -120,9 +123,117 @@ export function highlightCode(text, lang) {
   return { html: escapeHtml(text), label: name };
 }
 
+// ---------- 本地图片 ----------
+// 模型经常直接写 `![](out/x.png)`（相对会话目录）或者 `![](C:/Users/x/Downloads/out/x.png)`
+// （Windows 绝对路径），这两种地址浏览器自己都打不开：相对路径会当成网站的路径去请求，
+// 后端没这个文件就回了首页；`C:` 在浏览器眼里是未知协议，DOMPurify 还会直接把 src 删掉。
+// 所以渲染 <img> 的时候就把地址换成后端读文件的接口（/api/fs/raw）。
+let assetBase = ''; // 消息所属会话的目录（预览文件时是文件所在的目录）
+let parseBase = ''; // 这一次 marked.parse 用的目录。parse 是同步的，用完就还原
+
+/** 告诉 util 现在的“当前目录”，markdown 里的相对图片路径按它来解析 */
+export function setAssetBase(dir) {
+  const v = dir || '';
+  if (v === assetBase) return;
+  assetBase = v;
+  // 缓存的 HTML 里已经有解析好的图片地址了，目录一换就得全部作废
+  mdCache.clear();
+  mdFinal.clear();
+  mdEpoch.value++;
+}
+
+/** markdown 里的图片地址 → 浏览器能请求的地址；http(s) / data: 这类原样返回 */
+export function assetUrl(src, base = assetBase) {
+  let p = String(src || '').trim();
+  if (!p) return '';
+  if (/^file:\/\//i.test(p)) p = p.slice(7).replace(/^\/([a-zA-Z]:)/, '$1'); // file:///C:/x.png → C:/x.png
+  // 盘符要先于“协议”判断，否则 C:/x.png 会被当成 c: 协议；盘符路径里的中文也要先解码
+  else if (!/^[a-zA-Z]:[\\/]/.test(p) && /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(p)) return p; // http(s): / data: / blob: … 交给浏览器
+  try {
+    p = decodeURI(p); // 中文文件名在 markdown 里常写成 %E5%9F%8E…，解回来才找得到文件
+  } catch {}
+  p = p.replace(/\\/g, '/');
+  if (/^[a-zA-Z]:\//.test(p) || p.startsWith('//')) return rawUrl(p); // Windows 盘符 / UNC
+  if (p.startsWith('~/') || !base) return p; // 家目录：网页这边不知道 home 在哪，留着让浏览器自己报错
+  // 开头的 / 当“相对项目的根”处理（README 里常见 /docs/a.png 这种写法）
+  return rawUrl(joinPath(base, p.replace(/^\/+/, '')));
+}
+
+// ---------- 本地文件链接 ----------
+// 模型回复里经常提到文件：`web/src/util.js`、`C:\Users\x\a.md:12`、[说明](docs/a.md)。
+// 这些在渲染时变成可点的链接（<a data-file>），点了在顶部开一个标签页看文件。
+// 判断宽松一点会把 `obj.method` 这种也当文件，所以分了两档：
+//   - markdown 链接 [x](path)：用户/模型明确写成了链接，只要不是网址就当文件
+//   - 行内代码、正文里的裸路径：要像文件才算（带扩展名；没有目录的单个文件名要是常见扩展名）
+const KNOWN_EXT = new Set(
+  ('js mjs cjs jsx ts tsx mts cts vue svelte py pyi rs go java kt kts c h cc cpp hpp cs php rb swift lua dart scala sql ' +
+    'css scss sass less html htm xml json jsonl jsonc yaml yml toml ini cfg conf env properties md markdown mdx txt rst log csv tsv ' +
+    'sh bash zsh fish ps1 psm1 psd1 bat cmd png jpg jpeg gif webp bmp svg ico pdf lock gitignore dockerfile makefile').split(' '),
+);
+const BAD_STRICT = /[\s<>"'`|*?(){}[\]=,;$&^%!#]/; // 行内代码里出现这些，基本就是代码不是路径
+const BAD_LOOSE = /[<>"|*?]/; // Windows 文件名里本来就不允许的字符
+const isWinAbs = (p) => /^[a-zA-Z]:[\\/]/.test(p);
+
+/** 拆掉结尾的行号：a.js:12、a.js:12:3、a.md#L12-L20 */
+function splitLine(p) {
+  const m = /^(.+?)(?::(\d+)(?::\d+)?|#L(\d+)(?:-L?\d+)?)$/.exec(p);
+  return m ? { path: m[1], line: Number(m[2] || m[3]) } : { path: p, line: 0 };
+}
+
+/** 去掉 . / ..，分隔符统一成这个系统的样子（盘符路径用 \） */
+function cleanPath(p) {
+  const win = /^[a-zA-Z]:/.test(p);
+  const parts = [];
+  p.replace(/\\/g, '/')
+    .split('/')
+    .forEach((seg, i) => {
+      if (seg === '..') parts.length > 1 && parts.pop();
+      else if (seg !== '.' && (seg !== '' || i === 0)) parts.push(seg);
+    });
+  return parts.join(win ? '\\' : '/');
+}
+
+/**
+ * 一段文字是不是本地文件路径。是的话返回 { path: 绝对路径, rel: 原来写的相对路径（绝对路径时为空）, line }。
+ * loose：markdown 链接用，只要不是网址就算
+ */
+export function localPathOf(raw, base = assetBase, { loose = false } = {}) {
+  let s = String(raw || '').trim();
+  if (!s || s.length > 400) return null;
+  if (/^file:\/\//i.test(s)) s = s.slice(7).replace(/^\/([a-zA-Z]:)/, '$1');
+  else if (!isWinAbs(s) && /^(?:[a-z][a-z0-9+.-]*:|\/\/|#|\?)/i.test(s)) return null; // 网址、锚点
+  if (loose) {
+    try {
+      s = decodeURI(s);
+    } catch {}
+  }
+  const { path: p0, line } = splitLine(s);
+  if ((loose ? BAD_LOOSE : BAD_STRICT).test(p0)) return null;
+  const last = p0.split(/[\\/]/).pop();
+  const ext = /\.([a-z0-9]{1,12})$/i.exec(last)?.[1]?.toLowerCase();
+  if (!loose && (!ext || /^\d+$/.test(ext))) return null; // 没扩展名的（text/html、1.2.3 这种）不猜
+  if (isWinAbs(p0)) return { path: cleanPath(p0), rel: '', line };
+  if (p0.startsWith('~')) return null; // 网页不知道 home 在哪
+  const winBase = isWinAbs(base || '');
+  if (p0.startsWith('/')) {
+    // Linux/mac 上是绝对路径；Windows 上当成“相对项目根”（README 里的 /docs/a.md）
+    if (!winBase) return base || loose ? { path: cleanPath(p0), rel: '', line } : null;
+  } else if (!loose && !/[\\/]/.test(p0) && !KNOWN_EXT.has(ext)) {
+    return null; // 单独一个 a.b：多半是 obj.prop，只认常见扩展名
+  }
+  if (!base) return null;
+  const rel = p0.replace(/^(?:\.[\\/])+/, '').replace(/^[\\/]+/, '');
+  return { path: cleanPath(joinPath(base, rel)), rel, line };
+}
+
+const fileLink = (info, inner) =>
+  `<a class="file-link" data-file="${escapeHtml(info.path)}"${info.rel ? ` data-rel="${escapeHtml(info.rel)}"` : ''}` +
+  `${info.line ? ` data-line="${info.line}"` : ''} title="${escapeHtml(info.path)}\n点击在标签页中打开">${inner}</a>`;
+
 // ---------- Markdown ----------
 marked.setOptions({ gfm: true, breaks: true });
 const renderer = new marked.Renderer();
+let linkDepth = 0; // 正在渲染链接文字：里面的路径不能再套一层链接
 
 // 图表示例（mermaid）：先只吐一个占位元素，源码就当文本放里面（不用 data 属性：
 // DOMPurify 会把含 `-->` 这类序列的属性整个删掉，而 mermaid 到处都是箭头）；
@@ -134,7 +245,29 @@ renderer.code = ({ text, lang }) => {
   const { html, label } = highlightCode(text, lang);
   return `<pre class="code"><div class="code-bar"><span>${escapeHtml(label)}</span><button class="copy-btn" data-copy>复制</button></div><code class="hljs">${html}</code></pre>`;
 };
-renderer.link = ({ href, text }) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+renderer.link = function ({ href, title, tokens, text }) {
+  linkDepth++;
+  let inner;
+  try {
+    inner = tokens ? this.parser.parseInline(tokens) : escapeHtml(text);
+  } finally {
+    linkDepth--;
+  }
+  const file = localPathOf(href, parseBase, { loose: true });
+  if (file) return fileLink(file, inner);
+  const t = title ? ` title="${escapeHtml(title)}"` : '';
+  return `<a href="${escapeHtml(href || '')}"${t} target="_blank" rel="noopener">${inner}</a>`;
+};
+renderer.codespan = ({ text }) => {
+  const html = `<code>${escapeHtml(text)}</code>`;
+  const file = !linkDepth && localPathOf(text, parseBase);
+  return file ? fileLink(file, html) : html;
+};
+renderer.image = ({ href, title, text }) => {
+  const src = escapeHtml(assetUrl(href, parseBase));
+  const alt = escapeHtml(text || '');
+  return `<img src="${src}" alt="${alt}"${title ? ` title="${escapeHtml(title)}"` : ''}>`;
+};
 marked.use({ renderer });
 
 // ---------- 数学公式：Temml 把 TeX 翻成 MathML，排版交给浏览器（不用下载字体）----------
@@ -153,7 +286,7 @@ export function renderTex(tex, displayMode = false) {
 // `$5 和 $10 这两处…，$PATH` 这种东西会被整段当成公式
 const CJK = /[\u3400-\u9fff\uf900-\ufaff]/;
 const looksLikeTex = (s) => !CJK.test(s) || s.includes('\\');
-const INLINE_TEX = /^\$(?=\S)([^\n]*?[^\s$])\$(?![\d$])/;;
+const INLINE_TEX = /^\$(?=\S)([^\n]*?[^\s$])\$(?![\d$])/;
 const INLINE_TEX_PAREN = /^\\\(([\s\S]+?)\\\)/;
 const INLINE_TEX_BRACKET = /^\\\[([\s\S]+?)\\\]/;
 // 独占一段的 $$...$$（marked 的块级 tokenizer 只在行首调用）
@@ -161,8 +294,30 @@ const BLOCK_TEX = /^ {0,3}\$\$[ \t]*\r?\n?([\s\S]+?)\r?\n? {0,3}\$\$[ \t]*(?:\r?
 
 const mathPlaceholder = (tex, display) => `<span class="md-math${display ? ' block' : ''}">${escapeHtml(tex)}</span>`;
 
+// 正文里没加反引号的 Windows 路径（C:\x\a.md）：遇到空白、引号、中文就算结束，末尾的标点不要
+const WIN_PATH = /^[a-zA-Z]:[\\/][^\s<>"'`|*?\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/;
+
 marked.use({
   extensions: [
+    {
+      name: 'winPath',
+      level: 'inline',
+      start(src) {
+        const m = /(?:^|[^\w\\/:.])[a-zA-Z]:[\\/]/.exec(src);
+        return m ? m.index + (/^[a-zA-Z]:/.test(m[0]) ? 0 : 1) : undefined;
+      },
+      tokenizer(src) {
+        const m = WIN_PATH.exec(src);
+        if (!m) return undefined;
+        const raw = m[0].replace(/[.,;:!?)\]}]+$/, '');
+        if (raw.length < 4) return undefined;
+        return { type: 'winPath', raw, text: raw };
+      },
+      renderer(t) {
+        const file = !linkDepth && localPathOf(t.text, parseBase);
+        return file ? fileLink(file, escapeHtml(t.text)) : escapeHtml(t.text);
+      },
+    },
     {
       name: 'mathBlock',
       level: 'block',
@@ -211,7 +366,7 @@ marked.use({
 const mdEpoch = ref(0); // 图渲染完（异步）就 +1，让用到 renderMarkdown 的组件自动重渲染
 const mdCache = new Map(); // 源文本 → sanitize 过的 HTML（占位符还在）
 const mdFinal = new Map(); // 源文本 + 字体签名 → 图都就绪的最终 HTML
-const diagramCache = new Map(); // mermaid 源码 → SVG（或错误提示）
+const diagramCache = new Map(); // mermaid 源码 → { svg }（画好的）或 { error }（画不出来的原因）
 const diagramPending = new Set();
 const MAX_CACHE = 600;
 const capSet = (map, k, v) => {
@@ -274,20 +429,107 @@ function diagramMath(tex, size) {
   return out;
 }
 
+/**
+ * 模型写图的时候常把 `{}` / `[]` 直接塞进 `[...]` 标签里（`H3[--workflow<br/>@upload{本地图}]`、
+ * `O[转 jobs[].error 原样给用户]`）。这种写法 mermaid 自己也不认，但意思很清楚，就是标签文字。
+ * 所以解析失败时先试着给这些标签整体加上引号再画一次，能救回来就救。
+ */
+function repairDiagram(src) {
+  let out = '';
+  let i = 0;
+  while (i < src.length) {
+    const open = src.indexOf('[', i);
+    if (open < 0) {
+      out += src.slice(i);
+      break;
+    }
+    // 找配对的 ]（标签里可能还嵌着 []，比如 jobs[].error）
+    let depth = 0;
+    let j = open;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (c === '\n') {
+        j = -1; // 跨行的不猜，原样放回去
+        break;
+      }
+      if (c === '[') depth++;
+      else if (c === ']' && --depth === 0) break;
+    }
+    if (j < 0) {
+      out += src.slice(i);
+      break;
+    }
+    const t = src.slice(open + 1, j).trim();
+    // 前面紧挨着一个节点 id（避免动到文本里的 [xxx]），里面有 mermaid 不认的括号，而且还没加引号
+    const prev = src.slice(i, open).trimEnd();
+    if (t && /[\[\]{}]/.test(t) && !/^["']/.test(t) && /[\w-]$/.test(prev)) {
+      out += `${src.slice(i, open + 1)}"${t.replace(/"/g, '#quot;')}"]`;
+    } else {
+      out += src.slice(i, j + 1);
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
 /** 异步画一张图（pele/lazy 会按图类型去拉对应的 chunk，没用到的类型根本不下载） */
 function loadDiagram(src) {
   const key = currentFontSig() + '|' + src;
   if (diagramPending.has(key)) return;
   diagramPending.add(key);
   import('pele/lazy')
-    .then(({ renderAsync }) => renderAsync(src, diagramOptions(src)))
-    .then(({ svg }) => capSet(diagramCache, key, svg))
-    .catch((e) => capSet(diagramCache, key, `<div class="md-diagram err">图示渲染失败：${escapeHtml(e?.message || String(e))}</div>`))
+    // 先按原文画；画不出来再把标签补上引号重试一次（repair 过才提示用户）
+    .then(async ({ renderAsync }) => {
+      try {
+        return { svg: (await renderAsync(src, diagramOptions(src))).svg };
+      } catch (e) {
+        const fixed = repairDiagram(src);
+        if (fixed !== src) {
+          try {
+            return { svg: (await renderAsync(fixed, diagramOptions(fixed))).svg, fixed: true };
+          } catch {}
+        }
+        throw e;
+      }
+    })
+    .then((v) => capSet(diagramCache, key, v))
+    .catch((e) => capSet(diagramCache, key, { error: e?.message || String(e) }))
     .finally(() => {
       diagramPending.delete(key);
       mdEpoch.value++;
     });
 }
+
+/** 右上角工具条用的小图标（和 Icon.vue 同一套线条风格） */
+const svgIcon = (d, cls) =>
+  `<svg class="${cls}" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ` +
+  `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+const I_COPY = 'M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1';
+const I_OK = 'M5 12.5l4.5 4.5L19 7.5';
+const I_CODE = 'M9 7l-5 5 5 5M15 7l5 5-5 5';
+const I_DIAGRAM = 'M4 4h6v5H4zM14 15h6v5h-6zM7 9v3.5h10V15';
+
+/** 图的源码：默认藏着，右上角按钮或“画不出来”的时候才露出来（带复制按钮） */
+function diagramSourceHtml(src, label = 'mermaid') {
+  return (
+    `<pre class="code dgm-code"><div class="code-bar"><span>${escapeHtml(label)}</span><button class="copy-btn" data-copy>复制</button></div>` +
+    `<code class="hljs">${escapeHtml(src)}</code></pre>`
+  );
+}
+
+/** 图画不出来时：给一行原因，再把源码原样摆出来（能复制，能自己去修） */
+function diagramErrorHtml(src, msg) {
+  return `<div class="dgm-err">图示没法画：${escapeHtml(msg)}</div>${diagramSourceHtml(src)}`;
+}
+
+// 右上角的小工具条：复制源码 + 源码/图示切换（点击由 diagram.js 统一接管，图不是 Vue 组件）
+const dgBar = (fixed) =>
+  '<div class="dgm-bar">' +
+  `<button class="dgm-btn" type="button" data-dgm-copy title="复制 mermaid 源码" aria-label="复制源码">${svgIcon(I_COPY, 'i-copy')}${svgIcon(I_OK, 'i-ok')}</button>` +
+  `<button class="dgm-btn" type="button" data-dgm-toggle aria-label="切换源码 / 图示" title="${
+    fixed ? '查看源码 / 图示（原图标签没加引号，已自动补上）' : '查看源码 / 图示（Ctrl+滚轮缩放，双击放大）'
+  }">${svgIcon(I_CODE, 'i-src')}${svgIcon(I_DIAGRAM, 'i-dgm')}</button>` +
+  '</div>';
 
 /** sanitize 过的 HTML → 填好公式和图的 HTML；pending = 还有图没画完（这次先别缓存） */
 function enhance(html) {
@@ -302,9 +544,15 @@ function enhance(html) {
   for (const el of doc.querySelectorAll('.md-diagram')) {
     const src = el.textContent;
     el.textContent = '';
-    const svg = diagramCache.get(currentFontSig() + '|' + src);
-    if (svg) el.innerHTML = svg;
-    else {
+    const hit = diagramCache.get(currentFontSig() + '|' + src);
+    if (hit?.svg) {
+      // pele 的缩放（enableZoom）要求容器的第一个子元素就是 svg，所以 svg 必须排在最前面；
+      // 容器里也不能再塞会占高度的东西（它一旦变高就会触发“容器尺寸变了 → 重算”，缩放会被还原）
+      el.innerHTML = hit.svg + diagramSourceHtml(src, hit.fixed ? 'mermaid（原图标签没加引号，已自动补上）' : 'mermaid') + dgBar(hit.fixed);
+    } else if (hit?.error) {
+      el.classList.add('err');
+      el.innerHTML = diagramErrorHtml(src, hit.error);
+    } else {
       pending = true;
       el.classList.add('loading');
       el.textContent = '正在渲染图示…';
@@ -314,20 +562,30 @@ function enhance(html) {
   return { html: doc.body.innerHTML, pending };
 }
 
-export function renderMarkdown(src) {
+/**
+ * live：这段还在流式输出（每 50ms 变一次），结果不进缓存。
+ * 不然一条长回复的几百个中间状态会把缓存（600 条）挤满，把真正有用的都顶出去
+ */
+export function renderMarkdown(src, base = assetBase, { live = false } = {}) {
   void mdEpoch.value; // 图渲染完 / 字体变了时，把这个依赖收集进调用方组件
   src = src || '';
   const hasDiagram = /\bmermaid\b/i.test(src);
-  const key = hasDiagram ? currentFontSig() + '|' + src : src;
+  // 目录也算进 key：同一段 markdown 在别的目录里图片指向的文件不一样
+  const key = `${base}\u0000${hasDiagram ? currentFontSig() + '\u0000' : ''}${src}`;
   const done = mdFinal.get(key);
   if (done !== undefined) return done;
-  let html = mdCache.get(src);
+  let html = mdCache.get(key);
   if (html === undefined) {
-    html = DOMPurify.sanitize(marked.parse(src), { ADD_ATTR: ['target', 'data-copy'] });
-    capSet(mdCache, src, html);
+    parseBase = base;
+    try {
+      html = DOMPurify.sanitize(marked.parse(src), { ADD_ATTR: ['target', 'data-copy'] });
+    } finally {
+      parseBase = '';
+    }
+    if (!live) capSet(mdCache, key, html);
   }
   const { html: out, pending } = enhance(html);
-  if (!pending) capSet(mdFinal, key, out);
+  if (!pending && !live) capSet(mdFinal, key, out);
   return out;
 }
 

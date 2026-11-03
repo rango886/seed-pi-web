@@ -23,6 +23,7 @@ const P = {
   export: 'M12 3v12M7 8l5-5 5 5M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4',
   compress: 'M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7',
   close: 'M6 6l12 12M18 6L6 18',
+  download: 'M12 3v13M7 11l5 5 5-5M4 20h16',
   chevron: 'M9 6l6 6-6 6',
   caret: 'M6 9.5l6 6 6-6',
   check: 'M5 12.5l4.5 4.5L19 7.5',

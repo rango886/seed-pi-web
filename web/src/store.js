@@ -1,7 +1,7 @@
 // 全局状态 + 所有动作。组件只负责显示，逻辑都在这里，方便看懂。
 import { reactive, computed, watch } from 'vue';
 import { connect, call, fire, http, rawUrl, upload, CID } from './api.js';
-import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments } from './util.js';
+import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments, setAssetBase } from './util.js';
 import { view, UI } from './settings.js';
 
 const FAV_KEY = 'pi-web-favorites';
@@ -233,6 +233,7 @@ function onServerMsg(msg) {
 
 function setCwd(cwd) {
   S.cwd = cwd;
+  setAssetBase(cwd); // markdown 里的相对图片路径按这个目录找文件
   localStorage.setItem('pi-web-cwd', cwd);
   syncTitle();
   if (S.agent?.sessionFile) rememberSession(S.agent);
@@ -401,6 +402,7 @@ function openDetached({ file, cwd, messages }) {
   S.widgets = {};
   S.dialogs = S.dialogs.filter((d) => d._resolve);
   S.cwd = cwd; // 不写 localStorage：这个目录已经不存在了
+  setAssetBase(cwd);
   S.fsEpoch++;
   setMessages(messages);
   S.activeTab = 'chat';
@@ -1209,12 +1211,17 @@ function showHotkeys() {
 }
 
 // ---------------- 文件 ----------------
-export function openFile(path) {
+/** 打开文件标签页。line：打开后滚到哪一行（模型回复里的 a.js:12 这种） */
+export function openFile(path, { line = 0 } = {}) {
   let tab = S.tabs.find((t) => normPath(t.path) === normPath(path));
   if (!tab) {
-    S.tabs.push({ path, name: path.split(/[\\/]/).pop(), data: null, error: null, loading: true });
+    S.tabs.push({ path, name: path.split(/[\\/]/).pop(), data: null, error: null, loading: true, line: 0, jump: 0 });
     tab = S.tabs[S.tabs.length - 1];
     loadFile(tab);
+  }
+  if (line) {
+    tab.line = line;
+    tab.jump = (tab.jump || 0) + 1; // 同一行再点一次也要重新滚过去
   }
   S.activeTab = tab.path;
 }

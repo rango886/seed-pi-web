@@ -18,6 +18,7 @@ import {
   termIdOf,
   closeAllTabs,
   quitAgent,
+  attachFromTree,
   toast,
   BUILTINS,
 } from './store.js';
@@ -116,6 +117,13 @@ export function contextExtras(target) {
     }
   }
   const a = target.closest?.('a[href]');
+  const fileA = target.closest?.('a[data-file]');
+  if (fileA) {
+    const p = fileA.dataset.file;
+    out.push({ label: '在标签页中打开', run: () => fileA.click() });
+    out.push({ label: '复制文件路径', run: () => navigator.clipboard.writeText(p) });
+    out.push({ label: '加到附件（@ 引用）', run: () => attachFromTree(p) });
+  }
   if (a && /^https?:/.test(a.href)) {
     out.push({ label: '在新标签页打开链接', run: () => window.open(a.href, '_blank', 'noopener') });
     out.push({ label: '复制链接地址', run: () => navigator.clipboard.writeText(a.href) });

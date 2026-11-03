@@ -9,6 +9,7 @@ import ChatView from './components/ChatView.vue';
 import FileViewer from './components/FileViewer.vue';
 import TerminalPanel from './components/TerminalPanel.vue';
 import Dialogs from './components/Dialogs.vue';
+import Lightbox from './components/Lightbox.vue';
 import Picker from './components/Picker.vue';
 import DirPicker from './components/DirPicker.vue';
 import Toasts from './components/Toasts.vue';
@@ -87,6 +88,8 @@ function moreMenu(e) {
 }
 
 function onKey(e) {
+  // 灯箱开着的时候，键盘全交给它（自己用捕获阶段处理 Esc / 左右）
+  if (view.lightbox) return;
   const mod = e.ctrlKey || e.metaKey;
   const inTerm = !!e.target.closest?.('.xterm');
   if (mod && e.key === ',') {
@@ -209,7 +212,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
           <div v-if="S.info.terminal" class="tab add" title="在当前目录开新终端" @click="openTerminal()"><Icon name="plus" :size="15" /></div>
         </div>
         <!-- “关闭全部”钉在右边，不跟着标签一起滚走 -->
-        <button class="tab-close-all" title="关闭全部标签页" @click="closeAllTabs()"><Icon name="closeall" :size="16" /></button>
+        <button class="tab-close-all" title="关闭全部标签页" @click="closeAllTabs()"><Icon name="close" :size="15" /></button>
       </div>
 
       <ChatView v-show="S.activeTab === 'chat'" />
@@ -221,6 +224,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
     </div>
 
     <Dialogs />
+    <Lightbox />
     <Picker />
     <DirPicker />
     <Toasts />

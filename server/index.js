@@ -362,7 +362,8 @@ app.get(
   }),
 );
 
-const TEXT_LIMIT = 2 * 1024 * 1024;app.get(
+const TEXT_LIMIT = 2 * 1024 * 1024;
+app.get(
   '/api/fs/read',
   wrap(async (req, res) => {
     const file = path.resolve(String(req.query.path || ''));
@@ -414,6 +415,34 @@ app.get(
   wrap(async (req, res) => {
     const cwd = path.resolve(String(req.query.cwd || ''));
     res.json(await listProjectFiles(cwd, req.query.fresh === '1'));
+  }),
+);
+
+// 模型回复里只写了文件名（`util.js`）或者不完整的相对路径（`src/util.js`），按原样拼出来找不到时，
+// 在项目文件列表里找“路径以它结尾”的文件。列表和 @ 选文件共用一份缓存
+app.get(
+  '/api/fs/resolve',
+  wrap(async (req, res) => {
+    const cwd = path.resolve(String(req.query.cwd || ''));
+    const rel = String(req.query.rel || '')
+      .replace(/\\/g, '/')
+      .replace(/^(?:\.{1,2}\/)+/, '') // ./a.js、../x/a.js：开头的相对部分去掉，只按后面那截匹配
+      .replace(/^\/+/, '');
+    if (!rel || rel.split('/').includes('..')) return res.json({ matches: [] });
+    const { files } = await listProjectFiles(cwd);
+    // Windows / mac 的文件名默认不分大小写
+    const fold = process.platform === 'linux' ? (s) => s : (s) => s.toLowerCase();
+    const want = fold(rel);
+    const tail = '/' + want;
+    const matches = [];
+    for (const f of files) {
+      const n = fold(f);
+      if (n === want || n.endsWith(tail)) {
+        matches.push(path.join(cwd, f));
+        if (matches.length >= 50) break;
+      }
+    }
+    res.json({ matches });
   }),
 );
 

@@ -8,6 +8,10 @@ import './github.css';
 import './wechat.css';
 import App from './App.vue';
 import { start } from './store.js';
+import { startDiagramBinder } from './diagram.js';
+import { startMdActions } from './md-actions.js';
 
 createApp(App).mount('#app');
+startDiagramBinder();
+startMdActions();
 start();

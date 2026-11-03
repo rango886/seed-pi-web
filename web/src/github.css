@@ -70,6 +70,11 @@
 :root[data-md^='github'] .md pre.code:hover .code-bar { opacity: 1; }
 :root[data-md^='github'] .md .copy-btn { padding: 4px 8px; border: 1px solid var(--gh-border); border-radius: var(--r-sm); background: var(--gh-btn-bg); color: var(--gh-fg-muted); }
 :root[data-md^='github'] .md .copy-btn:hover { background: var(--gh-btn-hover); color: var(--text); }
+/* 工具条在 github 主题里跟代码块的复制按钮对齐（top 8px）；源码模式下标题栏本来就是浮起来的，不用让位 */
+:root[data-md^='github'] .md .md-diagram .dgm-bar { top: 8px; right: 8px; }
+:root[data-md^='github'] .md .md-diagram:not(.err) .dgm-code .code-bar { padding-right: 0; }
+/* 源码模式下 pre 的上下 margin 会把它整体推下去，跟浮着的“图示”按钮错开一行，去掉 */
+:root[data-md^='github'] .md .md-diagram .dgm-code { margin: 0; }
 @media (hover: none) {
   :root[data-md^='github'] .md .code-bar { opacity: 1; }
 }
@@ -84,7 +89,7 @@
 :root[data-md^='github'] .md tr:nth-child(2n) { background: var(--gh-row); }
 
 :root[data-md^='github'] .md hr { height: 0.25em; padding: 0; margin: calc(var(--fs) * 1.5) 0; background: var(--gh-border); border: 0; }
-:root[data-md^='github'] .md img { border-radius: 0; background: transparent; }
+:root[data-md^='github'] .md img { border-radius: var(--r-md); background: transparent; }
 
 /* ---- 紧凑 GitHub：同一套外观，把行高和各种间距都压一压，一屏能多看不少 ---- */
 :root[data-md='github-compact'] .md { line-height: calc(var(--lh) * 0.88); }

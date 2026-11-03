@@ -126,6 +126,7 @@ const dur = computed(() => {
 .del { background: var(--del-bg); color: var(--del-fg); }
 .add { background: var(--add-bg); color: var(--add-fg); }
 .more { padding: 4px 10px; }
+/* 工具结果里的图片（比如 read 了一张图）：高度封顶、跟正文的图用同一档圆角，点了能全屏看 */
 .imgs { padding: var(--sp2) var(--pad-x); }
-.imgs img { max-width: 100%; max-height: 320px; border-radius: var(--r-sm); }
+.imgs img { max-width: 100%; max-height: min(320px, 40vh); width: auto; height: auto; object-fit: contain; border-radius: var(--r-md); cursor: zoom-in; }
 </style>
