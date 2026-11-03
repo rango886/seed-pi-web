@@ -116,7 +116,7 @@ function onKey(e) {
     pickSession();
   } else if (mod && e.key.toLowerCase() === 'l') {
     e.preventDefault();
-    if (S.agentId && !S.agentExited) view.menu === 'model' ? (view.menu = null) : openModelMenu();
+    if ((S.agentId || S.lazy) && !S.agentExited) view.menu === 'model' ? (view.menu = null) : openModelMenu();
     else pickModel();
   } else if (mod && e.key.toLowerCase() === 'b') {
     e.preventDefault();

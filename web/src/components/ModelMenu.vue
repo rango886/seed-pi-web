@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue';
-import { S, loadModels, setModel, toast } from '../store.js';
+import { S, loadModels, setModel, setDefaultModel, toast } from '../store.js';
+import { openMenu } from '../settings.js';
 
 // 输入框上方弹出的模型菜单：搜索 + 最近使用 + 按 provider 分组
 const props = defineProps({
@@ -60,6 +61,14 @@ async function choose(m) {
   emit('close');
   if (!isCur(m)) await setModel(m);
 }
+/** 右键某个模型：切到它 / 设为新会话的默认（写 pi 的 settings.json） */
+function modelMenu(e, m) {
+  openMenu(e.clientX, e.clientY, [
+    { label: '切换到这个模型', disabled: isCur(m), run: () => choose(m) },
+    '-',
+    { label: '设为新会话的默认模型', run: () => setDefaultModel(m) },
+  ]);
+}
 function onKey(e) {
   const n = flat.value.length;
   if (e.key === 'Escape') return e.preventDefault(), e.stopPropagation(), emit('close');
@@ -89,6 +98,7 @@ const ctxLabel = (m) => (m.contextWindow ? (m.contextWindow >= 1e6 ? `${(m.conte
           :class="{ active: idxOf(gi, m) === sel, cur: isCur(m) }"
           @mouseenter="sel = idxOf(gi, m)"
           @click="choose(m)"
+          @contextmenu.prevent.stop="modelMenu($event, m)"
         >
           <span class="check">{{ isCur(m) ? '✓' : '' }}</span>
           <span class="ellipsis grow">{{ m.name || m.id }}<span v-if="gi === 0 && g.name === '最近使用'" class="prov">{{ m.provider }}</span></span>
@@ -97,7 +107,7 @@ const ctxLabel = (m) => (m.contextWindow ? (m.contextWindow >= 1e6 ? `${(m.conte
         </div>
       </template>
     </div>
-    <div class="foot">↑↓ 选择 · Enter 确认 · Esc 关闭</div>
+    <div class="foot">↑↓ 选择 · Enter 确认 · Esc 关闭 · 右键可设为默认</div>
   </div>
 </template>
 

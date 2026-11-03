@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { S, openDirPicker, restartExited, viewer } from '../store.js';
 import MessageItem from './MessageItem.vue';
 import Composer from './Composer.vue';
+import ChatOutline from './ChatOutline.vue';
 import { UI, view, openLightbox } from '../settings.js';
 import Icon from './Icon.vue';
 import { splitAttachments } from '../util.js';
@@ -16,9 +17,18 @@ let stick = true;
 const away = ref(false); // 离底部比较远时显示回到底部按钮
 let ro, roDock;
 
-function onScroll() {
+/** 离底部还剩多少像素 */
+function gapOf() {
   const el = scroller.value;
-  const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+  return el ? el.scrollHeight - el.scrollTop - el.clientHeight : 0;
+}
+/** 只重算“回到底部”按钮要不要显示。内容一变短（新建会话、切到短会话），scrollTop 会被浏览器
+ *  静静夹到有效范围里，这个夹不一定伴随 scroll 事件，光靠 onScroll 会把按钮留在屏幕上 */
+function syncAway() {
+  away.value = gapOf() > 400;
+}
+function onScroll() {
+  const gap = gapOf();
   stick = gap < 40;
   away.value = gap > 400;
 }
@@ -30,6 +40,7 @@ const toBottom = () => {
   const el = scroller.value;
   if (el) el.scrollTop = el.scrollHeight;
 };
+const onOutlineJump = () => (stick = false); // 从大纲跳走了，内容再变高也别拽回底部
 // Home / End：直接跳到会话最上面 / 最下面。
 // 消息用了 content-visibility，没显示过的高度是估的，跳完以后高度会变，所以再补几次
 function jumpTo(top) {
@@ -65,6 +76,7 @@ onMounted(() => {
   ro = new ResizeObserver(() => {
     measureSb();
     stick && toBottom();
+    syncAway(); // 先决定要不要跟到底，再看一眼距离：内容变短时按钮该自己消失
   });
   ro.observe(inner.value);
   measureSb();
@@ -85,12 +97,17 @@ watch(
   () => S.tick,
   () => stick && nextTick(toBottom),
 );
-// 切换会话时回到底部
+// 换会话时回到底部。看 S.messages 是不是整个换了一份：新建会话、打开历史、重新载入都算，
+// 不像 sessionFile 那样在两种“还没写过盘的新会话”之间切换时一点不变
 watch(
-  () => S.agent?.sessionFile,
+  () => S.messages,
   () => {
     stick = true;
-    nextTick(toBottom);
+    away.value = false;
+    nextTick(() => {
+      toBottom();
+      syncAway();
+    });
   },
 );
 
@@ -176,16 +193,18 @@ const model = computed(() => S.state?.model);
           <MessageItem :m="m" />
         </div>
 
+        <!-- 工作中 / 重试 / 压缩：先文字，后三个跳动的点当省略号；左端跟正文（.ai-bubble 的 --pad-x）对齐 -->
         <div v-if="S.running || S.compacting || S.retry" class="working">
-          <span class="typing"><i /><i /><i /></span>
           <span v-if="S.retry">第 {{ S.retry.attempt }}/{{ S.retry.maxAttempts }} 次重试：{{ S.retry.errorMessage }}</span>
           <span v-else-if="S.compacting">正在压缩上下文…</span>
           <span v-else>工作中</span>
+          <span class="typing"><i /><i /><i /></span>
           <span v-if="viewer" class="dim">· 另一个窗口在操作</span>
-          <span v-else class="dim">· Esc 停止</span>
         </div>
       </div>
     </div>
+
+    <ChatOutline :scroller="scroller" :style="{ '--sb': sbw + 'px' }" @jump="onOutlineJump" />
 
     <div ref="dockEl" class="dock" :style="{ '--sb': sbw + 'px' }">
       <button v-show="away" class="tobottom" title="回到底部" @click="jumpBottom"><Icon name="down" :size="18" /></button>
@@ -217,8 +236,10 @@ const model = computed(() => S.state?.model);
 .tips { margin-top: 28px; display: grid; grid-template-columns: repeat(3, auto); gap: 10px 26px; font-size: var(--fs-sm); color: var(--text-2); }
 .tip { display: flex; align-items: center; gap: 8px; }
 kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: var(--r-xs); padding: 1px 7px; color: var(--text); min-width: 24px; text-align: center; }
-.working { display: flex; align-items: center; gap: 8px; padding: 6px 0; color: var(--text-2); font-size: var(--fs-sm); }
-.typing { display: inline-flex; gap: 3px; background: var(--bubble-ai); padding: 8px 10px; border-radius: var(--r-bubble); box-shadow: var(--shadow-sm); }
+/* “工作中 + 跳动的点”：不要气泡底（GitHub 主题里气泡色和正文底一个色，只衬出一块阴影框，很脏），
+   就是一行灰字配一个会动的省略号；左内边距跟正文一样，两边的字能对齐 */
+.working { display: flex; align-items: center; gap: 6px; padding: 6px var(--pad-x); color: var(--text-2); font-size: var(--fs-sm); }
+.typing { display: inline-flex; gap: 4px; align-items: center; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: bounce 1.2s infinite; }
 .typing i:nth-child(2) { animation-delay: 0.15s; }
 .typing i:nth-child(3) { animation-delay: 0.3s; }
@@ -231,6 +252,9 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
 .mw.live { content-visibility: visible; }
 /* 连续的助手消息：上一条的尾巴里本来就带着 24px 的段间距，这里退回去，只留消息内部那种 8px */
 .mw.tight { margin-top: calc(var(--sp2) - var(--sp5)); }
+/* 从右侧大纲跳过来的那个问题：气泡外面闪一圈强调色 */
+.mw.flash :deep(.me-bubble) { animation: q-flash 1.6s ease-out; }
+@keyframes q-flash { 0%, 35% { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent, 0 0 0 1px transparent; } }
 .tobottom { position: absolute; left: 50%; top: -52px; transform: translateX(-50%); width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 5; }
 .tobottom:hover { color: var(--accent-text); }
 /* --sb 是滚动条左右两边预留的总宽度（scrollbar-gutter: stable both-edges），输入框两边各让一半，和对话对齐。

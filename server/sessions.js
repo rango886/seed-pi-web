@@ -241,9 +241,16 @@ export const samePath = (a, b) => {
 };
 
 /** 读会话文件里的消息（目录已消失时，网页只能只读展示） */
-export async function readSessionMessages(file) {
+/**
+ * 不起 pi 进程，直接从会话文件里读出“打开这个会话时 pi 会给的东西”：
+ * 当前分支上的消息、模型、思考强度、会话名、用量统计。
+ * 规则照着 pi 的 session-manager 来：最后一条 entry 就是当前位置（leaf），顺着 parentId 往回走就是当前分支；
+ * 分支上有压缩的话，压缩之前只留 firstKeptEntryId 开始的那些
+ */
+export async function readSessionSnapshot(file) {
   const raw = await fs.readFile(file, 'utf8');
-  const out = [];
+  let head = null;
+  const entries = [];
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     let e;
@@ -252,9 +259,102 @@ export async function readSessionMessages(file) {
     } catch {
       continue;
     }
-    if (e.type === 'message' && e.message) out.push(e.message);
+    if (e.type === 'session') head ??= e;
+    else if (e.id) entries.push(e);
   }
-  return out;
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  // 当前分支（从根到 leaf）
+  const branch = [];
+  for (let cur = entries[entries.length - 1]; cur; cur = cur.parentId ? byId.get(cur.parentId) : undefined) branch.push(cur);
+  branch.reverse();
+
+  // 模型、思考强度：分支上最后一次设置的（助手消息也会带上它用的模型）
+  let model = null;
+  let thinkingLevel = 'off';
+  for (const e of branch) {
+    if (e.type === 'thinking_level_change') thinkingLevel = e.thinkingLevel;
+    else if (e.type === 'model_change') model = { provider: e.provider, id: e.modelId };
+    else if (e.type === 'message' && e.message?.role === 'assistant') model = { provider: e.message.provider, id: e.message.model };
+  }
+
+  // 压缩：只留最后一次压缩的摘要 + firstKeptEntryId 起保留下来的 + 压缩之后的
+  let picked = branch;
+  const ci = branch.findLastIndex((e) => e.type === 'compaction');
+  if (ci >= 0) {
+    const c = branch[ci];
+    const keepFrom = branch.findIndex((e) => e.id === c.firstKeptEntryId);
+    const kept = keepFrom >= 0 && keepFrom < ci ? branch.slice(keepFrom, ci).filter((e) => !(e.type === 'message' && e.message?.role === 'system')) : [];
+    picked = [c, ...kept, ...branch.slice(ci + 1)];
+  }
+  const ts = (t) => new Date(t).getTime();
+  const messages = [];
+  for (const e of picked) {
+    if (e.type === 'message' && e.message) {
+      const m = e.message;
+      messages.push(m.content == null && m.role !== 'system' ? { ...m, content: [] } : m);
+    } else if (e.type === 'custom_message') {
+      messages.push({ role: 'custom', customType: e.customType, content: e.content ?? [], display: e.display, details: e.details, timestamp: ts(e.timestamp) });
+    } else if (e.type === 'branch_summary' && e.summary) {
+      messages.push({ role: 'branchSummary', summary: e.summary, fromId: e.fromId, timestamp: ts(e.timestamp) });
+    } else if (e.type === 'compaction') {
+      messages.push({ role: 'compactionSummary', summary: e.summary, tokensBefore: e.tokensBefore, timestamp: ts(e.timestamp) });
+    }
+  }
+
+  // 用量统计：和 pi 的 get_session_stats 一样按整个文件算（所有分支都算）。上下文占用要知道模型窗口，这里给不了
+  const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+  let cost = 0;
+  let userMessages = 0;
+  let assistantMessages = 0;
+  let toolCalls = 0;
+  const add = (u) => {
+    if (!u) return;
+    tokens.input += u.input || 0;
+    tokens.output += u.output || 0;
+    tokens.cacheRead += u.cacheRead || 0;
+    tokens.cacheWrite += u.cacheWrite || 0;
+    cost += u.cost?.total || 0;
+  };
+  let sessionName = null;
+  for (const e of entries) {
+    if (e.type === 'session_info') sessionName = e.name || null;
+    if (e.type === 'usage' || ((e.type === 'branch_summary' || e.type === 'compaction') && e.usage)) add(e.usage);
+    if (e.type !== 'message' || !e.message) continue;
+    const m = e.message;
+    if (m.role === 'user') userMessages++;
+    else if (m.role === 'toolResult') add(m.usage);
+    else if (m.role === 'assistant') {
+      assistantMessages++;
+      if (Array.isArray(m.content)) toolCalls += m.content.filter((c) => c.type === 'toolCall').length;
+      add(m.usage);
+    }
+  }
+  tokens.total = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
+  return {
+    cwd: head?.cwd || null,
+    messages,
+    state: { model, thinkingLevel, sessionName, sessionFile: file, sessionId: head?.id || null, isStreaming: false, isCompacting: false },
+    stats: { sessionFile: file, sessionId: head?.id || null, userMessages, assistantMessages, toolCalls, tokens, cost },
+  };
+}
+
+/** 还没有会话文件的新会话：从 pi 的设置里猜启动时会用哪个模型（全局设置 < 项目里的 .pi/settings.json） */
+export async function defaultState(cwd) {
+  const s = {};
+  for (const f of [path.join(agentDir(), 'settings.json'), path.join(cwd, '.pi', 'settings.json')]) {
+    try {
+      Object.assign(s, JSON.parse(await fs.readFile(f, 'utf8')));
+    } catch {}
+  }
+  return {
+    model: s.defaultProvider && s.defaultModel ? { provider: s.defaultProvider, id: s.defaultModel } : null,
+    thinkingLevel: s.defaultThinkingLevel || 'medium',
+    sessionName: null,
+    sessionFile: null,
+    sessionId: null,
+    isStreaming: false,
+    isCompacting: false,
+  };
 }
 
 export async function listSessions({ cwd, roots }) {

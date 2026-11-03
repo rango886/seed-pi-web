@@ -130,6 +130,7 @@ export function highlightCode(text, lang) {
 // 所以渲染 <img> 的时候就把地址换成后端读文件的接口（/api/fs/raw）。
 let assetBase = ''; // 消息所属会话的目录（预览文件时是文件所在的目录）
 let parseBase = ''; // 这一次 marked.parse 用的目录。parse 是同步的，用完就还原
+let parseLive = false; // 这一次 parse 的是不是还在流式输出的文字（没写完的图、音视频先别真去画/加载）
 
 /** 告诉 util 现在的“当前目录”，markdown 里的相对图片路径按它来解析 */
 export function setAssetBase(dir) {
@@ -168,7 +169,8 @@ export function assetUrl(src, base = assetBase) {
 const KNOWN_EXT = new Set(
   ('js mjs cjs jsx ts tsx mts cts vue svelte py pyi rs go java kt kts c h cc cpp hpp cs php rb swift lua dart scala sql ' +
     'css scss sass less html htm xml json jsonl jsonc yaml yml toml ini cfg conf env properties md markdown mdx txt rst log csv tsv ' +
-    'sh bash zsh fish ps1 psm1 psd1 bat cmd png jpg jpeg gif webp bmp svg ico pdf lock gitignore dockerfile makefile').split(' '),
+    'sh bash zsh fish ps1 psm1 psd1 bat cmd png jpg jpeg gif webp bmp svg ico pdf lock gitignore dockerfile makefile ' +
+    'mp4 m4v webm mov mkv mp3 wav flac m4a aac ogg opus').split(' '),
 );
 const BAD_STRICT = /[\s<>"'`|*?(){}[\]=,;$&^%!#]/; // 行内代码里出现这些，基本就是代码不是路径
 const BAD_LOOSE = /[<>"|*?]/; // Windows 文件名里本来就不允许的字符
@@ -239,9 +241,31 @@ let linkDepth = 0; // 正在渲染链接文字：里面的路径不能再套一�
 // DOMPurify 会把含 `-->` 这类序列的属性整个删掉，而 mermaid 到处都是箭头）；
 // 真正的 SVG 由 pele 异步画好以后再填进去（见下面的 enhance）
 const MERMAID_LANG = /^mermaid$/i;
-renderer.code = ({ text, lang }) => {
+
+/** 代码块写完了没有：结尾得有一行和开头同种、不短于开头的 ``` / ~~~。
+ *  流式输出时 marked 会把还没闭合的代码块一直当成“到结尾为止”的代码块，raw 里就没有结尾那行 */
+function fenceClosed(raw) {
+  const open = /^ {0,3}(`{3,}|~{3,})/.exec(raw || '');
+  if (!open) return true; // 缩进式代码块，没有“没写完”这一说
+  const lines = raw.trimEnd().split('\n');
+  if (lines.length < 2) return false;
+  const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(lines[lines.length - 1]);
+  return !!close && close[1][0] === open[1][0] && close[1].length >= open[1].length;
+}
+
+renderer.code = ({ text, lang, raw }) => {
   const l = (lang || '').split(/\s/)[0];
-  if (MERMAID_LANG.test(l)) return `<div class="md-diagram">${escapeHtml(text)}</div>`;
+  if (MERMAID_LANG.test(l)) {
+    // 还在往外吐的图：半截源码 pele 必然画不出来，每 50ms 闪一次报错很难看。
+    // 先把源码原样摆着（像普通代码块一样往下长），等结尾的 ``` 出来了再真正去画
+    if (parseLive && !fenceClosed(raw)) {
+      return (
+        `<pre class="code dgm-draft"><div class="code-bar"><span>mermaid · 图示生成中…</span></div>` +
+        `<code class="hljs"><span>${escapeHtml(text)}</span></code></pre>`
+      );
+    }
+    return `<div class="md-diagram">${escapeHtml(text)}</div>`;
+  }
   const { html, label } = highlightCode(text, lang);
   return `<pre class="code"><div class="code-bar"><span>${escapeHtml(label)}</span><button class="copy-btn" data-copy>复制</button></div><code class="hljs">${html}</code></pre>`;
 };
@@ -264,11 +288,59 @@ renderer.codespan = ({ text }) => {
   return file ? fileLink(file, html) : html;
 };
 renderer.image = ({ href, title, text }) => {
+  const kind = mediaKind(href);
+  if (kind) return mediaHtml(kind, href, text || title);
   const src = escapeHtml(assetUrl(href, parseBase));
   const alt = escapeHtml(text || '');
   return `<img src="${src}" alt="${alt}"${title ? ` title="${escapeHtml(title)}"` : ''}>`;
 };
 marked.use({ renderer });
+
+// ---------- 音频 / 视频 ----------
+// 模型想给用户看一段音频或视频时，常见三种写法：
+//   ![](out/a.mp4)            —— 借图片语法，这里按扩展名换成播放器
+//   <video src="C:/x/a.mp4">  —— 直接写 HTML，地址在下面的 DOMPurify 钩子里换
+//   [a.mp4](out/a.mp4)        —— 普通文件链接，点了在标签页里播（FileViewer）
+// 地址和图片一样走 /api/fs/raw，后端的 sendFile 自带 Range，拖进度条没问题
+export const VIDEO_EXT = /\.(mp4|m4v|webm|mov|ogv|mkv)$/i;
+export const AUDIO_EXT = /\.(mp3|wav|flac|m4a|aac|ogg|oga|opus|weba)$/i;
+/** 地址指向的是不是音视频（先去掉 ?query / #hash 再看扩展名） */
+export function mediaKind(href) {
+  const p = String(href || '').split(/[?#]/)[0];
+  return VIDEO_EXT.test(p) ? 'video' : AUDIO_EXT.test(p) ? 'audio' : '';
+}
+function mediaHtml(kind, href, label) {
+  const name = escapeHtml(label || baseName(String(href).split(/[?#]/)[0]));
+  // 还在流式输出时 v-html 每 50ms 整个重写一遍，放个真播放器就会不停地重新请求文件：先放个占位
+  if (parseLive) return `<span class="md-media-ph">${kind === 'video' ? '视频' : '音频'} · ${name}</span>`;
+  const src = escapeHtml(assetUrl(href, parseBase));
+  // 用 span 包：图片语法是行内元素，外面套着 <p>，放 div / figure 会把段落拆碎。
+  // 控件不在这里画：media.js 看到页面上出现 <video>/<audio> 就会套上自绘的播放器
+  return `<span class="md-media"><${kind} src="${src}" preload="metadata"${kind === 'video' ? ' playsinline' : ''} data-name="${name}"></${kind}></span>`;
+}
+
+// 原始 HTML 里的本地地址（<img src="C:/a.png">、<video src="out/a.mp4">、<source src=…>、poster）：
+// 不换的话 C: 会被当成未知协议删掉，相对路径会去请求网站自己的路径。
+// 钩子在 DOMPurify 检查协议之前跑，所以换完的 /api/fs/raw?… 能顺利通过
+const MEDIA_TAGS = new Set(['img', 'video', 'audio', 'source', 'track']);
+const RAW_PREFIX = '/api/fs/raw?';
+DOMPurify.addHook('uponSanitizeAttribute', (node, ev) => {
+  if (!MEDIA_TAGS.has(node.nodeName.toLowerCase())) return;
+  if (ev.attrName !== 'src' && ev.attrName !== 'poster') return;
+  const v = String(ev.attrValue || '').trim();
+  if (!v || v.startsWith(RAW_PREFIX)) return; // renderer 已经换过的，别再换一遍
+  ev.attrValue = assetUrl(v, parseBase);
+});
+// 流式输出中的原始 <video>/<audio>：连元数据都不预读，免得每次重写都去拉文件；不许自动播放
+// （控件由 media.js 自绘，这里不管 controls）
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  const t = node.nodeName.toLowerCase();
+  if (t === 'video' || t === 'audio') {
+    node.setAttribute('preload', parseLive ? 'none' : node.getAttribute('preload') || 'metadata');
+    node.removeAttribute('autoplay');
+    node.removeAttribute('data-native'); // 这是给网页自己用的开关，模型写的不算
+  }
+});
 
 // ---------- 数学公式：Temml 把 TeX 翻成 MathML，排版交给浏览器（不用下载字体）----------
 const TEX_OPTS = { throwOnError: false, errorColor: 'var(--err)', strict: false };
@@ -577,10 +649,12 @@ export function renderMarkdown(src, base = assetBase, { live = false } = {}) {
   let html = mdCache.get(key);
   if (html === undefined) {
     parseBase = base;
+    parseLive = live;
     try {
       html = DOMPurify.sanitize(marked.parse(src), { ADD_ATTR: ['target', 'data-copy'] });
     } finally {
       parseBase = '';
+      parseLive = false;
     }
     if (!live) capSet(mdCache, key, html);
   }

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, toRef, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, compact, showSessionInfo, hasStatus, otherAgents, viewer, takeOver, openDirPicker, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL } from '../store.js';
-import { UI, view } from '../settings.js';
+import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, otherAgents, viewer, takeOver, openDirPicker, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL, warmUp } from '../store.js';
+import { UI, view, openMenu } from '../settings.js';
 import { http, rawUrl } from '../api.js';
 import { fmtTokens, levelName, joinPath, fmtSize } from '../util.js';
 import ModelMenu from './ModelMenu.vue';
@@ -388,6 +388,14 @@ async function chooseThinking(l) {
   await setThinking(l);
   ta.value?.focus();
 }
+/** 右键某一档思考强度：切到这一档 / 设为新会话的默认（写 pi 的 settings.json） */
+function thinkMenu(e, l) {
+  openMenu(e.clientX, e.clientY, [
+    { label: '切换到这一档', disabled: l === thinking.value, run: () => chooseThinking(l) },
+    '-',
+    { label: '设为新会话的默认思考强度', run: () => setDefaultThinking(l) },
+  ]);
+}
 function closeMenus(e) {
   if (menu.value && !e.target.closest('.composer .pop, .composer .chip')) menu.value = null;
 }
@@ -399,7 +407,12 @@ onMounted(() => window.addEventListener('resize', onResize));
 onUnmounted(() => window.removeEventListener('resize', onResize));
 watch(menu, (v) => (v ? nextTick(alignPop) : nextTick(() => ta.value?.focus())));
 
-const disabled = computed(() => !S.agentId || !!S.agentExited || viewer.value);
+// 还没起进程（S.lazy）也能打字：一打字就在后台把 pi 起起来
+const disabled = computed(() => !(S.agentId || S.lazy) || !!S.agentExited || viewer.value);
+function onInput() {
+  syncCaret();
+  if (S.composer.text) warmUp();
+}
 
 async function onTakeOver() {
   await takeOver();
@@ -446,8 +459,8 @@ async function onTakeOver() {
 
     <ModelMenu v-if="menu === 'model'" :pos="popPos" @close="menu = null" />
     <div v-if="menu === 'thinking'" class="pop think-pop" :style="{ right: popPos.right + 'px', bottom: popPos.bottom + 'px' }">
-      <div class="pop-title">思考强度</div>
-      <div v-for="l in S.thinkingLevels" :key="l" class="lv" :class="{ cur: l === thinking }" @click="chooseThinking(l)">
+      <div class="pop-title">思考强度 · 右键可设为默认</div>
+      <div v-for="l in S.thinkingLevels" :key="l" class="lv" :class="{ cur: l === thinking }" @click="chooseThinking(l)" @contextmenu.prevent.stop="thinkMenu($event, l)">
         <span class="check">{{ l === thinking ? '✓' : '' }}</span>
         <span class="grow">{{ levelName(l) }}</span>
         <span class="dim small">{{ l }}</span>
@@ -520,7 +533,7 @@ async function onTakeOver() {
         @keydown="onKey"
         @keyup="syncCaret"
         @click="syncCaret"
-        @input="syncCaret"
+        @input="onInput"
         @paste="onPaste"
         @focus="focused = true"
         @blur="focused = false"
@@ -534,6 +547,7 @@ async function onTakeOver() {
 
         <!-- 工作目录 / 模型 / 思考强度靠右，和发送按钮排在一起 -->
         <div class="grow" />
+        <span v-if="S.starting" class="dim small starting" title="这个会话之前没有 pi 进程，正在启动">启动 pi…</span>
 
         <button class="chip dir" :title="`工作目录：${S.cwd}\n点击切换`" @click="openDirPicker('switch')">
           <span class="ellipsis">{{ dirName }}</span>
@@ -580,8 +594,9 @@ async function onTakeOver() {
 .viewer { pointer-events: auto; display: flex; align-items: center; gap: 8px; margin-bottom: var(--sp2); padding: 6px 6px 6px 12px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border-radius: var(--r-md); font-size: var(--fs-sm); color: var(--text-2); box-shadow: var(--shadow-sm); }
 .vdot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
 /* 上下留白都按同一个数来：卡片 8px + 输入框 6px，再加上行高自带的半行空隙，文字上下一样宽。
-   min-height 也只留一行的量（内容 + 上下 padding），不然单行时下面会多出一截空的，看着上紧下松 */
-.ta { display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 6px 34px 6px 2px; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 12px); max-height: 40vh; overflow-y: hidden; }
+   min-height 也只留一行的量（内容 + 上下 padding），不然单行时下面会多出一截空的，看着上紧下松。
+   下边再留 8px：让输入框跟下面那排按钮（+ / 模型 / 发送）拉开一点，不贴着 */
+.ta { display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 6px 34px 6px 2px; margin-bottom: 8px; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 12px); max-height: 40vh; overflow-y: hidden; }
 .box.big .ta { min-height: 32vh; max-height: 72vh; }
 
 .bar { display: flex; align-items: center; gap: 6px; min-width: 0; }

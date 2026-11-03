@@ -1,16 +1,31 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { UI, DEFAULTS, STYLES, useStyle, ACCENTS, ACCENT_NAMES, FONT_PRESETS, MONO_PRESETS, view, resetSettings } from '../settings.js';
+import { UI, DEFAULTS, VER, STYLES, useStyle, ACCENTS, ACCENT_NAMES, FONT_PRESETS, MONO_PRESETS, view, resetSettings } from '../settings.js';
 import { toast } from '../store.js';
 
 const close = () => (view.settingsOpen = false);
+const fileInput = ref(null); // 导入用的隐藏文件框
 
-// 把设置导出成 JSON 文件（只导设置抽屉里那几项，内部字段不导）
+// ---- 导出 / 导入 ----
+// 能备份的就是 localStorage 里那些 pi-web-* 键：界面设置、收藏的目录、会话列表的怎么看/怎么摆、侧栏宽度…
+// pi-web-token 是访问令牌，不往文件里写（导出的东西可能会发给别人）。运行时内存里的东西不导。
+const SKIP_KEYS = new Set(['pi-web-token']);
+function dumpStore() {
+  const store = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || !k.startsWith('pi-web-') || SKIP_KEYS.has(k)) continue;
+    store[k] = localStorage.getItem(k);
+  }
+  return store;
+}
+
+// 导出成 JSON：settings 那份人能看懂、也方便手工改；store 是原样打包（含 __v 和那些只有代码认得的键）
 function exportSettings() {
   const settings = {};
   for (const k of Object.keys(DEFAULTS)) settings[k] = UI[k];
   const name = `pi-web-settings-${new Date().toISOString().slice(0, 10)}.json`;
-  const data = { app: 'pi-web', kind: 'settings', version: 1, exportedAt: new Date().toISOString(), settings };
+  const data = { app: 'pi-web', kind: 'settings', version: 2, exportedAt: new Date().toISOString(), settings, store: dumpStore() };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
@@ -18,6 +33,39 @@ function exportSettings() {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
   toast(`已导出 ${name}`);
+}
+
+/** 导入：把文件里的 pi-web-* 键写回 localStorage，然后刷一次页面让各处重新读一遍 */
+async function importSettings(e) {
+  const file = e.target.files?.[0];
+  e.target.value = ''; // 清掉，同一个文件还能再导一次
+  if (!file) return;
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    toast('导入失败：这个文件不是 JSON', 'error');
+    return;
+  }
+  if (data?.app !== 'pi-web') {
+    toast('导入失败：不是 pi-web 导出的设置文件', 'error');
+    return;
+  }
+  const store = { ...(data.store || {}) };
+  // 老格式（v1）只有 settings 那一份：包成设置键，版本号写当前的，免得再去跑一遍老的迁移
+  if (!data.store && data.settings) store['pi-web-settings'] = JSON.stringify({ ...data.settings, __v: VER });
+  let n = 0;
+  for (const [k, v] of Object.entries(store)) {
+    if (!k.startsWith('pi-web-') || SKIP_KEYS.has(k) || typeof v !== 'string') continue;
+    localStorage.setItem(k, v);
+    n++;
+  }
+  if (!n) {
+    toast('导入失败：文件里没有能用的设置', 'error');
+    return;
+  }
+  toast(`已导入 ${n} 项，正在重新载入…`, 'info', 3000);
+  setTimeout(() => location.reload(), 700);
 }
 // 界面字体和代码字体各自一张表：一个选项一款字体，代码字体那张只放等宽的
 const presetsOf = (which) => (which === 'font' ? FONT_PRESETS : MONO_PRESETS);
@@ -79,11 +127,12 @@ const layoutSliders = [
       <aside class="settings-drawer" tabindex="-1">
         <header class="head">
           <div class="title">界面设置</div>
-          <span class="dim hint">改动立即生效</span>
           <div class="grow" />
-          <button class="btn sm flat" title="把当前设置导出成 JSON 文件" @click="exportSettings">导出</button>
+          <button class="btn sm flat" title="把界面设置、收藏目录、会话列表状态等一起导出成 JSON 文件" @click="exportSettings">导出</button>
+          <button class="btn sm flat" title="从导出的 JSON 文件恢复（会覆盖当前设置，导完自动刷一次页面）" @click="fileInput.click()">导入</button>
           <button class="btn sm flat" @click="resetSettings">恢复默认</button>
           <button class="btn icon sm flat" title="关闭 (Esc)" @click="close">✕</button>
+          <input ref="fileInput" type="file" accept=".json,application/json" style="display: none" @change="importSettings" />
         </header>
 
         <div class="body">
@@ -94,11 +143,7 @@ const layoutSliders = [
               <div class="styles">
                 <button v-for="s in STYLES" :key="s.value" class="style" :class="{ on: UI.uiStyle === s.value }" @click="useStyle(s.value)">
                   <span class="sty-name">{{ s.label }}</span>
-                  <span class="sty-desc">{{ s.desc }}</span>
                 </button>
-              </div>
-              <div class="item">
-                <span class="label dim small-tip">换样式会把主题色、Markdown 排版和字体字号行高一起换掉，换完还能单独改；深浅色在下面单独选。</span>
               </div>
             </div>
           </section>
@@ -148,7 +193,7 @@ const layoutSliders = [
               <div class="item">
                 <span class="label">回复正文的 Markdown</span>
                 <div class="seg">
-                  <button v-for="[v, l] in [['default', '默认'], ['github', 'GitHub'], ['github-compact', 'GitHub 紧凑']]" :key="v" :class="{ on: UI.mdStyle === v }" @click="UI.mdStyle = v">{{ l }}</button>
+                  <button v-for="[v, l] in [['default', '经典'], ['github', 'GitHub'], ['github-compact', 'GitHub 紧凑']]" :key="v" :class="{ on: UI.mdStyle === v }" @click="UI.mdStyle = v">{{ l }}</button>
                 </div>
               </div>
               <label class="item">
@@ -230,21 +275,6 @@ const layoutSliders = [
             <p class="dim tip">小技巧：双击滑块恢复该项默认值。随时按 <b>Ctrl + ,</b> 打开这里。</p>
           </section>
 
-          <!-- 临时会话 -->
-          <section>
-            <h3>临时会话</h3>
-            <div class="card">
-              <div class="item col">
-                <span class="label">缓存目录</span>
-                <input v-model.lazy.trim="UI.tempSessionDir" class="input mono" :placeholder="DEFAULTS.tempSessionDir" @change="!UI.tempSessionDir && (UI.tempSessionDir = DEFAULTS.tempSessionDir)" />
-                <span class="dim small-tip">
-                  侧栏的「临时会话」每点一次，就在这里建一个带时间戳的新目录当工作目录。可以用 <code>{tmp}</code> 系统临时目录、<code>{home}</code> 用户目录、<code>{date}</code> 日期；相对路径按用户目录算。
-                </span>
-              </div>
-            </div>
-            <p class="dim tip">适合丢个草稿、试一段代码这类不想把文件弄进项目目录的活。目录不会自动删，不用了自己到文件管理器里清掉。</p>
-          </section>
-
           <!-- 附件 -->
           <section>
             <h3>附件</h3>
@@ -301,13 +331,12 @@ label.item { cursor: pointer; }
 
 .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
 /* 整体样式：三张并排的小卡片，选中的那张用主题色描一圈 */
-.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 14px 4px; }
+.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 14px; }
 .style { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-align: left; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
 .style:hover { border-color: var(--text-3); }
 .style.on { border-color: var(--accent); background: var(--accent-softer); }
 .sty-name { font-weight: 600; color: var(--text); }
 .style.on .sty-name { color: var(--accent-text); }
-.sty-desc { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
 .sw { width: 28px; height: 28px; border-radius: 50%; border: 0; cursor: pointer; position: relative; padding: 0; transition: transform 0.12s; }
 .sw:hover { transform: scale(1.1); }
 .sw.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--text-2); }

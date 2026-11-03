@@ -9,43 +9,50 @@ import { resetDiagramCache } from './util.js';
 // Windows 上这个字体注册的名字是中文的“霞鹜文楷 屏幕阅读版”，macOS / Linux 那边发布的叫 LXGW WenKai Screen，两个都写上。
 export const WENKAI_SCREEN = "'LXGW WenKai Screen', '霞鹜文楷 屏幕阅读版'";
 export const SYSTEM_FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', ${WENKAI_SCREEN}, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif`;
-export const GITHUB_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif";
+// GitHub 那套的界面字体：苹方排最前，没装就落到后面的西文 / 中文兜底
+const GITHUB_FONT_OLD = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif";
+export const GITHUB_FONT = `'PingFang SC', ${GITHUB_FONT_OLD}`;
 // 等宽字体同理：拉丁字符还是前面的 Cascadia / Consolas（对齐不乱），
 // 只有这些字体里没有的汉字落到霞鹜文楷等宽屏幕阅读版；没装则照旧落到系统 monospace。
 export const WENKAI_MONO_SCREEN = "'LXGW WenKai Mono Screen', '霞鹜文楷等宽 屏幕阅读版'";
 export const GITHUB_MONO = `ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', ${WENKAI_MONO_SCREEN}, monospace`;
+/** 代码 / 等宽字体统一用 Consolas（GitHub 那套的默认就是它） */
+export const GITHUB_CODE = "'Consolas'";
 
-export const DEFAULTS = {
-  // 整体样式：现代 | 微信 | GitHub。选一次会把主题色、Markdown 排版、字体、字号行高这些一起换掉（见 STYLES）
-  uiStyle: 'modern',
-  // 深浅色：每个样式都自带一套浅色和一套纯黑的深色
-  theme: 'light', // light | dark | auto
-  accent: '#3b82f6', // 主题色；你自己的气泡颜色跟着它走
-  mdStyle: 'default', // 回复正文的 Markdown：default | github | github-compact
-  radius: 10, // 全局圆角 px：按钮、卡片、弹窗、输入框、气泡等都按它按比例缩放（见 style.css 里的 --r-*）
-  chatWidth: 920, // 聊天内容最大宽度 px，0 = 铺满
-  spacing: 1, // 间距倍率
-  hoverBox: false, // 回复正文外面那圈边框：默认关（想要带框的正文就打开）
-  // 文字（默认系统字体：macOS / iOS 上是苹方，Windows 上是微软雅黑）
-  font: SYSTEM_FONT,
-  codeFont: GITHUB_MONO,
+/** GitHub 那一套（现在是默认的整体样式）：配色 + 苹方 + Consolas + GitHub 的 Markdown 排版，紧凑方正 */
+const GITHUB_SETTINGS = {
+  accent: '#0969da',
+  mdStyle: 'github',
+  font: GITHUB_FONT,
+  codeFont: GITHUB_CODE,
+  radius: 6,
+  chatWidth: 980,
+  spacing: 1,
   fontSize: 14,
   codeFontSize: 13,
-  lineHeight: 1.7,
-  letterSpacing: 0.2,
-  paraGap: 0.6, // 段落间距 em
+  lineHeight: 1.55,
+  letterSpacing: 0,
+  paraGap: 0.6,
+};
+
+export const DEFAULTS = {
+  // 整体样式：GitHub（默认）| 现代 | 微信。选一次会把主题色、Markdown 排版、字体、字号行高这些一起换掉（见 STYLES）
+  uiStyle: 'github',
+  // 深浅色：每个样式都自带一套浅色和一套纯黑的深色
+  theme: 'light', // light | dark | auto
+  // 配色 / 字体 / 字号行高这些就是 GitHub 那一套，想改默认效果改上面的 GITHUB_SETTINGS 就行
+  ...GITHUB_SETTINGS,
+  hoverBox: false, // 回复正文外面那圈边框：默认关（想要带框的正文就打开）
   // 行为
   sendKey: 'enter', // enter | ctrlEnter
   thinkingOpen: false,
   toolsOpen: false,
   showMeta: false, // 默认不显示每条消息的时间/模型/用量（右键消息或菜单里打开）
-  showUsage: false, // 输入框上面的花费/token/上下文信息：默认收起，点顶部栏的状态按钮（或右键菜单）展开
+  showUsage: true, // 输入框上面的花费/token/上下文信息：默认展开（右键菜单 / 顶栏“⋯”里可以收起来）
   // 附件
   uploadDir: '{tmp}/pi-web/{session}', // 拖进来/粘贴的文件上传到哪：{tmp} {cwd} {session} {date} {home}，相对路径按 cwd 解析
   uploadMaxMB: 500, // 单个文件上传上限
   keepAttachments: true, // 发送后附件留在输入框上面，下一轮接着带
-  // 临时会话：侧栏那个「临时会话」按钮每点一次，就在这个目录下面建一个带时间戳的子目录当工作目录
-  tempSessionDir: '{tmp}/pi-web/temporary', // 支持 {tmp} {home} {date}，相对路径按用户目录解析
 };
 
 /** 整体样式：每个样式就是一整套设置（配色名、Markdown 排版、字体、字号行高、圆角…）。
@@ -54,12 +61,11 @@ export const STYLES = [
   {
     value: 'modern',
     label: '现代',
-    desc: '圆角 + 留白，蓝色主色',
     settings: {
       accent: '#3b82f6',
       mdStyle: 'default',
       font: SYSTEM_FONT,
-      codeFont: GITHUB_MONO,
+      codeFont: GITHUB_CODE,
       radius: 10,
       chatWidth: 920,
       spacing: 1,
@@ -73,12 +79,11 @@ export const STYLES = [
   {
     value: 'wechat',
     label: '微信',
-    desc: '浅灰底、绿色主色，字号大一点',
     settings: {
       accent: '#07c160',
       mdStyle: 'default',
       font: SYSTEM_FONT,
-      codeFont: GITHUB_MONO,
+      codeFont: GITHUB_CODE,
       radius: 8,
       chatWidth: 880,
       spacing: 1,
@@ -92,21 +97,7 @@ export const STYLES = [
   {
     value: 'github',
     label: 'GitHub',
-    desc: 'GitHub 字体 + markdown 排版，紧凑方正',
-    settings: {
-      accent: '#0969da',
-      mdStyle: 'github',
-      font: GITHUB_FONT,
-      codeFont: GITHUB_MONO,
-      radius: 6,
-      chatWidth: 980,
-      spacing: 1,
-      fontSize: 14,
-      codeFontSize: 13,
-      lineHeight: 1.55,
-      letterSpacing: 0,
-      paraGap: 0.6,
-    },
+    settings: { ...GITHUB_SETTINGS },
   },
 ];
 
@@ -118,7 +109,7 @@ export function useStyle(v) {
 
 export const ACCENTS = ['#0969da', '#07c160', '#3b82f6', '#12b7f5', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#64748b'];
 /** 主题色色块的名字（没写的就直接显示颜色值） */
-export const ACCENT_NAMES = { '#0969da': 'GitHub 蓝', '#07c160': '微信绿', '#3b82f6': '默认蓝' };
+export const ACCENT_NAMES = { '#0969da': 'GitHub 蓝（默认）', '#07c160': '微信绿', '#3b82f6': '蓝色' };
 
 /** 字体下拉框：一个选项就是一款字体，不往里塞一串（缺字、缺等宽的兜底交给 apply() 统一补） */
 export const FONT_PRESETS = [
@@ -147,7 +138,7 @@ export const MONO_PRESETS = [
 ];
 
 const KEY = 'pi-web-settings';
-const VER = 11; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版
+export const VER = 13; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版；<12 默认整体样式换成 GitHub（苹方 + Consolas），等宽字体统一 Consolas；<13 输入框上面的状态信息改成默认显示
 let saved = {};
 try {
   saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -168,8 +159,8 @@ if ((saved.__v || 1) < 7) {
 }
 if ((saved.__v || 1) < 8) {
   // “GitHub 字体”那个打包选项没了：界面字体回到系统默认，代码字体换到系统默认等宽
-  if (saved.font === GITHUB_FONT) saved.font = SYSTEM_FONT;
-  if (saved.codeFont === GITHUB_FONT) saved.codeFont = GITHUB_MONO;
+  if (saved.font === GITHUB_FONT_OLD) saved.font = SYSTEM_FONT;
+  if (saved.codeFont === GITHUB_FONT_OLD) saved.codeFont = GITHUB_MONO;
 }
 if ((saved.__v || 1) < 9) {
   // 更纱黑体那几个选项去掉了：存着的老值换成最接近的（正文字体回系统默认，等宽的换系统默认等宽）
@@ -186,6 +177,19 @@ if ((saved.__v || 1) < 11) {
   // “系统默认等宽”那一串加了霞鹜文楷等宽屏幕阅读版，同理把存着的旧值删掉
   const oldMono = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace";
   if (saved.codeFont === oldMono) delete saved.codeFont;
+}
+if ((saved.__v || 1) < 12) {
+  // 默认整体样式从“现代”换成 GitHub：字体 / 等宽还是老默认值的就当没改过，直接换成新的
+  if (saved.font === GITHUB_FONT_OLD) saved.font = GITHUB_FONT;
+  if (saved.codeFont === GITHUB_MONO) saved.codeFont = GITHUB_CODE;
+  // 还整整齐齐停在“现代”那套（一项都没动）的，跟着换到 GitHub
+  const modern = STYLES.find((s) => s.value === 'modern').settings;
+  const untouched = saved.uiStyle === 'modern' && Object.entries(modern).every(([k, v]) => saved[k] === undefined || saved[k] === v);
+  if (untouched) Object.assign(saved, GITHUB_SETTINGS, { uiStyle: 'github' });
+}
+if ((saved.__v || 1) < 13) {
+  // 状态信息改成默认显示：存档里的 false 就是旧默认（当时根本没地方单独打开），删掉让新默认生效
+  delete saved.showUsage;
 }
 delete saved.__v;
 

@@ -8,9 +8,9 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { PiAgent } from './pi-agent.js';
-import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionMessages } from './sessions.js';
+import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionSnapshot, defaultState, agentDir } from './sessions.js';
 import { TerminalManager, terminalAvailable } from './terminal.js';
-import { isLocalRequest, readClipboardFiles, resolveUploadDir, expandPath, saveUpload, listProjectFiles, warmClipboard } from './attachments.js';
+import { isLocalRequest, readClipboardFiles, resolveUploadDir, saveUpload, listProjectFiles, warmClipboard } from './attachments.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 8787);
@@ -42,13 +42,14 @@ function checkRequest(req) {
 }
 
 // ---------- pi 进程管理：一个会话文件对应一个 pi 进程 ----------
+// 进程按需启动：点开会话只读会话文件给前端看（lazy），真要用了（发消息、换模型……）才起 pi。
 // 同一个目录下的几个会话可以同时跑，各写各的 jsonl，互不影响。
 // 网页里切会话 = 换一个进程连上，不会让一个正在用的进程去换文件（switch_session）。
 // 一个会话同时只有一个窗口能操作（owner），其他打开它的窗口只能看，状态和吐字照样同步。
 const agents = new Map(); // id -> PiAgent
 const clients = new Set();
 const OWNER_GRACE_MS = 10_000; // 操作者断线后，过这么久才放开操作权（刷新页面不会被别人抢走）
-const UNSAVED_IDLE_MS = 2 * 60_000; // 一句话都没说、也没人看的新会话，早点关掉
+const UNSAVED_IDLE_MS = 2 * 60_000; // 一句话都没说的新会话，早点关掉
 const DIALOG_METHODS = new Set(['select', 'confirm', 'input', 'editor']);
 
 const send = (ws, msg) => ws.readyState === 1 && ws.send(JSON.stringify(msg));
@@ -125,9 +126,16 @@ async function syncAgent(a) {
   broadcastAgents();
 }
 
+/** 会话文件已经出现在磁盘上了就标上（pi 是用户消息 append 的那一刻建的文件，不用去问 get_state） */
+function markSaved(a) {
+  if (a.saved || !a.sessionFile || !fs.existsSync(a.sessionFile)) return;
+  a.saved = true;
+  broadcastAgents(); // 前端看到 saved 变了会重新拉会话列表，侧栏的“新会话”就变成真正的标题
+}
+
 /**
  * 进程换到了另一个会话文件（rekey）：操作者跟着走；
- * 只是在看旧会话的窗口留在旧会话上（旧文件没被改，前端会给它重新起一个进程）
+ * 只是在看旧会话的窗口留在旧会话上（旧文件没被改，前端退回只看旧文件）
  */
 function onMoved(a, from) {
   const dup = [...agents.values()].some((x) => x !== a && x.alive && x.sessionFile && samePath(x.sessionFile, a.sessionFile));
@@ -148,14 +156,19 @@ async function createAgent({ cwd, sessionFile }) {
   a.lastUsed = Date.now();
   agents.set(a.id, a);
   a.on('record', (rec) => {
+    a.lastUsed = Date.now();
     forward(a, rec);
+    // agent_start / message_end 时用户消息已经写进文件了：赶紧把 saved 标上，别让侧栏整个回复期间都显“新会话”
+    if (rec.type === 'agent_start' || rec.type === 'message_end') markSaved(a);
     if (rec.type === 'agent_settled') syncAgent(a);
   });
   a.on('info', broadcastAgents);
   a.on('exit', ({ code, stderr }) => {
     agents.delete(a.id);
     clearTimeout(a.releaseTimer);
-    for (const c of watchers(a)) send(c, { t: 'agent_exit', agentId: a.id, code, stderr, restart: !!a.restarting, sessionFile: a.sessionFile, cwd: a.cwd });
+    // quiet：闲置回收、手动关闭，不是出错。前端退回“只看”状态，要用时再起
+    const quiet = !!a.quiet;
+    for (const c of watchers(a)) send(c, { t: 'agent_exit', agentId: a.id, code, stderr, restart: !!a.restarting, quiet, saved: a.saved, sessionFile: a.sessionFile, cwd: a.cwd });
     broadcastAgents();
   });
   a.start();
@@ -169,7 +182,46 @@ async function createAgent({ cwd, sessionFile }) {
   return a;
 }
 
-/** 打开某个会话文件：已经有进程就连上，没有就起一个 */
+async function mustBeDir(cwd) {
+  const st = await fsp.stat(cwd).catch(() => null);
+  if (!st?.isDirectory()) throw new Error(`目录不存在：${cwd}`);
+}
+
+/**
+ * 不起进程的“只看”视图：消息、模型、用量都从会话文件里读。
+ * file 为空 = 还没说过话的新会话，模型按 pi 的设置猜
+ */
+async function lazyView(cwd, file) {
+  if (!file) return { lazy: { cwd, file: null, messages: [], state: await defaultState(cwd), stats: null } };
+  const snap = await readSessionSnapshot(file);
+  return { lazy: { cwd: snap.cwd || cwd, file, messages: snap.messages, state: snap.state, stats: snap.stats } };
+}
+
+// 正在启动的进程：同一个会话同时被要求启动两次（两个窗口、连点）只起一个
+const starting = new Map(); // 会话文件（规范化）-> Promise<PiAgent>
+const fileKey = (f) => (process.platform === 'linux' ? path.resolve(f) : path.resolve(f).toLowerCase());
+
+/** 要真正用这个会话了：有进程就用，没有就起一个。file 为空就是开一个新会话 */
+async function ensureAgent(cwd, file) {
+  if (file && !fs.existsSync(file)) file = null; // 新会话还没写盘进程就被回收了：当成新会话重新开
+  if (!file) {
+    await mustBeDir(cwd);
+    return createAgent({ cwd });
+  }
+  const found = findBySession(file);
+  if (found) return found;
+  const k = fileKey(file);
+  if (!starting.has(k)) {
+    const p = (async () => {
+      const hc = await readHeaderCwd(file);
+      return createAgent({ cwd: hc || cwd, sessionFile: file });
+    })().finally(() => starting.delete(k));
+    starting.set(k, p);
+  }
+  return starting.get(k);
+}
+
+/** 打开某个会话文件：已经有进程就连上，没有就只读文件，先不起进程 */
 async function openSession(file) {
   const found = findBySession(file);
   if (found) return found;
@@ -177,47 +229,29 @@ async function openSession(file) {
   if (!cwd) throw new Error('无法读取会话文件');
   // 会话原来的目录已经不存在了（删了、外置盘拔了）：不报错，交给前端只读打开
   const dirOk = (await fsp.stat(cwd).catch(() => null))?.isDirectory();
-  if (!dirOk) return { detached: { file, cwd } };
-  return createAgent({ cwd, sessionFile: file });
+  if (!dirOk) return { detached: { file, cwd, messages: (await readSessionSnapshot(file)).messages } };
+  return lazyView(cwd, file);
 }
 
 /** 打开一个目录：优先上次在这个目录用的会话，其次这个目录里最近用过的进程，都没有就开新会话 */
 async function openDir(cwd, sessionFile) {
+  await mustBeDir(cwd);
   if (sessionFile) {
     const a = findBySession(sessionFile);
     if (a && samePath(a.cwd, cwd)) return a;
-    if (!a && samePath((await readHeaderCwd(sessionFile)) || '', cwd)) return createAgent({ cwd, sessionFile });
+    if (!a && samePath((await readHeaderCwd(sessionFile)) || '', cwd)) return lazyView(cwd, sessionFile);
   }
   const live = [...agents.values()].filter((a) => a.alive && samePath(a.cwd, cwd)).sort((x, y) => y.lastUsed - x.lastUsed);
-  return live[0] || createAgent({ cwd });
+  return live[0] || lazyView(cwd, null);
 }
 
-/** 新会话 = 新进程，原来的会话不动（正在跑也接着跑） */
+/** 新会话：先不起进程，第一次要用的时候再起；原来的会话不动（正在跑也接着跑） */
 async function createSession(cwd, ws) {
-  // 已经有一个还没说过话、也没人在用的新会话：直接用它，免得点几次「新会话」就多几个空进程
+  await mustBeDir(cwd);
+  // 当前就是一个已经起了进程、还没说过话的新会话：接着用它
   const cur = agents.get(ws.agentId);
-  const reusable = (a) => a.alive && !a.saved && !a.running && samePath(a.cwd, cwd) && (a === cur || (!a.owner && !watchers(a).length));
-  const idle = [...agents.values()].find(reusable);
-  return idle || createAgent({ cwd });
-}
-
-// ---------- 临时会话：在设置的缓存目录里建一个新目录，拿它当工作目录 ----------
-/** 设置里没填的话建在这里 */
-const TEMP_SESSION_DIR = '{tmp}/pi-web/temporary';
-const pad2 = (n) => String(n).padStart(2, '0');
-
-/**
- * 临时会话的缓存目录：把设置里的模板（{tmp} {home} {date}…）展开、建出来，
- * 再在里面建一个带时间戳的新目录（重名的那一秒靠 mkdtemp 补随机后缀拉开）。
- * 相对路径按用户目录算：这里还没有工作目录可以当基准。
- */
-async function makeTempDir(template) {
-  const now = new Date();
-  const base = expandPath(template, { tmp: os.tmpdir(), home: os.homedir(), date: now.toISOString().slice(0, 10) }, { fallback: TEMP_SESSION_DIR });
-  if (base === path.parse(base).root) throw new Error('不能把磁盘根目录当临时目录');
-  await fsp.mkdir(base, { recursive: true });
-  const stamp = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}-${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
-  return fsp.mkdtemp(path.join(base, `${stamp}-`));
+  if (cur && cur.alive && !cur.saved && !cur.running && samePath(cur.cwd, cwd)) return cur;
+  return lazyView(cwd, null);
 }
 
 /**
@@ -249,12 +283,15 @@ async function attachWs(ws, a, ctx) {
 
 const SESSION_CHANGING = new Set(['new_session', 'switch_session', 'fork', 'clone', 'set_session_name']);
 
-// 闲置太久且没人看的 pi 进程自动关掉，省资源
+// 闲置太久的 pi 进程自动关掉，省资源。开着页面看也算闲置：前端会退回“只看”，要用时再起
 setInterval(() => {
   const now = Date.now();
   for (const a of agents.values()) {
-    if (watchers(a).length || a.running || a.uiPending.size) a.lastUsed = now;
-    else if (now - a.lastUsed > (a.saved ? IDLE_MINUTES * 60_000 : UNSAVED_IDLE_MS)) a.stop();
+    if (a.running || a.uiPending.size) a.lastUsed = now;
+    else if (now - a.lastUsed > (a.saved ? IDLE_MINUTES * 60_000 : UNSAVED_IDLE_MS)) {
+      a.quiet = true;
+      a.stop();
+    }
   }
 }, 30_000).unref();
 
@@ -298,6 +335,41 @@ app.delete(
 app.get(
   '/api/recent-dirs',
   wrap(async (req, res) => res.json(await recentDirs(await liveRoots()))),
+);
+
+// ---------- 新会话的默认模型 / 思考强度 ----------
+// pi 的 RPC 里没有“设置默认”这个命令，只有 set_model / set_thinking_level（改当前会话），
+// 所以这里直接改它的全局 settings.json（~/.pi/agent/settings.json），下次 pi 启动时读的就是它
+const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+app.post(
+  '/api/settings/default',
+  wrap(async (req, res) => {
+    const provider = req.body?.provider;
+    const modelId = req.body?.modelId;
+    const thinkingLevel = req.body?.thinkingLevel;
+    const file = path.join(agentDir(), 'settings.json');
+    let s = {};
+    try {
+      s = JSON.parse(await fsp.readFile(file, 'utf8')) || {};
+    } catch {}
+    let changed = false;
+    if (provider && modelId) {
+      s.defaultProvider = String(provider);
+      s.defaultModel = String(modelId);
+      changed = true;
+    }
+    if (thinkingLevel) {
+      const lv = String(thinkingLevel);
+      if (!THINKING_LEVELS.has(lv)) throw new Error(`不认识的思考强度：${lv}`);
+      s.defaultThinkingLevel = lv;
+      changed = true;
+    }
+    if (!changed) throw new Error('没说要改什么');
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    // 和 pi 自己保存时的格式保持一致（2 空格缩进、不补末尾换行），它下次读/写不会看不出差异
+    await fsp.writeFile(file, JSON.stringify(s, null, 2), 'utf8');
+    res.json({ ok: true, settings: s });
+  }),
 );
 
 app.get(
@@ -490,27 +562,34 @@ wss.on('connection', (ws, req) => {
     if (!claim(a, ws)) throw new Error('其他窗口正在使用这个会话，点「接管」以后才能操作');
   };
 
+  /** 打开的结果：有进程就连上；只看（lazy / detached）就不再看原来的进程 */
+  const present = (r, ctx) => {
+    if (r instanceof PiAgent) return attachWs(ws, r, ctx);
+    leave(ws);
+    return r;
+  };
+
   const handlers = {
     // 打开某个目录（上次用的会话 > 这个目录里已有的进程 > 新会话）
     async attach({ cwd, sessionFile }, ctx) {
-      return attachWs(ws, await openDir(path.resolve(cwd), sessionFile), ctx);
+      return present(await openDir(path.resolve(cwd), sessionFile), ctx);
     },
+    // 没有进程的会话只读文件；目录不存在的只读显示（detached）
     async open_session({ file }, ctx) {
-      const r = await openSession(file);
-      // 目录不存在：把消息读出来给前端只读显示，不启动 pi
-      if (r.detached) {
-        leave(ws);
-        return { detached: { ...r.detached, messages: await readSessionMessages(file) } };
-      }
-      return attachWs(ws, r, ctx);
+      return present(await openSession(file), ctx);
     },
-    // 新会话：起一个新进程，原来的会话不受影响
+    // 新会话：先不起进程，原来的会话不受影响
     async create_session({ cwd }, ctx) {
-      return attachWs(ws, await createSession(path.resolve(cwd), ws), ctx);
+      return present(await createSession(path.resolve(cwd), ws), ctx);
     },
-    // 临时会话：先在设置的缓存目录里建一个新目录，再拿它当工作目录开会话
-    async create_temp_session({ dir }, ctx) {
-      return attachWs(ws, await createSession(await makeTempDir(String(dir || '')), ws), ctx);
+    // “只看”的会话要真正用了（发消息、换模型、开始打字……）：起进程并连上
+    async ensure_agent({ cwd, file }, ctx) {
+      return attachWs(ws, await ensureAgent(path.resolve(cwd), file || null), ctx);
+    },
+    // 前端已经切走了（比如进程还没起好就点了别的会话）：不再看这个进程
+    async leave({ agentId }) {
+      if (ws.agentId === agentId) leave(ws);
+      return {};
     },
     // 把操作权拿过来（比如另一台电脑上忘了关的窗口）
     async take_over({ agentId }) {
@@ -549,6 +628,15 @@ wss.on('connection', (ws, req) => {
       const a = agents.get(agentId);
       if (!a) return {};
       mustOwn(a);
+      a.quiet = true;
+      await a.stop();
+      return {};
+    },
+    // 进程面板上的“强行关闭”：不看操作权、不等这一轮跑完，直接把这个 pi 进程关掉（会话文件不删）
+    async force_stop({ agentId }) {
+      const a = agents.get(agentId);
+      if (!a) return {};
+      a.quiet = true;
       await a.stop();
       return {};
     },

@@ -369,6 +369,87 @@ a:hover { text-decoration: underline; }
 .md .md-diagram.loading { display: flex; align-items: center; justify-content: center; min-height: 64px; color: var(--text-3); font-size: var(--fs-sm); border: 1px dashed var(--line); border-radius: var(--r-md); }
 .md .md-diagram .dgm-err { color: var(--err); background: var(--err-bg); border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--r-sm); padding: var(--sp2) var(--pad-x); font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-word; }
 .md .md-diagram .dgm-err + pre.code { margin-top: var(--sp2); }
+/* 还在生成的图：就是一个普通代码块，高度封顶。column-reverse 让滚动位置天然贴在底部，
+   源码越写越长时一直看得到最新写出来的几行 */
+.md pre.dgm-draft code { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column-reverse; }
+.md pre.dgm-draft .code-bar span { animation: dgm-pulse 1.4s ease-in-out infinite; }
+@keyframes dgm-pulse { 50% { opacity: 0.45; } }
+
+/* ---- 音视频：自绘播放器（控件由 media.js 套上）----
+   视频：高度封顶在 360px（和图片差不多的分量），宽度跟着画面走，竖屏视频不会变成一根细条（至少 320px，
+   两边留黑边）；控件叠在画面底部，播放时鼠标不动就藏起来。
+   音频：一张和工具卡片同风格的小卡片，圆形播放键 + 文件名 + 进度条 */
+.md-media { display: block; max-width: 100%; margin: var(--para) 0; }
+.mp { position: relative; outline: none; line-height: 1.3; -webkit-user-select: none; user-select: none; }
+.mp:focus-visible { box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 1px var(--accent); }
+.mp-ui { display: contents; }
+.mp .mp-btn { appearance: none; display: inline-grid; place-items: center; flex: none; min-width: 28px; height: 28px; padding: 0 4px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: var(--fs-xs); text-decoration: none; opacity: 0.85; transition: background 0.12s, opacity 0.12s, color 0.12s; }
+.mp .mp-btn:hover { opacity: 1; }
+.mp .mp-btn svg { display: block; }
+.mp .mp-btn .i-pause, .mp.playing .mp-btn .i-play, .mp .mp-btn .i-mute, .mp.muted .mp-btn .i-vol, .mp .mp-btn .i-unfs, .mp.fs .mp-btn .i-fs { display: none; }
+.mp.playing .mp-btn .i-pause, .mp.muted .mp-btn .i-mute, .mp.fs .mp-btn .i-unfs { display: block; }
+.mp .mp-speed { font-variant-numeric: tabular-nums; min-width: 34px; font-weight: 600; }
+.mp.fast .mp-speed { color: var(--accent); opacity: 1; }
+.mp .mp-time { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mp .mp-grow { flex: 1; }
+
+/* 进度条：一条细线，鼠标移上去变粗、出现圆点；点击范围比看到的粗，好点 */
+.mp .mp-track { --p: 0; --b: 0; position: relative; display: flex; align-items: center; height: 14px; cursor: pointer; touch-action: none; }
+.mp .mp-rail { position: relative; flex: 1; height: 3px; border-radius: 3px; overflow: hidden; background: var(--mp-rail); transition: height 0.12s; }
+.mp .mp-buf, .mp .mp-fill { position: absolute; left: 0; top: 0; bottom: 0; }
+.mp .mp-buf { width: calc(var(--b) * 100%); background: var(--mp-buf); }
+.mp .mp-fill { width: calc(var(--p) * 100%); background: var(--accent); }
+.mp .mp-thumb { position: absolute; left: calc(var(--p) * 100%); top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); transform: scale(0); transition: transform 0.12s; }
+.mp .mp-track:hover .mp-rail, .mp.drag .mp-rail { height: 5px; }
+.mp .mp-track:hover .mp-thumb, .mp.drag .mp-thumb { transform: scale(1); }
+
+/* -- 视频 -- */
+.mp-video { --mp-rail: rgba(255, 255, 255, 0.28); --mp-buf: rgba(255, 255, 255, 0.4); width: fit-content; min-width: min(320px, 100%); border-radius: var(--r-md); overflow: hidden; background: #000; color: #fff; line-height: 0; box-shadow: var(--shadow-sm); }
+.mp-video video { display: block; margin: 0 auto; max-width: 100%; max-height: min(360px, 46vh); width: auto; height: auto; cursor: pointer; }
+.mp-video .mp-cover { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.mp-video .mp-big { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 88%, transparent); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); transition: transform 0.15s, opacity 0.15s; }
+.mp-video.playing .mp-big, .mp-video.wait .mp-big, .mp-video.error .mp-big { opacity: 0; transform: scale(0.8); }
+.mp-video .mp-spin { position: absolute; width: 30px; height: 30px; border: 3px solid rgba(255, 255, 255, 0.25); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; display: none; }
+.mp-video.wait .mp-spin { display: block; }
+.mp-video .mp-msg { position: absolute; inset: 0; display: none; place-items: center; padding: 16px; text-align: center; font-size: var(--fs-sm); line-height: 1.5; color: rgba(255, 255, 255, 0.85); }
+.mp-video.error .mp-msg { display: grid; }
+.mp-video.error { min-height: 120px; }
+.mp-video .mp-ctrl { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 10px 4px; line-height: 1.3; background: linear-gradient(transparent, rgba(0, 0, 0, 0.62)); transition: opacity 0.2s; }
+.mp-video .mp-row { display: flex; align-items: center; gap: 2px; }
+.mp-video .mp-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.mp-video .mp-time { margin-left: 4px; opacity: 0.9; }
+.mp-video.idle .mp-ctrl { opacity: 0; }
+.mp-video.idle { cursor: none; }
+.mp-video.idle video { cursor: none; }
+.mp-video.error .mp-ctrl { display: none; }
+/* 音量：鼠标移到喇叭上才从右边展开一条小滑块 */
+.mp-video .mp-vol { display: flex; align-items: center; }
+.mp-video .mp-vtrack { --v: 1; position: relative; width: 0; height: 14px; overflow: hidden; cursor: pointer; touch-action: none; transition: width 0.15s, margin 0.15s; }
+.mp-video .mp-vtrack::before, .mp-video .mp-vfill { content: ''; position: absolute; left: 0; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 3px; }
+.mp-video .mp-vtrack::before { right: 0; background: var(--mp-rail); }
+.mp-video .mp-vfill { width: calc(var(--v) * 100%); background: #fff; }
+.mp-video .mp-vol:hover .mp-vtrack, .mp-video .mp-vtrack:active { width: 64px; margin: 0 6px 0 2px; }
+/* 全屏：画面铺满 */
+.mp-video.fs { width: 100%; height: 100%; border-radius: 0; display: grid; place-items: center; }
+.mp-video.fs video { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; }
+
+/* -- 音频 -- */
+.mp-audio { --mp-rail: var(--line); --mp-buf: color-mix(in srgb, var(--text-3) 35%, transparent); display: flex; align-items: center; gap: 6px; width: min(100%, 440px); padding: 8px 8px 8px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); color: var(--text-3); box-shadow: var(--shadow-sm); }
+.mp-audio audio { display: none; }
+.mp-audio .mp-btn:hover { background: var(--hover); color: var(--text); }
+.mp-audio .mp-round { width: 34px; height: 34px; min-width: 34px; margin-right: 6px; padding: 0; border-radius: 50%; background: var(--accent); color: #fff; opacity: 1; box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 35%, transparent); }
+.mp-audio .mp-round:hover { background: var(--accent-hover); color: #fff; }
+.mp-audio .mp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mp-audio .mp-top { display: flex; align-items: baseline; gap: 8px; }
+.mp-audio .mp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text); }
+.mp-audio.error .mp-name { color: var(--err); white-space: normal; font-size: var(--fs-xs); }
+.mp-audio.error .mp-track, .mp-audio.error .mp-time, .mp-audio.error .mp-round { opacity: 0.35; pointer-events: none; }
+.mp-audio.wait .mp-round { animation: dgm-pulse 1s ease-in-out infinite; }
+@media (max-width: 768px) {
+  .mp-video .mp-vtrack, .mp-video .mp-speed { display: none; }
+  .mp-audio .mp-speed { display: none; }
+}
+.md .md-media-ph { display: inline-block; padding: 2px 10px; border: 1px dashed var(--line); border-radius: var(--r-sm); color: var(--text-3); font-size: var(--fs-sm); }
 
 /* 右上角小工具条：复制 + 源码/图示切换。两个纯图标按钮装在一个圆角小底板里，
    平时藏着，鼠标移到图上才浮出来（触屏设备上一直显示） */

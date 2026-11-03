@@ -10,8 +10,10 @@ import App from './App.vue';
 import { start } from './store.js';
 import { startDiagramBinder } from './diagram.js';
 import { startMdActions } from './md-actions.js';
+import { startMediaBinder } from './media.js';
 
 createApp(App).mount('#app');
 startDiagramBinder();
+startMediaBinder();
 startMdActions();
 start();
