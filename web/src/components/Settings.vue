@@ -7,14 +7,14 @@ const close = () => (view.settingsOpen = false);
 const fileInput = ref(null); // 导入用的隐藏文件框
 
 // ---- 导出 / 导入 ----
-// 能备份的就是 localStorage 里那些 pi-web-* 键：界面设置、收藏的目录、会话列表的怎么看/怎么摆、侧栏宽度…
-// pi-web-token 是访问令牌，不往文件里写（导出的东西可能会发给别人）。运行时内存里的东西不导。
-const SKIP_KEYS = new Set(['pi-web-token']);
+// 能备份的就是 localStorage 里那些 seed-pi-web-* 键：界面设置、收藏的目录、会话列表的怎么看/怎么摆、侧栏宽度…
+// seed-pi-web-token 是访问令牌，不往文件里写（导出的东西可能会发给别人）。运行时内存里的东西不导。
+const SKIP_KEYS = new Set(['seed-pi-web-token']);
 function dumpStore() {
   const store = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    if (!k || !k.startsWith('pi-web-') || SKIP_KEYS.has(k)) continue;
+    if (!k || !k.startsWith('seed-pi-web-') || SKIP_KEYS.has(k)) continue;
     store[k] = localStorage.getItem(k);
   }
   return store;
@@ -24,8 +24,8 @@ function dumpStore() {
 function exportSettings() {
   const settings = {};
   for (const k of Object.keys(DEFAULTS)) settings[k] = UI[k];
-  const name = `pi-web-settings-${new Date().toISOString().slice(0, 10)}.json`;
-  const data = { app: 'pi-web', kind: 'settings', version: 2, exportedAt: new Date().toISOString(), settings, store: dumpStore() };
+  const name = `seed-pi-web-settings-${new Date().toISOString().slice(0, 10)}.json`;
+  const data = { app: 'seed-pi-web', kind: 'settings', version: 2, exportedAt: new Date().toISOString(), settings, store: dumpStore() };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
@@ -35,7 +35,7 @@ function exportSettings() {
   toast(`已导出 ${name}`);
 }
 
-/** 导入：把文件里的 pi-web-* 键写回 localStorage，然后刷一次页面让各处重新读一遍 */
+/** 导入：把文件里的 seed-pi-web-* 键写回 localStorage，然后刷一次页面让各处重新读一遍 */
 async function importSettings(e) {
   const file = e.target.files?.[0];
   e.target.value = ''; // 清掉，同一个文件还能再导一次
@@ -47,16 +47,16 @@ async function importSettings(e) {
     toast('导入失败：这个文件不是 JSON', 'error');
     return;
   }
-  if (data?.app !== 'pi-web') {
-    toast('导入失败：不是 pi-web 导出的设置文件', 'error');
+  if (data?.app !== 'seed-pi-web') {
+    toast('导入失败：不是 seed-pi-web 导出的设置文件', 'error');
     return;
   }
   const store = { ...(data.store || {}) };
   // 老格式（v1）只有 settings 那一份：包成设置键，版本号写当前的，免得再去跑一遍老的迁移
-  if (!data.store && data.settings) store['pi-web-settings'] = JSON.stringify({ ...data.settings, __v: VER });
+  if (!data.store && data.settings) store['seed-pi-web-settings'] = JSON.stringify({ ...data.settings, __v: VER });
   let n = 0;
   for (const [k, v] of Object.entries(store)) {
-    if (!k.startsWith('pi-web-') || SKIP_KEYS.has(k) || typeof v !== 'string') continue;
+    if (!k.startsWith('seed-pi-web-') || SKIP_KEYS.has(k) || typeof v !== 'string') continue;
     localStorage.setItem(k, v);
     n++;
   }

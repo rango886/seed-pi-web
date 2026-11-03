@@ -1,4 +1,5 @@
-// pi-web 后端：HTTP（静态文件 + 文件/历史接口）+ WebSocket（转发 RPC、终端）
+// seed-pi-web 后端：HTTP（静态文件 + 文件/历史接口）+ WebSocket（转发 RPC、终端）
+import './env.js'; // 必须第一个：把配置文件合并进环境变量
 import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -10,12 +11,13 @@ import { WebSocketServer } from 'ws';
 import { PiAgent } from './pi-agent.js';
 import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionSnapshot, defaultState, agentDir } from './sessions.js';
 import { TerminalManager, terminalAvailable } from './terminal.js';
+import { APP, HOME_DIR, STATE_FILE, readState } from './config.js';
 import { isLocalRequest, readClipboardFiles, resolveUploadDir, saveUpload, listProjectFiles, warmClipboard } from './attachments.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 8787);
-const TOKEN = process.env.PI_WEB_TOKEN || '';
-const IDLE_MINUTES = Number(process.env.PI_WEB_IDLE_MINUTES || 30);
+const TOKEN = process.env.SEED_PI_WEB_TOKEN || '';
+const IDLE_MINUTES = Number(process.env.SEED_PI_WEB_IDLE_MINUTES || 30);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, '..', 'dist');
 
@@ -33,7 +35,7 @@ function checkRequest(req) {
     }
   }
   if (TOKEN) {
-    const t = req.headers['x-pi-web-token'] || url.searchParams.get('token');
+    const t = req.headers['x-seed-pi-web-token'] || url.searchParams.get('token');
     return t === TOKEN;
   }
   // 没设 token 时只接受本机 Host，防 DNS rebinding
@@ -518,6 +520,15 @@ app.get(
   }),
 );
 
+// 给命令行用：确认端口上跑的是不是本服务
+app.get('/api/ping', (req, res) => res.json({ app: APP, pid: process.pid, port: PORT, host: HOST, startedAt: STARTED_AT }));
+// 命令行 `seed-pi-web stop`：只接受本机请求，让后端自己把 pi 进程和终端收拾干净再退出
+app.post('/api/shutdown', (req, res) => {
+  if (!isLocalRequest(req)) return res.status(403).json({ error: '只能在本机关闭' });
+  res.json({ ok: true });
+  setTimeout(shutdown, 50);
+});
+
 app.get('/api/info', (req, res) => {
   const local = isLocalRequest(req);
   if (local) warmClipboard();
@@ -689,14 +700,30 @@ wss.on('connection', (ws, req) => {
     }
   });
 });
+const STARTED_AT = Date.now();
+server.on('error', (e) => {
+  console.error(e.code === 'EADDRINUSE' ? `端口 ${PORT} 已被占用` : e.message);
+  process.exit(1);
+});
 server.listen(PORT, HOST, () => {
-  console.log(`pi-web 已启动：http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}${TOKEN ? `/?token=${TOKEN}` : ''}`);
-  if (!TOKEN && !LOCAL_HOSTS.has(HOST)) console.warn('警告：监听了非本机地址但没设置 PI_WEB_TOKEN，非 localhost 访问会被拒绝。');
+  // 记下正在运行的服务，`seed-pi-web status/stop` 靠它找到这个进程
+  try {
+    fs.mkdirSync(HOME_DIR, { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify({ pid: process.pid, port: PORT, host: HOST, startedAt: STARTED_AT }, null, 2));
+  } catch {}
+  console.log(`seed-pi-web 已启动：http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}${TOKEN ? `/?token=${TOKEN}` : ''}`);
+  if (!TOKEN && !LOCAL_HOSTS.has(HOST)) console.warn('警告：监听了非本机地址但没设置 SEED_PI_WEB_TOKEN，非 localhost 访问会被拒绝。');
 });
 
+let shuttingDown = false;
 async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  // 只删自己写的状态文件（别把另一个实例的删了）
+  if (readState()?.pid === process.pid) fs.rmSync(STATE_FILE, { force: true });
+  setTimeout(() => process.exit(0), 5000).unref(); // pi 进程关不掉也别一直等
   terms.closeAll();
-  await Promise.all([...agents.values()].map((a) => a.stop()));
+  await Promise.all([...agents.values()].map((a) => a.stop().catch(() => {})));
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

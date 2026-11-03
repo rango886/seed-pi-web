@@ -8,11 +8,11 @@ const q = ref('');
 const base = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
 
 // 排序方式：时间 / 名称，存 localStorage
-const sortBy = ref(localStorage.getItem('pi-web-sort') || 'time');
+const sortBy = ref(localStorage.getItem('seed-pi-web-sort') || 'time');
 const sortLabel = computed(() => (sortBy.value === 'time' ? '时间' : '名称'));
 function toggleSort() {
   sortBy.value = sortBy.value === 'time' ? 'name' : 'time';
-  localStorage.setItem('pi-web-sort', sortBy.value);
+  localStorage.setItem('seed-pi-web-sort', sortBy.value);
 }
 const byTime = (a, b) => new Date(b.modified) - new Date(a.modified);
 const byName = (a, b) => (a.title || '').localeCompare(b.title || '', 'zh');
@@ -47,7 +47,7 @@ function stat(s) {
 //   collapsed 哪些目录被折叠了（记目录路径）
 const uiKey = () => (S.sessionMode === 'fav' ? 'fav' : 'all');
 function readUI(m) {
-  const get = (k) => localStorage.getItem(`pi-web-${k}-${m}`);
+  const get = (k) => localStorage.getItem(`seed-pi-web-${k}-${m}`);
   let collapsed = [];
   try {
     collapsed = JSON.parse(get('collapsed-dirs') || '[]') || [];
@@ -67,9 +67,9 @@ const cur = computed(() => modeUI[uiKey()]);
 function saveUI(patch) {
   const m = uiKey();
   Object.assign(modeUI[m], patch);
-  localStorage.setItem(`pi-web-collapsed-dirs-${m}`, JSON.stringify(modeUI[m].collapsed));
-  localStorage.setItem(`pi-web-session-layout-${m}`, modeUI[m].layout);
-  localStorage.setItem(`pi-web-dir-label-${m}`, modeUI[m].dirLabel);
+  localStorage.setItem(`seed-pi-web-collapsed-dirs-${m}`, JSON.stringify(modeUI[m].collapsed));
+  localStorage.setItem(`seed-pi-web-session-layout-${m}`, modeUI[m].layout);
+  localStorage.setItem(`seed-pi-web-dir-label-${m}`, modeUI[m].dirLabel);
 }
 const isCollapsed = (p) => cur.value.collapsed.includes(p);
 function toggleDir(key) {

@@ -4,7 +4,7 @@ import { connect, call, fire, http, rawUrl, upload, CID } from './api.js';
 import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments, setAssetBase, levelName } from './util.js';
 import { view, UI } from './settings.js';
 
-const FAV_KEY = 'pi-web-favorites';
+const FAV_KEY = 'seed-pi-web-favorites';
 function readFavorites() {
   try {
     const list = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
@@ -21,7 +21,7 @@ export const S = reactive({
   agentId: null,
   agent: null, // 当前 pi 进程信息（cwd / sessionFile / running）
   agentExited: null,
-  cwd: localStorage.getItem('pi-web-cwd') || '',
+  cwd: localStorage.getItem('seed-pi-web-cwd') || '',
   state: null, // get_state 结果
   stats: null, // get_session_stats 结果
   thinkingLevels: [],
@@ -55,7 +55,7 @@ export const S = reactive({
   fsEpoch: 0,
   sessions: [],
   // 侧栏会话列表的三种看法：dir 只看当前目录 / all 全部目录 / fav 只看收藏的目录
-  sessionMode: localStorage.getItem('pi-web-session-mode') || 'dir',
+  sessionMode: localStorage.getItem('seed-pi-web-session-mode') || 'dir',
   // 收藏的文件夹（目录选择窗口和右侧文件树右键都能加），存 localStorage
   favorites: readFavorites(),
   terms: [],
@@ -136,7 +136,7 @@ export function start() {
         try {
           if (bootNew) await newSessionIn(cwd);
           // 从别的标签页指定的目录：不恢复当前标签页记着的会话
-          else await openDirRaw(cwd, true, bootCwd ? null : S.agent?.sessionFile || localStorage.getItem('pi-web-session'));
+          else await openDirRaw(cwd, true, bootCwd ? null : S.agent?.sessionFile || localStorage.getItem('seed-pi-web-session'));
         } catch (e) {
           toast(e.message, 'error');
           await openDirRaw(S.info.home, true);
@@ -162,7 +162,7 @@ export function openInNewTab(cwd, { newSession: atNew = false } = {}) {
   u.hash = '';
   u.searchParams.set('cwd', cwd);
   if (atNew) u.searchParams.set('new', '1');
-  const token = localStorage.getItem('pi-web-token');
+  const token = localStorage.getItem('seed-pi-web-token');
   if (token) u.searchParams.set('token', token);
   window.open(u.toString(), '_blank', 'noopener');
 }
@@ -251,16 +251,16 @@ function onServerMsg(msg) {
 function setCwd(cwd) {
   S.cwd = cwd;
   setAssetBase(cwd); // markdown 里的相对图片路径按这个目录找文件
-  localStorage.setItem('pi-web-cwd', cwd);
+  localStorage.setItem('seed-pi-web-cwd', cwd);
   syncTitle();
   if (S.agent?.sessionFile) rememberSession(S.agent);
   S.fsEpoch++;
 }
 
 // 每个目录上次用的是哪个会话：打开目录时优先回到它
-const LAST_KEY = 'pi-web-last-session';
+const LAST_KEY = 'seed-pi-web-last-session';
 function rememberSession(a) {
-  localStorage.setItem('pi-web-session', a.sessionFile);
+  localStorage.setItem('seed-pi-web-session', a.sessionFile);
   if (!a.cwd) return;
   let m = {};
   try {
@@ -283,7 +283,7 @@ function lastSessionOf(cwd) {
 
 // ---- 侧栏的状态图标：运行中 / 等你操作 / 有新回复没看 / 别的窗口正在用 ----
 // “看没看过”每个浏览器各记各的：会话文件 -> 上次看到它的时间
-const SEEN_KEY = 'pi-web-seen';
+const SEEN_KEY = 'seed-pi-web-seen';
 const seen = reactive((() => {
   try {
     return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}');
@@ -386,8 +386,8 @@ function sameMessages(list) {
 }
 
 // “只看”时没法问 pi 的东西，用上次问到的顺着显示：思考强度有哪几档、每个会话的上下文占用
-const LEVELS_KEY = 'pi-web-thinking-levels';
-const CTX_KEY = 'pi-web-context-usage';
+const LEVELS_KEY = 'seed-pi-web-thinking-levels';
+const CTX_KEY = 'seed-pi-web-context-usage';
 const readJson = (k, d) => {
   try {
     return JSON.parse(localStorage.getItem(k)) ?? d;
@@ -664,7 +664,7 @@ export function moveFavorite(from, to, after = false) {
 export function setSessionMode(m) {
   if (!m || m === S.sessionMode) return;
   S.sessionMode = m;
-  localStorage.setItem('pi-web-session-mode', m);
+  localStorage.setItem('seed-pi-web-session-mode', m);
   loadSessions();
 }
 
@@ -678,9 +678,9 @@ export async function loadModels() {
 export const setModel = guard(async (m) => {
   await rpc({ type: 'set_model', provider: m.provider, modelId: m.id });
   await loadState();
-  const recent = JSON.parse(localStorage.getItem('pi-web-recent-models') || '[]').filter((k) => k !== `${m.provider}/${m.id}`);
+  const recent = JSON.parse(localStorage.getItem('seed-pi-web-recent-models') || '[]').filter((k) => k !== `${m.provider}/${m.id}`);
   recent.unshift(`${m.provider}/${m.id}`);
-  localStorage.setItem('pi-web-recent-models', JSON.stringify(recent.slice(0, 6)));
+  localStorage.setItem('seed-pi-web-recent-models', JSON.stringify(recent.slice(0, 6)));
 });
 
 export const setThinking = guard(async (level) => {
@@ -1089,7 +1089,7 @@ function restoreMessage(raw) {
 }
 
 // 每个会话各自一排附件：切会话时换一份，刷新页面也还在（localStorage 里只存路径）
-const ATT_KEY = 'pi-web-attachments';
+const ATT_KEY = 'seed-pi-web-attachments';
 let attSaved = {};
 try {
   attSaved = JSON.parse(localStorage.getItem(ATT_KEY) || '{}');

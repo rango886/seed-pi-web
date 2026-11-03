@@ -46,7 +46,7 @@ const fromUriList = (s) =>
 
 // Windows：每次新起一个 powershell 要 200ms+（冷启动要好几秒），粘贴会明显卡一下。
 // 所以第一次用到时起一个常驻的，从 stdin 送命令、输出到结束标记为止；闲置 10 分钟自己关掉
-const END = '__PI_WEB_END__';
+const END = '__SEED_PI_WEB_END__';
 let ps = null;
 let psChain = Promise.resolve();
 let psIdle = null;
@@ -159,7 +159,7 @@ export function expandPath(template, vars = {}, { base = os.homedir(), fallback 
 export function resolveUploadDir(template, { cwd, session }) {
   const base = cwd && path.isAbsolute(cwd) ? cwd : os.homedir();
   const vars = { tmp: os.tmpdir(), cwd: base, session: safePart(session) || 'default', date: new Date().toISOString().slice(0, 10), home: os.homedir() };
-  return expandPath(template, vars, { base, fallback: '{tmp}/pi-web/{session}' });
+  return expandPath(template, vars, { base, fallback: '{tmp}/seed-pi-web/{session}' });
 }
 
 // 文件名里去掉系统不允许的字符，保留原名（中文也保留），方便模型和人看懂

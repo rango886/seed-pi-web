@@ -33,7 +33,7 @@ export async function sessionRoots(extra = []) {
 // ---------- 缓存：file -> { size, mtimeMs, head, body } ----------
 // head: { id, cwd, created, parentSession }（header 不会变）
 // body: { offset, name, firstUser, messages }（offset = 已扫描到的字节位置，总在换行符之后）
-const CACHE_FILE = path.join(os.tmpdir(), 'pi-web-sessions-cache-v2.json'); // v2：标题里去掉了 <attachments> 块
+const CACHE_FILE = path.join(os.tmpdir(), 'seed-pi-web-sessions-cache-v2.json'); // v2：标题里去掉了 <attachments> 块
 const cache = new Map();
 try {
   const saved = JSON.parse(fsSync.readFileSync(CACHE_FILE, 'utf8'));

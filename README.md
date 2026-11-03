@@ -1,10 +1,35 @@
-# pi-web
+# seed-pi-web
 
 给 [pi](https://pi.dev) coding agent 做的网页界面。界面风格是亮色的 Dear ImGui：直角、紧凑、等宽字体。
 
 **用的是原版 pi，不用改它。** 后端只跑 `pi --mode rpc`，按文档里公开的 RPC 协议收发 JSON。pi 升级以后，一般不用跟着改。
 
 ## 用法
+
+### 装成全局命令（推荐）
+
+```bash
+npm i -g seed-pi-web      # 发布以后
+# 或者在项目目录里：npm install && npm run build && npm link
+
+seed-pi-web start         # 后台启动，打印访问地址
+seed-pi-web open          # 用浏览器打开（自动带 token）
+seed-pi-web stop          # 关闭
+```
+
+| 命令 | 说明 |
+|---|---|
+| `seed-pi-web start [-f] [-o] [-p 端口] [--host 地址] [--token xxx]` | 默认后台运行；`-f` 前台运行（Ctrl+C 退出）；`-o` 启动后打开浏览器；参数只管这一次，不写进配置 |
+| `seed-pi-web stop` / `restart` / `status` | 关闭 / 重启 / 看状态。关闭时让后端自己把 pi 进程和终端收拾干净，没反应才强杀整棵进程树 |
+| `seed-pi-web logs [-f] [-n 行数]` | 看后台日志，`-f` 持续跟踪 |
+| `seed-pi-web token` | 显示 token；`token set <值>` 设置、`token gen` 随机生成、`token clear` 去掉 |
+| `seed-pi-web config` | 看全部配置和来源；`config get/set/unset <键>`、`config path` |
+
+配置存在 `~/.seed-pi-web/config.json`，同一个目录里还有后台日志 `server.log` 和运行状态 `server.json`。改完配置要 `restart` 才生效。读取顺序：命令行参数 > 环境变量 > 配置文件 > 默认值。`npm start` 也会读这个配置文件。
+
+后台启动时，pi 的工作目录（网页里默认打开的目录）就是你执行 `seed-pi-web start` 时所在的目录。
+
+### 在项目里直接跑
 
 ```bash
 npm install
@@ -65,37 +90,50 @@ npm start         # http://127.0.0.1:8787
 
 唯一要手动维护的是 `store.js` 里的 `BUILTINS` / `TUI_ONLY` 两张表，也就是 pi 内置终端命令的对应关系。这部分很少变。
 
-## 配置（环境变量）
+## 配置
 
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `PORT` | 8787 | 端口 |
-| `HOST` | 127.0.0.1 | 监听地址 |
-| `PI_WEB_TOKEN` | 空 | 设置后访问要带 `?token=xxx`（只用第一次，之后存在浏览器里）。监听非本机地址时一定要设 |
-| `PI_BIN` | `pi` | pi 可执行文件 |
-| `PI_WEB_PI_ARGS` | 空 | 额外传给 pi 的参数，比如 `--provider anthropic`，也可以写 JSON 数组 |
-| `PI_WEB_SHELL` | pwsh / $SHELL | 终端用的 shell |
-| `PI_WEB_IDLE_MINUTES` | 30 | 空闲的 pi 进程过多久自动关掉（开着页面看也算空闲，关掉后页面退回只看，再打字会重新起；一句话没说的新会话 2 分钟就关） |
+可以用 `seed-pi-web config set <键> <值>` 写进配置文件，也可以用环境变量（环境变量优先）。
+
+| 配置键 | 环境变量 | 默认值 | 说明 |
+|---|---|---|---|
+| `port` | `PORT` | 8787 | 端口 |
+| `host` | `HOST` | 127.0.0.1 | 监听地址 |
+| `token` | `SEED_PI_WEB_TOKEN` | 空 | 设置后访问要带 `?token=xxx`（只用第一次，之后存在浏览器里）。监听非本机地址时一定要设 |
+| `piBin` | `SEED_PI_WEB_PI_BIN` | `pi` | pi 可执行文件 |
+| `piArgs` | `SEED_PI_WEB_PI_ARGS` | 空 | 额外传给 pi 的参数，比如 `--provider anthropic`，也可以写 JSON 数组 |
+| `shell` | `SEED_PI_WEB_SHELL` | pwsh / $SHELL | 终端用的 shell |
+| `idleMinutes` | `SEED_PI_WEB_IDLE_MINUTES` | 30 | 空闲的 pi 进程过多久自动关掉（开着页面看也算空闲，关掉后页面退回只看，再打字会重新起；一句话没说的新会话 2 分钟就关） |
+
+另外 `SEED_PI_WEB_HOME` 可以换掉 `~/.seed-pi-web` 这个目录。
 
 ### 局域网访问（手机、别的电脑打开）
 
 默认只监听 `127.0.0.1`，本机以外连不进来。要让局域网里别的设备用，两件事得一起做：监听所有网卡 + 设一个 token。
 
 ```bash
+# 写进配置，以后每次启动都生效
+seed-pi-web config set host 0.0.0.0
+seed-pi-web token gen
+seed-pi-web restart
+```
+
+只想临时开一次，也可以用环境变量：
+
+```bash
 # bash / zsh
-HOST=0.0.0.0 PI_WEB_TOKEN='自己编一串够长的' npm start
+HOST=0.0.0.0 SEED_PI_WEB_TOKEN='自己编一串够长的' npm start
 ```
 
 ```powershell
 # PowerShell：先设环境变量再启动
-$env:HOST='0.0.0.0'; $env:PI_WEB_TOKEN='自己编一串够长的'; npm start
+$env:HOST='0.0.0.0'; $env:SEED_PI_WEB_TOKEN='自己编一串够长的'; npm start
 ```
 
-启动日志会打印带 token 的地址（`http://localhost:8787/?token=...`），把它换成这台机器的局域网 IP，就能在手机或别的电脑上打开。token 只在地址栏用一次，前端会存进 localStorage 并把参数从地址栏抹掉，之后 `/api` 请求和 WebSocket 连接自动带上；脚本调用也可以直接用 `X-Pi-Web-Token` 头传。
+启动日志会打印带 token 的地址（`http://localhost:8787/?token=...`），把它换成这台机器的局域网 IP，就能在手机或别的电脑上打开。token 只在地址栏用一次，前端会存进 localStorage 并把参数从地址栏抹掉，之后 `/api` 请求和 WebSocket 连接自动带上；脚本调用也可以直接用 `X-Seed-Pi-Web-Token` 头传。
 
 关于这道锁，几件事得说清楚：
 
-- **token 是唯一的一道锁**：一个大家共用的明文串，没有账号、没有权限分级、没有过期时间。要换就改环境变量重启。
+- **token 是唯一的一道锁**：一个大家共用的明文串，没有账号、没有权限分级、没有过期时间。要换就 `seed-pi-web token gen` 再 `restart`。
 - **没设 token 时那道校验不是认证**：没有 token 时只接受 `Host` 是 `localhost` / `127.0.0.1` / `[::1]` 的请求，目的是防 DNS rebinding（外面的网站把域名解析到 127.0.0.1 来打你的服务）。`Host` 头是客户端自己填的，手写个 HTTP 请求就能绕过，所以不设 token 又监听 `0.0.0.0`，等于没锁。
 - **HTTP 是明文的**：`?token=` 可能留在浏览器历史和中间设备的日志里，同一个 Wi-Fi 上抓包也能看到。长期用就套一层 HTTPS 反向代理，或者干脆用 Tailscale / SSH 端口转发，别把它直接暴露到局域网。
 - **拿到 token 就等于拿到这台机器的 shell**：agent 能执行任意命令，网页里还有真终端，按 root 的权限对待。
@@ -103,6 +141,6 @@ $env:HOST='0.0.0.0'; $env:PI_WEB_TOKEN='自己编一串够长的'; npm start
 
 ## 注意
 
-- 这是一个能执行任意命令的网页，默认只监听本机。要远程用，见上面的「局域网访问」：设 `PI_WEB_TOKEN`，再套 HTTPS 或 Tailscale
+- 这是一个能执行任意命令的网页，默认只监听本机。要远程用，见上面的「局域网访问」：设 `SEED_PI_WEB_TOKEN`，再套 HTTPS 或 Tailscale
 - 同一个会话不要同时在终端版 pi 和网页里打开，两个进程一起写同一个会话文件会冲突
 - Linux 上 node-pty 需要编译：先装好 `build-essential` 和 `python3`，然后运行 `npm approve-scripts node-pty && npm rebuild node-pty`。装不上也没关系，只是终端功能不能用

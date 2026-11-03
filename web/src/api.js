@@ -1,19 +1,19 @@
 // 和后端通信：一条 WebSocket（RPC 转发、事件、终端）+ 几个 HTTP 接口（文件、历史）
 const params = new URLSearchParams(location.search);
 if (params.get('token')) {
-  localStorage.setItem('pi-web-token', params.get('token'));
+  localStorage.setItem('seed-pi-web-token', params.get('token'));
   // 只把 token 从地址栏去掉，cwd 之类的参数留给 store.js 读
   params.delete('token');
   const rest = params.toString();
   history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : ''));
 }
-const token = localStorage.getItem('pi-web-token') || '';
+const token = localStorage.getItem('seed-pi-web-token') || '';
 
 // 每个浏览器标签页一个 id，后端靠它认“谁是会话的操作者”。
 // 存在 sessionStorage 里：刷新不变。但“复制标签页”会把 sessionStorage 也复制过去，所以只有刷新才沿用旧的
 const navType = performance.getEntriesByType?.('navigation')?.[0]?.type;
-export const CID = (navType === 'reload' && sessionStorage.getItem('pi-web-cid')) || `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-sessionStorage.setItem('pi-web-cid', CID);
+export const CID = (navType === 'reload' && sessionStorage.getItem('seed-pi-web-cid')) || `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+sessionStorage.setItem('seed-pi-web-cid', CID);
 
 let ws = null;
 let rid = 0;
@@ -69,7 +69,7 @@ export function fire(t, payload = {}) {
 
 async function req(method, url, query, body) {
   const qs = query ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== false)) : '';
-  const headers = token ? { 'x-pi-web-token': token } : {};
+  const headers = token ? { 'x-seed-pi-web-token': token } : {};
   if (body !== undefined) headers['content-type'] = 'application/json';
   const res = await fetch(url + qs, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
@@ -91,7 +91,7 @@ export function upload(file, query, onProgress) {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v != null && v !== '')));
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    if (token) xhr.setRequestHeader('x-pi-web-token', token);
+    if (token) xhr.setRequestHeader('x-seed-pi-web-token', token);
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
     xhr.onload = () => {
       let data = {};

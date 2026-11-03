@@ -8,13 +8,13 @@ let pty = null;
 try {
   pty = (await import('node-pty')).default;
 } catch (e) {
-  console.warn('[pi-web] node-pty 不可用，终端功能已禁用：', e.message);
+  console.warn('[seed-pi-web] node-pty 不可用，终端功能已禁用：', e.message);
 }
 
 export const terminalAvailable = () => !!pty;
 
 function defaultShell() {
-  if (process.env.PI_WEB_SHELL) return process.env.PI_WEB_SHELL;
+  if (process.env.SEED_PI_WEB_SHELL) return process.env.SEED_PI_WEB_SHELL;
   if (process.platform === 'win32') {
     // where.exe 能找到应用商店装的 pwsh（那种是别名，fs.existsSync 判断不出来）
     try {

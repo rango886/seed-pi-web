@@ -50,7 +50,7 @@ export const DEFAULTS = {
   showMeta: false, // 默认不显示每条消息的时间/模型/用量（右键消息或菜单里打开）
   showUsage: true, // 输入框上面的花费/token/上下文信息：默认展开（右键菜单 / 顶栏“⋯”里可以收起来）
   // 附件
-  uploadDir: '{tmp}/pi-web/{session}', // 拖进来/粘贴的文件上传到哪：{tmp} {cwd} {session} {date} {home}，相对路径按 cwd 解析
+  uploadDir: '{tmp}/seed-pi-web/{session}', // 拖进来/粘贴的文件上传到哪：{tmp} {cwd} {session} {date} {home}，相对路径按 cwd 解析
   uploadMaxMB: 500, // 单个文件上传上限
   keepAttachments: true, // 发送后附件留在输入框上面，下一轮接着带
 };
@@ -137,7 +137,7 @@ export const MONO_PRESETS = [
   { label: 'Fira Code', value: "'Fira Code'" },
 ];
 
-const KEY = 'pi-web-settings';
+const KEY = 'seed-pi-web-settings';
 export const VER = 13; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版；<12 默认整体样式换成 GitHub（苹方 + Consolas），等宽字体统一 Consolas；<13 输入框上面的状态信息改成默认显示
 let saved = {};
 try {
@@ -198,7 +198,7 @@ export const view = reactive({
   settingsOpen: false,
   dark: false,
   menu: null, // 输入框上方的弹出菜单：'model' | 'thinking'
-  side: localStorage.getItem('pi-web-side') !== '0', // 宽屏：侧栏是否展开
+  side: localStorage.getItem('seed-pi-web-side') !== '0', // 宽屏：侧栏是否展开
   drawer: false, // 窄屏：抽屉是否打开
   mobile: false,
   ctx: null, // 右键菜单 { x, y, items }
@@ -237,7 +237,7 @@ export function toggleSide(v) {
   if (view.mobile) view.drawer = v ?? !view.drawer;
   else {
     view.side = v ?? !view.side;
-    localStorage.setItem('pi-web-side', view.side ? '1' : '0');
+    localStorage.setItem('seed-pi-web-side', view.side ? '1' : '0');
   }
 }
 /** 窄屏上点了侧栏里的东西后自动收起抽屉 */

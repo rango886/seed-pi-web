@@ -6,10 +6,10 @@ import { StringDecoder } from 'node:string_decoder';
 import { execFile } from 'node:child_process';
 import spawn from 'cross-spawn';
 
-const PI_BIN = process.env.PI_BIN || 'pi';
-// 额外传给 pi 的参数，比如 PI_WEB_PI_ARGS="--provider anthropic" 或 JSON 数组
+const PI_BIN = process.env.SEED_PI_WEB_PI_BIN || 'pi';
+// 额外传给 pi 的参数，比如 SEED_PI_WEB_PI_ARGS="--provider anthropic" 或 JSON 数组
 const EXTRA_ARGS = (() => {
-  const v = process.env.PI_WEB_PI_ARGS || '';
+  const v = process.env.SEED_PI_WEB_PI_ARGS || '';
   if (!v.trim()) return [];
   if (v.trim().startsWith('[')) return JSON.parse(v);
   return v.trim().split(/\s+/);

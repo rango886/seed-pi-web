@@ -13,7 +13,7 @@ const fileInput = ref(null);
 const sel = ref(0);
 const menu = toRef(view, 'menu'); // 'model' | 'thinking' | null，Ctrl+L 也会打开 model
 const focused = ref(false);
-const history = JSON.parse(localStorage.getItem('pi-web-history') || '[]');
+const history = JSON.parse(localStorage.getItem('seed-pi-web-history') || '[]');
 let histIdx = -1;
 
 // ---- 斜杠命令菜单 ----
@@ -55,7 +55,7 @@ async function send(followUp = false) {
     if (text.trim() && history[0] !== text) {
       history.unshift(text);
       history.length = Math.min(history.length, 100);
-      localStorage.setItem('pi-web-history', JSON.stringify(history));
+      localStorage.setItem('seed-pi-web-history', JSON.stringify(history));
     }
   } else if (!S.composer.text) S.composer.text = text;
   histIdx = -1;
@@ -286,10 +286,10 @@ function openAtt(a) {
 
 // 自动长高
 // big：把输入框变高（右上角按钮切），适合写长提示词
-const big = ref(localStorage.getItem('pi-web-composer-big') === '1');
+const big = ref(localStorage.getItem('seed-pi-web-composer-big') === '1');
 function toggleBig() {
   big.value = !big.value;
-  localStorage.setItem('pi-web-composer-big', big.value ? '1' : '0');
+  localStorage.setItem('seed-pi-web-composer-big', big.value ? '1' : '0');
   nextTick(autosize);
 }
 function autosize() {

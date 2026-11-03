@@ -38,7 +38,7 @@ const groups = computed(() => {
   const list = S.models.filter(match);
   const out = [];
   if (!words.length) {
-    const recent = JSON.parse(localStorage.getItem('pi-web-recent-models') || '[]');
+    const recent = JSON.parse(localStorage.getItem('seed-pi-web-recent-models') || '[]');
     const rs = recent.map((k) => list.find((m) => key(m) === k)).filter(Boolean);
     if (rs.length) out.push({ name: '最近使用', items: rs });
   }

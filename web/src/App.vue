@@ -17,7 +17,7 @@ import Settings from './components/Settings.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import Icon from './components/Icon.vue';
 
-const sideW = ref(Number(localStorage.getItem('pi-web-side-w')) || 272);
+const sideW = ref(Number(localStorage.getItem('seed-pi-web-side-w')) || 272);
 const dragging = ref(false);
 
 function drag(e) {
@@ -30,7 +30,7 @@ function drag(e) {
     window.removeEventListener('mouseup', up);
     document.body.style.cursor = '';
     dragging.value = false;
-    localStorage.setItem('pi-web-side-w', sideW.value);
+    localStorage.setItem('seed-pi-web-side-w', sideW.value);
   };
   document.body.style.cursor = 'col-resize';
   window.addEventListener('mousemove', move);
