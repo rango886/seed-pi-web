@@ -76,8 +76,8 @@ export const hasStatus = computed(() => !!(S.stats?.tokens || S.stats?.contextUs
 let keySeq = 0;
 const withKey = (m) => ({ ...m, _k: ++keySeq });
 
-export function toast(text, kind = 'info', ms = 4000) {
-  const t = { id: ++keySeq, text: stripAnsi(String(text)), kind };
+export function toast(text, kind = 'info', ms = 4000, action = null) {
+  const t = { id: ++keySeq, text: stripAnsi(String(text)), kind, action };
   S.toasts.push(t);
   setTimeout(() => (S.toasts = S.toasts.filter((x) => x.id !== t.id)), ms);
 }
@@ -170,6 +170,10 @@ export function openInNewTab(cwd, { newSession: atNew = false } = {}) {
 
 function onServerMsg(msg) {
   switch (msg.t) {
+    case 'session_archive':
+      for (const s of S.sessions) if (normPath(s.file) === normPath(msg.file)) s.archived = msg.archived;
+      loadSessionsSoon();
+      break;
     case 'agents': {
       const prev = new Map(S.agents.map((a) => [a.id, a]));
       S.agents = msg.list;
@@ -626,11 +630,16 @@ async function loadCommands() {
   S.commands = d.commands || [];
 }
 
+let sessionsRequest = 0;
 export async function loadSessions() {
   if (!S.cwd) return;
+  const request = ++sessionsRequest;
+  const mode = S.sessionMode;
+  const cwd = S.cwd;
   // 只看当前目录时带 cwd；看全部 / 看收藏时都要拿全量，收藏是在前端按目录筛的
-  const query = S.sessionMode === 'dir' ? { cwd: S.cwd } : { all: 1 };
-  S.sessions = await http.get('/api/sessions', query).catch(() => []);
+  const query = mode === 'dir' ? { cwd } : { all: 1 };
+  const list = await http.get('/api/sessions', query).catch(() => []);
+  if (request === sessionsRequest && mode === S.sessionMode && cwd === S.cwd) S.sessions = list;
 }
 
 // ---------------- 收藏的文件夹 ----------------
@@ -1542,6 +1551,23 @@ export function insertToComposer(text) {
 export function attachFromTree(path, dir = false) {
   if (!attachPaths([{ path, dir }], 'tree')) toast('已经在附件里了');
 }
+
+const archiving = new Set();
+export const setSessionArchived = guard(async (s, archived) => {
+  const key = normPath(s.file);
+  if (archiving.has(key)) return;
+  archiving.add(key);
+  try {
+    await http.post('/api/sessions/archive', { file: s.file, archived });
+    for (const row of S.sessions) if (normPath(row.file) === key) row.archived = archived;
+    toast(archived ? '已归档' : '已取消归档', 'info', 6000, {
+      label: '撤销', run: () => setSessionArchived(s, !archived),
+    });
+    loadSessions();
+  } finally {
+    archiving.delete(key);
+  }
+});
 
 export const deleteSession = guard(async (s) => {
   const r = await ask({ method: 'confirm', title: '删除会话', message: `确定删除「${s.title}」？文件会被永久删除。` });

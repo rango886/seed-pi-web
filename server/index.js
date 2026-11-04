@@ -15,6 +15,7 @@ import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSession
 import { TerminalManager, terminalAvailable } from './terminal.js';
 import { gitStatus, gitDiff } from './git.js';
 import { registerDownloads } from './downloads.js';
+import { archiveKey, createSessionArchive, registerSessionArchive } from './session-archive.js';
 import { APP, HOME_DIR, STATE_FILE, readState } from './config.js';
 import { isLocalRequest, readClipboardFiles, resolveUploadDir, saveUpload, listProjectFiles, warmClipboard } from './attachments.js';
 
@@ -319,6 +320,12 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
   if (!res.headersSent && !res.destroyed) res.status(400).json({ error: e.message });
 });
 registerDownloads(app, wrap);
+const sessionArchive = createSessionArchive(path.join(HOME_DIR, 'session-archive.json'));
+registerSessionArchive(app, wrap, {
+  archive: sessionArchive,
+  roots: liveRoots,
+  changed: (change) => clients.forEach((c) => send(c, { t: 'session_archive', ...change })),
+});
 app.get('/api/models', wrap(async (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json(await readModelCatalog(req.query.cwd ? path.resolve(String(req.query.cwd)) : undefined));
@@ -340,7 +347,8 @@ app.get(
     const all = req.query.all === '1' || req.query.all === 'true';
     const cwd = all ? null : String(req.query.cwd || '');
     if (!all && !cwd) throw new Error('缺少 cwd 参数');
-    res.json(await listSessions({ cwd, roots }));
+    const [list, archived] = await Promise.all([listSessions({ cwd, roots }), sessionArchive.read()]);
+    res.json(list.map((s) => ({ ...s, archived: archived.has(archiveKey(s.file)) })));
   }),
 );
 
@@ -351,6 +359,7 @@ app.delete(
     if (!isInside(file, await liveRoots()) || !file.endsWith('.jsonl')) throw new Error('不允许删除这个文件');
     if ([...agents.values()].some((a) => a.sessionFile && samePath(a.sessionFile, file))) throw new Error('会话正在使用中');
     await fsp.unlink(file);
+    await sessionArchive.set(file, false);
     res.json({ ok: true });
   }),
 );
