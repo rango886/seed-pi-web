@@ -7,9 +7,13 @@
 // 盯新出现的 .md-diagram，出现一张接一张；右上角工具条的按钮用事件委托统一处理。
 
 import { openLightbox } from './settings.js';
+import { prefixSvgIds } from './diagram-svg.js';
 
 let peleP = null;
-const pele = () => (peleP ||= import('pele/lazy'));
+const pele = () => (peleP ||= import('pele/lazy').catch((e) => { peleP = null; throw e; }));
+const bindings = new WeakMap();
+const isolated = new WeakSet();
+let diagramSeq = 0;
 let fullSeq = 0;
 
 /** 把页面上这张图复制一份给灯箱用：
@@ -24,36 +28,52 @@ function fullItem(box) {
   c.setAttribute('viewBox', vb);
   for (const p of ['width', 'height', 'max-width', 'margin', 'display', 'cursor', 'user-select', 'touch-action']) c.style.removeProperty(p);
   c.removeAttribute('tabindex');
-  const pre = `lb${++fullSeq}-`;
-  const ids = [...c.querySelectorAll('[id]')].map((n) => n.id).sort((a, b) => b.length - a.length);
-  let s = c.outerHTML;
-  for (const id of ids) {
-    const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    s = s.replace(new RegExp(`(id="|#)${esc}(?![\\w-])`, 'g'), `$1${pre}${id}`);
-  }
+  const s = prefixSvgIds(c.outerHTML, `lb${++fullSeq}-`);
   return { svg: s, w: w || svg.clientWidth || 400, h: h || svg.clientHeight || 300, alt: 'mermaid 图示', name: `diagram-${Date.now()}.svg` };
 }
 
-/** 给一张图接上缩放；同一张图只接一次（dataset 标记跟着元素走，元素被重画才会再来） */
+/** 以实际 SVG 和初始化状态去重；切换期间取消的初始化不能留下“已绑定”标记。 */
 function bind(box) {
-  if (box.dataset.dgm || box.firstElementChild?.localName !== 'svg') return; // 报错卡片没有 svg，不用接
-  box.dataset.dgm = '1';
-  box.dataset.vb = box.firstElementChild.getAttribute('viewBox') || ''; // 记下原始 viewBox：放大以后 pele 会改它
+  let svg = box.firstElementChild;
+  if (!box.isConnected || svg?.localName !== 'svg') return;
+  const previous = bindings.get(box);
+  if (previous?.svg === svg && (previous.pending || box._zoom)) return;
+  unbind(box);
+  // 缓存中的同一张图可能同时出现在对话和隐藏的文件预览里，不能共享 marker / clipPath 等 id。
+  if (!isolated.has(svg)) {
+    const html = svg.outerHTML;
+    const namespaced = prefixSvgIds(html, `dgm${++diagramSeq}-`);
+    if (namespaced !== html) svg.outerHTML = namespaced;
+    svg = box.firstElementChild;
+    isolated.add(svg);
+  }
+  const state = { svg, pending: true };
+  bindings.set(box, state);
+  box.dataset.vb = svg.getAttribute('viewBox') || '';
   pele()
     .then(({ enableZoom }) => {
-      if (!box.isConnected) return; // 等着加载的这几毫秒里可能已经被新的渲染换掉了
+      if (bindings.get(box) !== state || !box.isConnected || box.firstElementChild !== svg) return;
       box._zoom = enableZoom(box, {
         maxScale: 4,
         labels: { zoomIn: '放大', zoomOut: '缩小', reset: '还原' },
       });
+      box.dataset.dgm = '1';
     })
-    .catch(() => {});
+    .catch(() => {})
+    .finally(() => { state.pending = false; });
 }
 
-function scan(root) {
-  if (root.matches?.('.md-diagram')) bind(root);
-  // 大部分新增节点（消息里的一个 span、一行文字）里根本没有图：先用 getElementsByClassName 粗筛，比 querySelectorAll 便宜
-  if (root.getElementsByClassName?.('md-diagram').length) for (const box of root.querySelectorAll('.md-diagram')) bind(box);
+function unbind(box) {
+  bindings.delete(box);
+  box._zoom?.destroy();
+  delete box._zoom;
+  delete box.dataset.dgm;
+}
+
+function scan(root, visit = bind) {
+  if (root.matches?.('.md-diagram')) visit(root);
+  // 大部分新增节点（消息里的一个 span、一行文字）里根本没有图：先粗筛。
+  if (root.getElementsByClassName?.('md-diagram').length) for (const box of root.querySelectorAll('.md-diagram')) visit(box);
 }
 
 function onClick(e) {
@@ -82,7 +102,13 @@ function onClick(e) {
 export function startDiagramBinder() {
   scan(document);
   new MutationObserver((records) => {
-    for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1) scan(n);
+    for (const r of records) {
+      for (const n of r.removedNodes) if (n.nodeType === 1) scan(n, (box) => { if (!box.isConnected) unbind(box); });
+      // 占位容器可能被原位复用，只插入 SVG：也要检查发生变更的父容器。
+      const box = r.target.closest?.('.md-diagram');
+      if (box) bind(box);
+      for (const n of r.addedNodes) if (n.nodeType === 1) scan(n);
+    }
   }).observe(document.body, { childList: true, subtree: true });
   document.addEventListener('click', onClick);
   // 按钮自己的 pointerdown 别冒到容器上，不然会被 pele 的拖动逻辑接走（点了按钮变成拖图）
