@@ -1,5 +1,5 @@
-// v-html 会在流式更新时重建整段 DOM，让图的工具条反复淡入，也丢掉缩放状态。
-// 图和播放器内部由各自的绑定器接管；流式更新不碰它们的运行时状态。
+// v-html 会在流式更新时重建整段 DOM，让代码块/图的工具条反复淡入，也丢掉交互状态。
+// 代码块复用节点；图和播放器内部由各自的绑定器接管，流式更新不碰它们的运行时状态。
 function prepareMedia(root) {
   for (const media of root.querySelectorAll('video, audio')) {
     let host = media.parentElement;
@@ -40,13 +40,15 @@ function patchChildren(parent, next) {
         const preload = node.querySelector('video, audio')?.getAttribute('preload');
         if (media && preload !== null && media.getAttribute('preload') !== preload) media.setAttribute('preload', preload);
       } else if (!key) {
+        const keepCopyLabel = node.hasAttribute('data-copy') && current.hasAttribute('data-copy');
         for (const attr of [...current.attributes]) {
           if (!node.hasAttribute(attr.name)) current.removeAttribute(attr.name);
         }
         for (const attr of [...node.attributes]) {
           if (current.getAttribute(attr.name) !== attr.value) current.setAttribute(attr.name, attr.value);
         }
-        patchChildren(current, node);
+        // “已复制”的文字和恢复计时器由 md-actions.js 管，不随流式内容重置。
+        if (!keepCopyLabel) patchChildren(current, node);
       }
     } else if (current.nodeValue !== node.nodeValue) {
       current.nodeValue = node.nodeValue;
@@ -62,8 +64,8 @@ function patchChildren(parent, next) {
 
 function update(el, { value, oldValue }) {
   if (value === oldValue) return;
-  const hasState = !!el.querySelector('[data-dgm-key], [data-media-key]');
-  // 普通 Markdown 不需要解析第二遍。
+  const hasState = !!el.querySelector('pre.code, [data-dgm-key], [data-media-key]');
+  // 没有代码块、图和播放器的普通 Markdown 不需要解析第二遍。
   if (!hasState && !/<(?:video|audio)\b/i.test(value || '')) {
     el.innerHTML = value || '';
     return;
