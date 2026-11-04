@@ -259,11 +259,11 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
 .queue { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .qitem { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); background: var(--panel); border: 1px dashed var(--line); border-radius: var(--r-sm); padding: 5px 10px; color: var(--text-2); }
 .tag { background: var(--accent-soft); color: var(--accent-text); padding: 0 8px; border-radius: var(--r-pill); flex: none; font-size: var(--fs-xs); line-height: 20px; }
-</style>
 
-<style>
+/* 和桌面规则放在同一个 scoped 样式块，避免移动端变量被更高优先级的桌面规则覆盖。 */
 @media (max-width: 768px) {
   .chat { --gut: 16px; --pad-x: 10px; }
+  .scroll { scrollbar-gutter: auto; }
   .chat .inner { padding: 14px var(--gut) 12px; max-width: none; }
   .chat .dock { padding: 0 calc(var(--gut) - 6px) max(8px, env(safe-area-inset-bottom)); max-width: none; }
   .chat .welcome { padding-top: 8vh; }
