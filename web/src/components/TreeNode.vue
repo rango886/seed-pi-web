@@ -1,6 +1,8 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue';
-import { S, openFile, attachFromTree, isFav, toggleFavorite } from '../store.js';
+import { ref, computed, watch, onMounted } from 'vue';
+import { S, openFile, openDiff, attachFromTree, isFav, toggleFavorite } from '../store.js';
+import { G, gitMark } from '../git.js';
+import { downloadPath } from '../file-download.js';
 import { openMenu } from '../settings.js';
 import { http } from '../api.js';
 import { iconOf } from '../util.js';
@@ -10,6 +12,7 @@ const props = defineProps({ entry: Object, depth: Number, root: Boolean });
 const open = ref(props.root);
 const children = ref(null);
 const error = ref(null);
+const mark = computed(() => gitMark(props.entry.path, props.entry.dir));
 
 async function load() {
   try {
@@ -41,6 +44,8 @@ function menu(e) {
   openMenu(e.clientX, e.clientY, [
     ...(dir ? [{ label: isFav(props.entry.path) ? '取消收藏这个文件夹' : '收藏这个文件夹', run: () => toggleFavorite(props.entry.path) }] : []),
     { label: '复制路径', run: () => navigator.clipboard.writeText(props.entry.path) },
+    { label: dir ? '下载文件夹（ZIP）' : '下载文件', run: () => downloadPath(props.entry.path, dir) },
+    ...(!dir && G.data?.available && !mark.value?.ignored ? [{ label: '与上次提交对比', run: () => openDiff(props.entry.path, { cwd: G.data.root, mode: 'head' }) }] : []),
   ]);
 }
 
@@ -53,10 +58,11 @@ function onDragStart(e) {
 </script>
 
 <template>
-  <div v-if="!root" class="node sel" :style="{ paddingLeft: depth * 14 + 4 + 'px' }" :title="entry.path" draggable="true" @dragstart="onDragStart" @click="click" @contextmenu="menu">
+  <div v-if="!root" class="node sel" :class="mark?.ignored ? 'git-ignored' : mark ? 'git-' + mark.code : ''" :style="{ paddingLeft: depth * 14 + 4 + 'px' }" :title="entry.path + (mark ? '\n' + mark.title : '')" draggable="true" @dragstart="onDragStart" @click="click" @contextmenu="menu">
     <span class="arrow" :class="{ open }"><svg v-if="entry.dir" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg></span>
     <span class="fic" :class="{ dir: entry.dir }"><Icon :name="iconOf(entry.name, entry.dir)" :size="14" /></span>
     <span class="ellipsis grow" :class="{ dim: entry.name.startsWith('.'), d: entry.dir }">{{ entry.name }}</span>
+    <span v-if="mark && !mark.ignored" class="git-badge" :title="mark.title">{{ entry.dir ? '●' : mark.code }}</span>
     <span class="at" title="加到输入框的附件里（也可以直接拖过去）" @click.stop="attachFromTree(entry.path, entry.dir)">@</span>
   </div>
   <template v-if="open">

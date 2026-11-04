@@ -1,5 +1,5 @@
 // 下载用的小工具：灯箱里的“下载”、链接右键菜单里的“下载”都走这里。
-import { rawUrl, proxyDownloadUrl } from './api.js';
+import { rawUrl, proxyDownloadUrl, archiveUrl } from './api.js';
 
 /** 让浏览器把一个地址当附件存下来（同源地址 download 属性才生效） */
 function clickSave(href, name) {
@@ -34,6 +34,11 @@ export function nameFromUrl(href) {
 /** 下载本地文件（走后端 /api/fs/raw） */
 export function saveLocalFile(path) {
   clickSave(rawUrl(path), path.split(/[\\/]/).pop() || 'file');
+}
+
+/** 下载已在后端准备好的目录 ZIP，不经过浏览器 Blob 缓冲。 */
+export function saveArchive(id, name) {
+  clickSave(archiveUrl(id), name);
 }
 
 /** 下载一个链接：同源的直接存；别的网站的让后端代下（浏览器对跨域地址会忽略 download 属性，只会跳过去打开） */

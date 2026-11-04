@@ -1,11 +1,18 @@
 <script setup>
 import { computed, ref, watch, nextTick } from 'vue';
-import { loadFile, attachFromTree } from '../store.js';
+import { S, loadFile, attachFromTree, openDiff } from '../store.js';
+import { G, gitMark } from '../git.js';
 import { openLightbox } from '../settings.js';
 import { rawUrl } from '../api.js';
 import { highlightFile, renderMarkdown, IMAGE_EXT, fmtSize, mediaKind } from '../util.js';
 
 const props = defineProps({ tab: Object });
+const canDiff = computed(() => {
+  if (!G.data?.available || G.cwd !== S.cwd) return false;
+  const normalize = (p) => S.info.platform === 'win32' ? p.replace(/\\/g, '/').toLowerCase() : p;
+  const file = normalize(props.tab.path), root = normalize(G.data.root).replace(/\/$/, '');
+  return file.startsWith(root + '/') && !gitMark(props.tab.path)?.ignored && !file.slice(root.length + 1).split('/').includes('.git');
+});
 const isImage = computed(() => IMAGE_EXT.test(props.tab.path));
 // 音视频直接用浏览器自己的播放器（地址走 /api/fs/raw，支持拖进度条）
 const media = computed(() => mediaKind(props.tab.path));
@@ -63,6 +70,7 @@ watch(
       <span class="ellipsis grow" :title="tab.path">{{ tab.path }}</span>
       <span v-if="d" class="dim">{{ size }}<template v-if="lineCount"> · {{ lineCount }} 行</template></span>
       <label v-if="isMd" class="row chk"><input v-model="preview" type="checkbox" />预览</label>
+      <button v-if="canDiff" class="btn sm" title="对比上次提交与当前磁盘内容" @click="openDiff(tab.path, { mode: 'head', cwd: G.data.root })">对比</button>
       <button class="btn sm" title="把这个文件加到输入框的附件里" @click="attachFromTree(tab.path)">@ 引用</button>
       <button class="btn sm" @click="loadFile(tab)">刷新</button>
     </div>
@@ -93,7 +101,7 @@ watch(
 
 <style scoped>
 .viewer { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
-.bar { padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); min-height: 46px; color: var(--text-2); }
+.bar { flex-wrap: wrap; padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); min-height: 46px; color: var(--text-2); }
 .chk { gap: 6px; cursor: pointer; }
 .chk input { margin: 0; accent-color: var(--accent); }
 .content { flex: 1; overflow: auto; background: var(--panel); }

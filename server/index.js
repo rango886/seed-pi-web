@@ -12,6 +12,8 @@ import { WebSocketServer } from 'ws';
 import { PiAgent } from './pi-agent.js';
 import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionSnapshot, defaultState, agentDir } from './sessions.js';
 import { TerminalManager, terminalAvailable } from './terminal.js';
+import { gitStatus, gitDiff } from './git.js';
+import { registerDownloads } from './downloads.js';
 import { APP, HOME_DIR, STATE_FILE, readState } from './config.js';
 import { isLocalRequest, readClipboardFiles, resolveUploadDir, saveUpload, listProjectFiles, warmClipboard } from './attachments.js';
 
@@ -310,7 +312,18 @@ app.use('/api', (req, res, next) => (checkRequest(req) ? next() : res.status(403
 app.use(express.json({ limit: '5mb' }));
 
 const liveRoots = () => sessionRoots([...agents.values()].map((a) => a.sessionFile && path.dirname(path.dirname(a.sessionFile))));
-const wrap = (fn) => (req, res) => fn(req, res).catch((e) => res.status(400).json({ error: e.message }));
+const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
+  if (!res.headersSent && !res.destroyed) res.status(400).json({ error: e.message });
+});
+registerDownloads(app, wrap);
+app.get('/api/git/status', wrap(async (req, res) => {
+  if (!req.query.cwd) throw new Error('缺少工作目录');
+  res.json(await gitStatus(String(req.query.cwd), req.query.fresh === '1'));
+}));
+app.get('/api/git/diff', wrap(async (req, res) => {
+  if (!req.query.cwd || !req.query.path) throw new Error('缺少工作目录或文件路径');
+  res.json(await gitDiff(String(req.query.cwd), String(req.query.path), String(req.query.mode || 'working')));
+}));
 
 app.get(
   '/api/sessions',

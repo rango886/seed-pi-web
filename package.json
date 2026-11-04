@@ -17,6 +17,7 @@
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,green \"node --watch server/index.js\" \"vite\"",
     "build": "vite build",
+    "test": "node --experimental-vm-modules --test",
     "start": "node server/index.js",
     "prepublishOnly": "npm run build"
   },
@@ -29,8 +30,10 @@
   "license": "ISC",
   "dependencies": {
     "cross-spawn": "^7.0.6",
+    "diff": "^9.0.0",
     "express": "^5.3.0",
-    "ws": "^8.22.0"
+    "ws": "^8.22.0",
+    "yazl": "^3.3.1"
   },
   "optionalDependencies": {
     "node-pty": "^1.1.0"

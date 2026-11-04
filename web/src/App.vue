@@ -7,6 +7,8 @@ import SidePanel from './components/SidePanel.vue';
 import RightPanel from './components/RightPanel.vue';
 import ChatView from './components/ChatView.vue';
 import FileViewer from './components/FileViewer.vue';
+import DiffViewer from './components/DiffViewer.vue';
+import { useGitRefresh, diffNames } from './git.js';
 import TerminalPanel from './components/TerminalPanel.vue';
 import Dialogs from './components/Dialogs.vue';
 import Lightbox from './components/Lightbox.vue';
@@ -17,6 +19,7 @@ import Settings from './components/Settings.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import Icon from './components/Icon.vue';
 
+useGitRefresh();
 const sideW = ref(Number(localStorage.getItem('seed-pi-web-side-w')) || 272);
 const dragging = ref(false);
 
@@ -183,17 +186,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
           </div>
           <div
             v-for="t in S.tabs"
-            :key="t.path"
+            :key="t.id"
             class="tab"
-            :class="{ active: S.activeTab === t.path }"
-            :title="t.path"
-            @click="S.activeTab = t.path"
-            @mousedown.middle.prevent="closeTab(t.path)"
-            @contextmenu.prevent.stop="tabMenu($event, t.path)"
+            :class="{ active: S.activeTab === t.id }"
+            :title="t.path + (t.diff ? ' · ' + diffNames[t.mode] : '')"
+            @click="S.activeTab = t.id"
+            @mousedown.middle.prevent="closeTab(t.id)"
+            @contextmenu.prevent.stop="tabMenu($event, t.id)"
           >
             <Icon name="file" :size="15" />
-            <span class="ellipsis">{{ t.name }}</span>
-            <span class="x" title="关闭" @click.stop="closeTab(t.path)"><Icon name="close" :size="11" /></span>
+            <span class="ellipsis">{{ t.name }}<template v-if="t.diff"> · {{ diffNames[t.mode] }}</template></span>
+            <span class="x" title="关闭" @click.stop="closeTab(t.id)"><Icon name="close" :size="11" /></span>
           </div>
           <div
             v-for="t in S.terms"
@@ -217,7 +220,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 
       <ChatView v-show="S.activeTab === 'chat'" />
       <!-- 文件标签页也一直挂着，来回切不用重新高亮 -->
-      <FileViewer v-for="t in S.tabs" v-show="S.activeTab === t.path" :key="t.path" :tab="t" />
+      <component :is="t.diff ? DiffViewer : FileViewer" v-for="t in S.tabs" v-show="S.activeTab === t.id" :key="t.id" :tab="t" />
       <!-- 终端一直挂着（隐藏不销毁），切标签不会丢内容 -->
       <TerminalPanel v-if="S.info.terminal" v-show="inTerm" />
       <RightPanel />

@@ -200,6 +200,15 @@ a:hover { text-decoration: underline; }
 .ok { color: var(--ok); }
 .err { color: var(--err); }
 .warn { color: var(--warn); }
+/* Git 装饰：颜色 + 字母；目录用圆点汇总，不覆盖原来的文件类型图标。 */
+.git-M, .git-T { --git-color: var(--warn); }
+.git-A, .git-U, .git-C { --git-color: var(--ok); }
+.git-D, [class~="git-!"] { --git-color: var(--err); }
+.git-R { --git-color: var(--accent-text); }
+.node[class*="git-"], .change[class*="git-"] { color: var(--git-color, var(--text-2)); }
+.node[class*="git-"] > .grow:not(.d) { color: inherit; }
+.git-badge { flex: none; min-width: 14px; text-align: center; font-size: var(--fs-xs); font-weight: 600; color: var(--git-color, var(--text-2)); }
+.node.git-ignored > .grow { color: var(--text-3); opacity: .65; }
 .mono { font-family: var(--font-code); }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grow { flex: 1; min-width: 0; }

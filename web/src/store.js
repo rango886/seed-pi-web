@@ -239,7 +239,7 @@ function onServerMsg(msg) {
       if (S.activeTerm && !msg.list.some((t) => t.id === S.activeTerm)) S.activeTerm = msg.list[0]?.id || null;
       // 正在看的终端没了（关掉、shell 退出）：切到另一个终端，没有就回对话
       if (termIdOf(S.activeTab) && !msg.list.some((t) => t.id === termIdOf(S.activeTab))) {
-        S.activeTab = S.activeTerm ? termTab(S.activeTerm) : S.tabs[S.tabs.length - 1]?.path || 'chat';
+        S.activeTab = S.activeTerm ? termTab(S.activeTerm) : S.tabs[S.tabs.length - 1]?.id || 'chat';
       }
       break;
     case 'term_data':
@@ -891,8 +891,7 @@ function onToolTouched(args) {
   for (const v of Object.values(args)) {
     if (typeof v !== 'string' || v.length > 500 || v.includes('\n')) continue;
     const abs = normPath(isAbsPath(v) ? v : joinPath(S.cwd, v, S.info.sep));
-    const tab = S.tabs.find((t) => normPath(t.path) === abs);
-    if (tab) loadFile(tab);
+    for (const tab of S.tabs.filter((t) => normPath(t.path) === abs)) loadFile(tab);
   }
 }
 
@@ -1431,9 +1430,9 @@ function showHotkeys() {
 // ---------------- 文件 ----------------
 /** 打开文件标签页。line：打开后滚到哪一行（模型回复里的 a.js:12 这种） */
 export function openFile(path, { line = 0 } = {}) {
-  let tab = S.tabs.find((t) => normPath(t.path) === normPath(path));
+  let tab = S.tabs.find((t) => !t.diff && normPath(t.path) === normPath(path));
   if (!tab) {
-    S.tabs.push({ path, name: path.split(/[\\/]/).pop(), data: null, error: null, loading: true, line: 0, jump: 0 });
+    S.tabs.push({ id: path, path, name: path.split(/[\\/]/).pop(), data: null, error: null, loading: true, line: 0, jump: 0 });
     tab = S.tabs[S.tabs.length - 1];
     loadFile(tab);
   }
@@ -1441,28 +1440,46 @@ export function openFile(path, { line = 0 } = {}) {
     tab.line = line;
     tab.jump = (tab.jump || 0) + 1; // 同一行再点一次也要重新滚过去
   }
-  S.activeTab = tab.path;
+  S.activeTab = tab.id;
+}
+
+/** 三种对比各自复用标签，不覆盖同一文件的普通预览。cwd 固定在打开时的仓库。 */
+export function openDiff(path, { mode = 'working', cwd = S.cwd } = {}) {
+  const id = `diff:${mode}:${normPath(cwd)}:${normPath(path)}`;
+  let tab = S.tabs.find((t) => t.id === id);
+  if (!tab) {
+    S.tabs.push({ id, path, cwd, mode, diff: true, name: path.split(/[\\/]/).pop(), data: null, error: null });
+    tab = S.tabs[S.tabs.length - 1];
+  }
+  loadFile(tab);
+  S.activeTab = id;
 }
 
 export async function loadFile(tab) {
+  const request = (tab.request || 0) + 1;
+  tab.request = request;
   tab.loading = true;
   try {
-    tab.data = await http.get('/api/fs/read', { path: tab.path });
+    const data = tab.diff
+      ? await http.get('/api/git/diff', { cwd: tab.cwd, path: tab.path, mode: tab.mode })
+      : await http.get('/api/fs/read', { path: tab.path });
+    if (tab.request !== request) return;
+    tab.data = data;
     tab.error = null;
   } catch (e) {
-    tab.error = e.message;
+    if (tab.request === request) tab.error = e.message;
   } finally {
-    tab.loading = false;
+    if (tab.request === request) tab.loading = false;
   }
 }
 
 export function closeTab(path) {
   const tid = termIdOf(path);
   if (tid) return termClose(tid); // 终端关掉以后由 'terms' 消息切换标签
-  const i = S.tabs.findIndex((t) => t.path === path);
+  const i = S.tabs.findIndex((t) => t.id === path);
   if (i < 0) return;
   S.tabs.splice(i, 1);
-  if (S.activeTab === path) S.activeTab = S.tabs[i]?.path || S.tabs[i - 1]?.path || 'chat';
+  if (S.activeTab === path) S.activeTab = S.tabs[i]?.id || S.tabs[i - 1]?.id || 'chat';
 }
 
 /** 关闭顶部的标签页（对话标签除外）。keep：留下的那个；有终端会先问一句，关终端会结束里面跑的程序 */
@@ -1477,7 +1494,7 @@ export const closeAllTabs = guard(async (keep = null) => {
     if (r.cancelled) return;
     if (r.value?.startsWith('终端')) terms.forEach((t) => termClose(t.id)); // 关掉以后 'terms' 消息会自己切换标签
   }
-  S.tabs = S.tabs.filter((t) => t.path === keep);
+  S.tabs = S.tabs.filter((t) => t.id === keep);
   // 正在看的是文件（已经关掉了）：切到留下的那个，没有就回对话
   if (S.activeTab !== 'chat' && !termIdOf(S.activeTab) && S.activeTab !== keep) S.activeTab = keep || 'chat';
 });

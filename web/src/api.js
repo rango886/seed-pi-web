@@ -87,6 +87,8 @@ export const rawUrl = (p) => `/api/fs/raw?path=${encodeURIComponent(p)}${token ?
 /** 让后端代下别的网站的文件（回来的是附件，浏览器直接存，不跳页面） */
 export const proxyDownloadUrl = (u) => `/api/download?url=${encodeURIComponent(u)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
 
+export const archiveUrl = (id) => `/api/fs/archive/${encodeURIComponent(id)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+
 /** 上传一个文件：请求体就是文件本身。用 XHR 是为了拿上传进度（fetch 拿不到） */
 export function upload(file, query, onProgress) {
   return new Promise((resolve, reject) => {
