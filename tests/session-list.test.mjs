@@ -159,6 +159,26 @@ test('sidebar switches independent settings and intersects mode, archive and sea
   assert.equal(preferences.readSessionView(storage, 'fav').archive, 'archived');
 });
 
+test('sidebar compensates for actual scrollbar width, including overlay scrollbars', async (t) => {
+  const { state: s } = await setup(t, 'SidePanel.vue', { imports: {
+    '../store.js': { S: {}, openSession() {}, newSession() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
+    '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
+  } });
+  for (const width of [10, 8, 0, 10]) {
+    s.listElement.value = { offsetWidth: 272, clientWidth: 272 - width };
+    s.syncListGutter();
+    assert.equal(s.listScrollbarWidth.value, width);
+    const rightPadding = Math.max(0, 12 - s.listScrollbarWidth.value);
+    assert.equal(rightPadding + width, 12, 'scrollbar and padding share the same gutter');
+  }
+  s.listElement.value = null;
+  s.syncListGutter();
+  const source = await fs.readFile(new URL('../web/src/components/SidePanel.vue', import.meta.url), 'utf8');
+  assert.match(source, /scrollbar-gutter: stable/);
+  assert.match(source, /calc\(var\(--side-gutter\) - var\(--list-scrollbar-width, 0px\)\)/);
+  assert.match(source, /ref="listElement" class="list"/);
+});
+
 test('display dropdown hides directory-only options, emits patches, stays open and supports keyboard dismissal', async (t) => {
   const props = vue.reactive({ mode: 'all', settings: preferences.readSessionView(storageOf(), 'all') });
   const document = { activeElement: null };

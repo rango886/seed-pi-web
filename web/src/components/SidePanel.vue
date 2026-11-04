@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { S, openSession, newSession, deleteSession, setSessionArchived, renameSession, sessionStatus, setSessionMode, isFav } from '../store.js';
 import { view, toggleSide, closeDrawer, openMenu } from '../settings.js';
 import Icon from './Icon.vue';
@@ -9,6 +9,19 @@ import { readSessionView, saveSessionView, matchesArchive, sessionInfo } from '.
 
 const q = ref('');
 const newDirMenu = ref(null);
+const listElement = ref(null);
+const listScrollbarWidth = ref(0);
+let listObserver;
+function syncListGutter() {
+  const el = listElement.value;
+  if (el) listScrollbarWidth.value = Math.max(0, el.offsetWidth - el.clientWidth);
+}
+onMounted(() => {
+  syncListGutter();
+  listObserver = new ResizeObserver(syncListGutter);
+  listObserver.observe(listElement.value);
+});
+onUnmounted(() => listObserver?.disconnect());
 const base = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
 
 // 排序和显示设置跟随当前模式，各自记忆。
@@ -228,7 +241,7 @@ function sessionMenu(e, s) {
         <button type="button" class="sbtn" :title="`当前模式按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
         <SessionDisplayMenu :mode="S.sessionMode" :settings="cur" @change="saveUI" />
       </div>
-      <div class="list" @contextmenu="listMenu">
+      <div ref="listElement" class="list" :style="{ '--list-scrollbar-width': listScrollbarWidth + 'px' }" @contextmenu="listMenu">
         <div v-if="!groups.length" class="empty">{{ emptyText }}</div>
         <template v-for="g in groups" :key="g.path || g.name">
           <!-- 目录：像文件夹一样，点一下折叠/展开；右键可以全部展开折叠、切路径显示 -->
@@ -267,8 +280,8 @@ function sessionMenu(e, s) {
 </template>
 
 <style scoped>
-.side { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel-2); user-select: none; }
-.brand { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 10px 0 16px; flex: none; }
+.side { --side-gutter: 12px; --side-inset: 8px; --session-indent: 47px; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel-2); user-select: none; }
+.brand { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 var(--side-gutter) 0 calc(var(--side-gutter) + var(--side-inset)); flex: none; }
 .logo { background: var(--accent); color: #fff; width: 28px; height: 28px; border-radius: var(--r-sm); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
 .name { font-size: calc(var(--fs) + 3px); font-weight: 700; }
 .ib { width: 32px; height: 32px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
@@ -276,56 +289,59 @@ function sessionMenu(e, s) {
 .ib.sm { width: 26px; height: 26px; }
 .ib.on { color: var(--accent-text); background: var(--accent-soft); }
 
-.nav { padding: 0 8px 6px; display: flex; flex-direction: column; gap: 1px; flex: none; }
+.nav { padding: 0 var(--side-gutter) 8px; display: flex; flex-direction: column; flex: none; font-size: calc(var(--fs) - 1px); }
 .new-session { display: flex; align-items: center; gap: 4px; }
-.new-session .nv { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; padding: 0 10px; border: 0; background: transparent; font: inherit; }
+.new-session .nv { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; padding: 0 var(--side-inset); border: 0; background: transparent; font: inherit; }
 .new-session .nv:hover { background: var(--active); }
-.new-session :deep(.directory-trigger.compact) { flex: 1; min-width: 0; width: auto; height: 38px; margin: 0; padding: 0 10px; justify-content: flex-start; gap: 8px; border-radius: var(--r-md); font-size: inherit; }
+.new-session :deep(.directory-trigger.compact) { flex: 1; min-width: 0; width: auto; height: 34px; margin: 0; padding: 0 var(--side-inset); justify-content: flex-start; gap: 8px; border-radius: var(--r-md); font-size: inherit; }
 .new-session :deep(.directory-trigger.compact:hover),
 .new-session :deep(.directory-trigger.compact.on) { background: var(--active); color: var(--text); }
-.nv { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 10px; border-radius: var(--r-md); cursor: pointer; color: var(--text); }
+.nv { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 var(--side-inset); border-radius: var(--r-md); cursor: pointer; color: var(--text); }
 .nv:hover { background: var(--active); }
 .nv.dis { opacity: 0.45; cursor: default; }
 .nv :deep(.icon) { color: var(--text-2); }
 
 /* 会话列表的三种看法（全部 / 当前目录 / 收藏）：一格一格的小按钮，选了的那格浮起来 */
-.modes { display: flex; gap: 2px; margin: 2px 12px 8px; padding: 3px; background: var(--active); border-radius: var(--r-sm); flex: none; }
+.modes { display: flex; gap: 2px; margin: 0 var(--side-gutter) 8px; padding: 3px; background: var(--active); border-radius: var(--r-sm); flex: none; }
 .mode { flex: 1; min-width: 0; height: 26px; padding: 0; border: 0; background: transparent; border-radius: calc(var(--r-sm) - 2px); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; white-space: nowrap; }
 .mode:hover { color: var(--text); }
 .mode.on { background: var(--panel); color: var(--accent-text); font-weight: 600; box-shadow: var(--shadow-sm); }
 [data-theme='dark'] .mode.on { background: var(--elev); }
 
 .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.search { display: flex; align-items: center; gap: 6px; margin: 0 12px 8px; padding: 0 4px 0 10px; height: 34px; border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--text-3); flex: none; }
+.search { display: flex; align-items: center; gap: 6px; margin: 0 var(--side-gutter) 8px; padding: 0 4px 0 var(--side-inset); height: 34px; border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--text-3); flex: none; }
 .search:focus-within { border-color: var(--accent); }
 .search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-size: var(--fs-sm); }
-.list { flex: 1; overflow-y: auto; padding: 2px 8px 12px; }
+/* 右侧总留白包含滚动条宽度；预留滚动槽，展开目录或切换模式时不挤动列表。 */
+.list { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 0 max(0px, calc(var(--side-gutter) - var(--list-scrollbar-width, 0px))) 12px var(--side-gutter); }
 .tree { padding: 2px 6px 12px; }
-.gname { font-size: var(--fs-xs); color: var(--text-3); padding: 12px 10px 4px; display: flex; align-items: center; gap: 6px; }
-.dirhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 6px; border-radius: var(--r-sm); cursor: pointer; color: var(--text); font-size: var(--fs-sm); margin-top: 4px; }
+.gname { font-size: var(--fs-xs); color: var(--text-3); padding: 12px var(--side-inset) 4px; display: flex; align-items: center; gap: 6px; }
+.gname:first-child { padding-top: 4px; }
+.dirhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; margin: 10px 0 2px; }
+.dirhead:first-child { margin-top: 0; }
 .dirhead:hover { background: var(--active); }
-.dirhead .arrow { width: 16px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); transform: rotate(90deg); transition: transform 0.15s; }
+.dirhead .arrow { width: 12px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); transform: rotate(90deg); transition: transform 0.15s; }
 /* 折叠的时候箭头朝右（就是 svg 本身的样子），展开的时候转 90° 朝下 */
 .dirhead.closed .arrow { transform: rotate(0deg); }
 .dirhead :deep(.icon) { color: var(--accent-text); opacity: 0.85; }
 .dirhead .gcount { margin-left: auto; }
-/* 文件夹里的会话跟文件夹名对齐：目录头是 6(左 padding) + 16(箭头) + 6(gap) + 15(图标) + 6(gap) = 49px */
-.sess.child { padding-left: 49px; }
-/* 标题前面有状态点时，那个点连 gap 一共占 14px，把缩进相应减掉，标题还是落在 49px */
-.sess.child.has-st { padding-left: 35px; }
-.gcount { font-size: 10px; padding: 0 5px; border-radius: var(--r-pill); background: var(--active); color: var(--text-3); }
-.sbtn { height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
+/* 目录名和子会话对齐：8(内边距) + 12(箭头) + 6 + 15(图标) + 6 = 47px。 */
+.sess.child { padding-left: var(--session-indent); }
+/* 状态点和间隔共占 14px，抵消这部分宽度，避免标题左右跳动。 */
+.sess.child.has-st { padding-left: calc(var(--session-indent) - 14px); }
+.gcount { font-size: var(--fs-xs); min-width: 20px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; padding: 0 5px; border-radius: var(--r-pill); background: var(--active); color: var(--text-3); }
+.sbtn { height: 22px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
 .sbtn:hover { border-color: var(--accent); color: var(--accent-text); }
-.list > .sess, .list > .gname { content-visibility: auto; contain-intrinsic-size: auto 34px; }
-.sess { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border-radius: var(--r-sm); cursor: pointer; position: relative; }
+.list > .sess, .list > .gname { content-visibility: auto; contain-intrinsic-size: auto 30px; }
+.sess { display: flex; align-items: center; gap: 8px; height: 30px; margin-bottom: 2px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; position: relative; font-size: calc(var(--fs) - 1px); }
 .sess:hover { background: var(--active); }
 .sess.active { background: var(--panel); box-shadow: var(--shadow-sm); }
 [data-theme='dark'] .sess.active { background: var(--elev); }
 .stitle { line-height: 1.4; }
 .sess.active .stitle { font-weight: 600; color: var(--accent-text); }
 .sdir { font-size: var(--fs-xs); color: var(--text-3); flex: none; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sinfo { font-size: var(--fs-xs); color: var(--text-3); flex: none; font-variant-numeric: tabular-nums; text-align: right; }
-.sess-action { display: none; width: 24px; height: 24px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
+.sinfo { font-size: var(--fs-xs); color: var(--text-3); flex: none; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.sess-action { display: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
 .sess:hover .sess-action, .sess:focus-within .sess-action { display: inline-flex; }
 .sess.saved:hover .sinfo, .sess.saved:hover .sdir, .sess.saved:focus-within .sinfo, .sess.saved:focus-within .sdir { display: none; }
 .arch:hover { background: var(--accent-soft); color: var(--accent-text); }
