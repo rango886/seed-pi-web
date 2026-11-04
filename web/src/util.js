@@ -666,7 +666,7 @@ export function renderMarkdown(src, base = assetBase, { live = false } = {}) {
   return out;
 }
 
-export const LEVEL_NAMES = { off: '关闭', minimal: '极少', low: '低', medium: '中', high: '高', xhigh: '极高' };
+export const LEVEL_NAMES = { off: '关闭', minimal: '极少', low: '低', medium: '中', high: '高', xhigh: '极高', max: '最大' };
 export const levelName = (l) => LEVEL_NAMES[l] || l || '-';
 
 export function escapeHtml(s) {

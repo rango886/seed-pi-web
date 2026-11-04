@@ -1297,7 +1297,7 @@ export const pickThinking = guard(async (arg) => {
   if (arg) return set(arg);
   openPicker({
     title: '思考强度',
-    items: S.thinkingLevels.map((l) => ({ label: l, current: l === S.state?.thinkingLevel, value: l })),
+    items: S.thinkingLevels.map((l) => ({ label: levelName(l), current: l === S.state?.thinkingLevel, value: l })),
     onPick: guard(set),
   });
 });
