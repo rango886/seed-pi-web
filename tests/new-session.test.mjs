@@ -18,12 +18,20 @@ test('new sessions and directory selection preserve the intended context', async
   });
   const calls = [];
   let fail = false;
+  let agentState = {};
   const api = {
     http: { get: async () => [] }, CID: 'test',
     call: async (method, args) => {
       calls.push({ method, args });
       if (fail) throw new Error('directory missing');
       if (method === 'create_session') return { lazy: { cwd: args.cwd, file: null, messages: [] } };
+      if (method === 'ensure_agent') return { agent: { id: 'a1', cwd: args.cwd, alive: true }, messages: [] };
+      if (method === 'rpc') {
+        const cmd = args.cmd;
+        if (cmd.type === 'set_model') agentState.model = { provider: cmd.provider, id: cmd.modelId };
+        if (cmd.type === 'set_thinking_level') agentState.thinkingLevel = cmd.level;
+        return { success: true, data: cmd.type === 'get_state' ? agentState : cmd.type === 'get_available_thinking_levels' ? { levels: ['off', 'low', 'high'] } : {} };
+      }
       throw new Error('unexpected RPC: ' + method);
     },
   };
@@ -42,7 +50,7 @@ test('new sessions and directory selection preserve the intended context', async
     }, { context });
   });
   await mod.evaluate();
-  const { S, newSession, newSessionIn, chooseDirectory, warmUp } = mod.namespace;
+  const { S, newSession, newSessionIn, chooseDirectory, setModel, setThinking } = mod.namespace;
   S.cwd = 'C:/project';
   S.activeTab = 'file';
   S.composer.text = 'old draft';
@@ -57,9 +65,17 @@ test('new sessions and directory selection preserve the intended context', async
   assert.equal(calls[0].args.cwd, 'C:/project');
 
   const n = calls.length;
-  warmUp();
+  const model = { provider: 'test', id: 'reasoner', thinkingLevels: ['off', 'low', 'high'] };
+  S.models = [model];
+  await setModel(model);
+  await setThinking('high');
   await vue.nextTick();
-  assert.equal(calls.length, n, 'typing in a fresh draft must not start an agent');
+  assert.equal(calls.length, n, 'choosing a model and thinking level must not start an agent');
+  assert.equal(S.state.model.id, 'reasoner');
+  assert.equal(S.state.thinkingLevel, 'high');
+  assert.equal(S.lazy.pendingModel.id, 'reasoner');
+  assert.equal(S.lazy.pendingThinking, 'high');
+  assert.deepEqual([...S.thinkingLevels], ['off', 'low', 'high']);
 
   S.composer.text = 'unsent';
   S.composer.attachments = [{ path: 'C:/asset.png', status: 'ready' }];
@@ -94,4 +110,20 @@ test('new sessions and directory selection preserve the intended context', async
   await newSession();
   assert.equal(S.dirPicker, true);
   assert.equal(S.dirPickerMode, 'new');
+
+  S.cwd = 'C:/history';
+  S.lazy = { cwd: S.cwd, file: 'C:/history/session.jsonl' };
+  S.models = [model];
+  S.state = { model, thinkingLevel: 'low' };
+  const beforeEdit = calls.length;
+  await setModel(model);
+  await setThinking('high');
+  assert.equal(calls.length, beforeEdit, 'editing history configuration must not start an agent');
+  await mod.namespace.submit('hello');
+  assert.equal(S.toasts.filter((t) => t.kind === 'error').length, 1, 'only the intentional missing-directory error remains');
+  const commands = calls.slice(beforeEdit).filter((c) => c.method === 'rpc').map((c) => c.args.cmd.type);
+  assert.deepEqual(commands.slice(0, 2), ['set_model', 'set_thinking_level']);
+  assert.equal(commands.at(-1), 'prompt', 'settings are applied before the first message');
+  assert.equal(S.agentId, 'a1');
+  assert.equal(S.state.thinkingLevel, 'high');
 });

@@ -66,34 +66,19 @@ onUnmounted(() => {
 });
 
 // ---------- 跳转 ----------
-const frame = () => new Promise((r) => requestAnimationFrame(r));
-async function jump(k) {
+function jump(k) {
   const sc = props.scroller;
   const el = sc?.querySelector(`.msg[data-msg="${CSS.escape(k)}"]`)?.closest('.mw');
   if (!el) return;
   emit('jump'); // 让对话别再“贴着底部”，不然内容一变高又被拽回底部
   const target = () => el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 12;
   // 离得远的：先瞬移到目标附近，再平滑滚最后一小段（又快又有方向感）。
-  // 消息用了 content-visibility，没显示过的高度是估的，瞬移后要多量几次才准
   if (Math.abs(target() - sc.scrollTop) > sc.clientHeight * 1.5) {
     const dir = target() > sc.scrollTop ? 1 : -1;
-    for (let i = 0; i < 3; i++) {
-      sc.scrollTop = target() - dir * sc.clientHeight * 0.4;
-      await frame();
-    }
+    sc.scrollTop = target() - dir * sc.clientHeight * 0.4;
   }
+  // 高度不再依赖估算，无需延迟校准；否则用户开始手动滚动后还会被拉回问题处。
   sc.scrollTo({ top: target(), behavior: 'smooth' });
-  // 平滑滚完再校准一次（滚的过程中上面的消息可能刚算出真实高度）
-  let done = false;
-  const fix = () => {
-    if (done) return;
-    done = true;
-    sc.removeEventListener('scrollend', fix);
-    const t = target();
-    if (Math.abs(sc.scrollTop - t) > 4) sc.scrollTop = t;
-  };
-  sc.addEventListener('scrollend', fix);
-  setTimeout(fix, 700);
   // 闪一下，告诉用户跳到的是哪条
   el.classList.remove('flash');
   void el.offsetWidth;

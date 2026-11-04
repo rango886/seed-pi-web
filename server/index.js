@@ -10,7 +10,8 @@ import { Readable } from 'node:stream';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { PiAgent } from './pi-agent.js';
-import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionSnapshot, defaultState, agentDir } from './sessions.js';
+import { modelModules, readModelCatalog } from './models.js';
+import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionSnapshot, agentDir } from './sessions.js';
 import { TerminalManager, terminalAvailable } from './terminal.js';
 import { gitStatus, gitDiff } from './git.js';
 import { registerDownloads } from './downloads.js';
@@ -194,12 +195,14 @@ async function mustBeDir(cwd) {
 
 /**
  * 不起进程的“只看”视图：消息、模型、用量都从会话文件里读。
- * file 为空 = 还没说过话的新会话，模型按 pi 的设置猜
+ * file 为空 = 还没说过话的新会话，默认模型使用 pi 的选择逻辑
  */
 async function lazyView(cwd, file) {
-  if (!file) return { lazy: { cwd, file: null, messages: [], state: await defaultState(cwd), stats: null } };
-  const snap = await readSessionSnapshot(file);
-  return { lazy: { cwd: snap.cwd || cwd, file, messages: snap.messages, state: snap.state, stats: snap.stats } };
+  const [catalog, snap] = await Promise.all([readModelCatalog(cwd), file ? readSessionSnapshot(file) : null]);
+  const state = snap?.state || { ...catalog.defaults, isStreaming: false, isCompacting: false };
+  const model = catalog.models.find((m) => m.provider === state.model?.provider && m.id === state.model?.id);
+  if (model) state.model = model;
+  return { lazy: { cwd: snap?.cwd || cwd, file: file || null, messages: snap?.messages || [], state, stats: snap?.stats || null, models: catalog.models } };
 }
 
 // 正在启动的进程：同一个会话同时被要求启动两次（两个窗口、连点）只起一个
@@ -316,6 +319,10 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
   if (!res.headersSent && !res.destroyed) res.status(400).json({ error: e.message });
 });
 registerDownloads(app, wrap);
+app.get('/api/models', wrap(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(await readModelCatalog(req.query.cwd ? path.resolve(String(req.query.cwd)) : undefined));
+}));
 app.get('/api/git/status', wrap(async (req, res) => {
   if (!req.query.cwd) throw new Error('缺少工作目录');
   res.json(await gitStatus(String(req.query.cwd), req.query.fresh === '1'));
@@ -356,7 +363,7 @@ app.get(
 // ---------- 新会话的默认模型 / 思考强度 ----------
 // pi 的 RPC 里没有“设置默认”这个命令，只有 set_model / set_thinking_level（改当前会话），
 // 所以这里直接改它的全局 settings.json（~/.pi/agent/settings.json），下次 pi 启动时读的就是它
-const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 app.post(
   '/api/settings/default',
   wrap(async (req, res) => {
@@ -661,6 +668,10 @@ wss.on('connection', (ws, req) => {
       if (!readOnly) mustOwn(a);
       a.lastUsed = Date.now();
       const res = await a.request(cmd);
+      if (cmd.type === 'get_available_models' && res.success && res.data?.models) {
+        const { getSupportedThinkingLevels } = await modelModules;
+        res.data.models = res.data.models.map((m) => ({ ...m, thinkingLevels: getSupportedThinkingLevels(m) }));
+      }
       if (SESSION_CHANGING.has(cmd.type) && res.success) await syncAgent(a);
       // 操作者改了模型、思考强度之类：让旁观的窗口也刷新一下状态
       if (!readOnly && res.success) for (const c of watchers(a)) if (c !== ws) send(c, { t: 'state_changed', agentId: a.id, cmd: cmd.type });
@@ -750,6 +761,8 @@ server.on('error', (e) => {
   console.error(e.code === 'EADDRINUSE' ? `端口 ${PORT} 已被占用` : e.message);
   process.exit(1);
 });
+// 模块冷加载放在服务启动阶段，后续查询只需读取本地文件。
+await modelModules;
 server.listen(PORT, HOST, () => {
   // 记下正在运行的服务，`seed-pi-web status/stop` 靠它找到这个进程
   try {

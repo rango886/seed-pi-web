@@ -38,22 +38,16 @@ const jumpBottom = () => {
 };
 const toBottom = () => {
   const el = scroller.value;
-  if (el) el.scrollTop = el.scrollHeight;
+  // nextTick 排队后用户可能已经手动滚走了，执行时再检查，不能用排队时的 stick。
+  if (el && stick) el.scrollTop = el.scrollHeight;
 };
 const onOutlineJump = () => (stick = false); // 从大纲跳走了，内容再变高也别拽回底部
-// Home / End：直接跳到会话最上面 / 最下面。
-// 消息用了 content-visibility，没显示过的高度是估的，跳完以后高度会变，所以再补几次
+// Home / End：消息始终按真实高度布局，一次跳转即可，不在后续帧覆盖手动滚动。
 function jumpTo(top) {
   const el = scroller.value;
   if (!el) return;
   stick = !top;
-  let n = 0;
-  const go = () => {
-    if (top) el.scrollTop = 0;
-    else el.scrollTop = el.scrollHeight;
-    if (++n < 4) requestAnimationFrame(go);
-  };
-  go();
+  el.scrollTop = top ? 0 : el.scrollHeight;
 }
 function onKey(e) {
   if (e.key !== 'Home' && e.key !== 'End') return;
@@ -185,7 +179,6 @@ const model = computed(() => S.state?.model);
           :key="m._k"
           class="mw"
           :class="{
-            live: i >= S.messages.length - 2,
             // 连着好几个助手消息（一次回复里做了好几步工具）算同一条，中间不要留整段间距
             tight: i > 0 && m.role === 'assistant' && S.messages[i - 1]?.role === 'assistant',
           }"
@@ -248,8 +241,8 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
 .stderr { margin: 8px 0 0; max-height: 200px; overflow: auto; font-size: var(--fs-sm); white-space: pre-wrap; font-family: var(--font-code); }
 .detach { border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
 .detach-hint { margin-top: 6px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.7; }
-.mw { content-visibility: auto; contain-intrinsic-size: auto 160px; }
-.mw.live { content-visibility: visible; }
+/* 消息必须始终参与真实布局。content-visibility 的估算高度会在滚动时改变滚动范围，
+   与浏览器滚动锚定、自动跟随底部叠加后，长回复可能出现滚动回跳、无法继续下滚。 */
 /* 连续的助手消息：上一条的尾巴里本来就带着 24px 的段间距，这里退回去，只留消息内部那种 8px */
 .mw.tight { margin-top: calc(var(--sp2) - var(--sp5)); }
 /* 从右侧大纲跳过来的那个问题：气泡外面闪一圈强调色 */

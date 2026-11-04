@@ -34,7 +34,7 @@ export const S = reactive({
   retry: null,
   detached: null, // 目录已不存在的会话：{ file, cwd }，只读看历史，不能对话
   // 还没起 pi 进程的会话：{ cwd, file }（file 为空 = 还没说过话的新会话）。
-  // 历史是后端直接读会话文件拿到的；开始打字、发消息、换模型时才起进程（ensureAgent）
+  // 历史和模型目录由后端直接读取；发送消息或执行其他需要 pi 的命令时才起进程。
   lazy: null,
   starting: false, // 正在起 pi 进程
   queue: { steering: [], followUp: [] },
@@ -386,8 +386,7 @@ function sameMessages(list) {
   return f.length === S.messages.length && f.every((m, i) => m.role === S.messages[i].role && m.timestamp === S.messages[i].timestamp);
 }
 
-// “只看”时没法问 pi 的东西，用上次问到的顺着显示：思考强度有哪几档、每个会话的上下文占用
-const LEVELS_KEY = 'seed-pi-web-thinking-levels';
+// 上次读取的会话上下文占用；模型和思考档位不使用持久化缓存。
 const CTX_KEY = 'seed-pi-web-context-usage';
 const readJson = (k, d) => {
   try {
@@ -410,7 +409,7 @@ function rememberCtx(file, usage) {
  * “只看”一个会话：不起 pi 进程，内容是后端从会话文件里读的。
  * keep：进程刚被回收，界面上的消息、模型、用量都还对，原样留着
  */
-function openLazy({ cwd, file, messages, state, stats }, { keep = false } = {}) {
+function openLazy({ cwd, file, messages, state, stats, models }, { keep = false } = {}) {
   S.agentId = null;
   S.lazy = { cwd, file: file || null };
   S.agent = { id: null, cwd, sessionFile: file || null, sessionName: (keep ? S.state?.sessionName : state?.sessionName) || null, alive: false, saved: !!file, running: false, owner: null, lazy: true };
@@ -428,7 +427,8 @@ function openLazy({ cwd, file, messages, state, stats }, { keep = false } = {}) 
   if (!keep) {
     S.state = state || null;
     S.stats = stats ? { ...stats, contextUsage: file ? readJson(CTX_KEY, {})[normPath(file)] : undefined } : null;
-    S.thinkingLevels = readJson(LEVELS_KEY, []);
+    S.models = models || [];
+    updateThinkingLevels();
     setMessages(messages);
   }
   setCwd(cwd);
@@ -455,6 +455,18 @@ export function ensureAgent() {
       call('leave', { agentId: res.agent.id }).catch(() => {});
       return;
     }
+    // 未启动时选择的配置先应用到进程，再读取最终状态、发送消息。
+    for (const cmd of [
+      lz.pendingModel && { type: 'set_model', provider: lz.pendingModel.provider, modelId: lz.pendingModel.id },
+      lz.pendingThinking && { type: 'set_thinking_level', level: lz.pendingThinking },
+    ].filter(Boolean)) {
+      const r = await call('rpc', { agentId: res.agent.id, cmd });
+      if (!r.success) throw new Error(r.error || `${cmd.type} 失败`);
+    }
+    if (S.lazy !== lz) {
+      call('leave', { agentId: res.agent.id }).catch(() => {});
+      return;
+    }
     adoptDraft = !lz.file;
     try {
       await attachResult(res, { keep: true });
@@ -466,12 +478,6 @@ export function ensureAgent() {
     S.starting = false;
   });
   return ensuring;
-}
-
-/** 历史会话开始编辑时预热；新会话草稿等首次发送（或修改模型等操作）才启动。 */
-export function warmUp() {
-  if (S.agentId || !S.lazy?.file || ensuring) return;
-  ensureAgent().catch((e) => toast(e.message, 'error'));
 }
 
 /** 后端打开会话 / 目录的回复：可能是连上了进程，也可能只看（lazy）、目录不在了（detached） */
@@ -604,7 +610,6 @@ async function loadState() {
     S.compacting = !!S.state.isCompacting;
     const t = await rpc({ type: 'get_available_thinking_levels' });
     S.thinkingLevels = t.levels || [];
-    localStorage.setItem(LEVELS_KEY, JSON.stringify(S.thinkingLevels));
     syncTitle();
   } catch {}
 }
@@ -669,23 +674,56 @@ export function setSessionMode(m) {
   loadSessions();
 }
 
+function updateThinkingLevels() {
+  const m = S.models.find((m) => m.provider === S.state?.model?.provider && m.id === S.state?.model?.id);
+  S.thinkingLevels = m?.thinkingLevels || (S.state?.thinkingLevel ? [S.state.thinkingLevel] : []);
+}
+
 export async function loadModels() {
-  const d = await rpc({ type: 'get_available_models' });
-  S.models = d.models || [];
+  if (S.agentId) {
+    // 已启动的会话以实际进程为准，包含扩展动态注册的模型。
+    const d = await rpc({ type: 'get_available_models' });
+    S.models = d.models || [];
+  } else if (!S.models.length) {
+    const lz = S.lazy;
+    const d = await http.get(`/api/models?cwd=${encodeURIComponent(S.cwd)}`);
+    if (S.lazy !== lz) return S.models;
+    S.models = d.models || [];
+    updateThinkingLevels();
+  }
   return S.models;
 }
 
 /** 直接切换模型（输入框下面的模型菜单用） */
 export const setModel = guard(async (m) => {
-  await rpc({ type: 'set_model', provider: m.provider, modelId: m.id });
-  await loadState();
+  if (ensuring) await ensuring;
+  if (S.lazy) {
+    S.lazy.pendingModel = m;
+    S.state = { ...S.state, model: m };
+    updateThinkingLevels();
+    if (!S.thinkingLevels.includes(S.state.thinkingLevel)) {
+      const order = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+      const index = order.indexOf(S.state.thinkingLevel);
+      S.state.thinkingLevel = S.thinkingLevels.find((l) => order.indexOf(l) >= index) || S.thinkingLevels.at(-1) || 'off';
+    }
+    S.lazy.pendingThinking = S.state.thinkingLevel;
+  } else {
+    await rpc({ type: 'set_model', provider: m.provider, modelId: m.id });
+    await loadState();
+  }
   const recent = JSON.parse(localStorage.getItem('seed-pi-web-recent-models') || '[]').filter((k) => k !== `${m.provider}/${m.id}`);
   recent.unshift(`${m.provider}/${m.id}`);
   localStorage.setItem('seed-pi-web-recent-models', JSON.stringify(recent.slice(0, 6)));
 });
 
 export const setThinking = guard(async (level) => {
-  await rpc({ type: 'set_thinking_level', level });
+  if (ensuring) await ensuring;
+  if (S.lazy) {
+    if (!S.thinkingLevels.includes(level)) throw new Error(`当前模型不支持思考强度：${level}`);
+    S.lazy.pendingThinking = level;
+  } else {
+    await rpc({ type: 'set_thinking_level', level });
+  }
   if (S.state) S.state.thinkingLevel = level;
 });
 
@@ -1010,7 +1048,6 @@ export function attachPaths(list, origin = 'path') {
   }
   if (added) {
     S.activeTab = 'chat';
-    warmUp();
   }
   return added;
 }
@@ -1025,7 +1062,6 @@ function pastedName(f) {
 /** 浏览器里的文件（拿不到路径）：上传到后端的临时目录，用上传后的路径。pasted：剪贴板里的截图，没有像样的文件名 */
 export function uploadFiles(files, { pasted = false } = {}) {
   const max = (Number(UI.uploadMaxMB) || 0) * 1048576;
-  if (files.length) warmUp();
   for (const f of files) {
     if (max && f.size > max) {
       toast(`${f.name} 太大了（上限 ${UI.uploadMaxMB}MB，可以在设置里改）`, 'warning');
@@ -1289,10 +1325,7 @@ export const pickModel = guard(async (arg) => {
 });
 
 export const pickThinking = guard(async (arg) => {
-  const set = async (level) => {
-    await rpc({ type: 'set_thinking_level', level });
-    if (S.state) S.state.thinkingLevel = level;
-  };
+  const set = (level) => setThinking(level);
   if (arg) return set(arg);
   openPicker({
     title: '思考强度',

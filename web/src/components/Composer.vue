@@ -1,6 +1,6 @@
 <script setup>
 import { ref, toRef, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, otherAgents, viewer, takeOver, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL, warmUp } from '../store.js';
+import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, otherAgents, viewer, takeOver, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL } from '../store.js';
 import { UI, view, openMenu } from '../settings.js';
 import { http, rawUrl } from '../api.js';
 import { fmtTokens, levelName, joinPath, fmtSize } from '../util.js';
@@ -408,11 +408,10 @@ onMounted(() => window.addEventListener('resize', onResize));
 onUnmounted(() => window.removeEventListener('resize', onResize));
 watch(menu, (v) => (v ? nextTick(alignPop) : nextTick(() => ta.value?.focus())));
 
-// 只看的历史会话在输入时预热；新会话草稿等发送时再启动
+// 输入、添加附件和选择模型不会启动会话进程。
 const disabled = computed(() => !(S.agentId || S.lazy) || !!S.agentExited || viewer.value);
 function onInput() {
   syncCaret();
-  if (S.composer.text) warmUp();
 }
 
 async function onTakeOver() {
