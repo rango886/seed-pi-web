@@ -214,7 +214,8 @@ test('font selectors support independent custom values, following UI, and preset
   s.useStyle('pi');
   await vue.nextTick();
   for (const field of panel.fontFields) assert.equal(panel.fontCustom.value[field.key], false);
-  assert.ok(panel.textSliders.some(([key]) => key === 'chatFontSize'));
+  assert.equal(panel.textSliders.find(([key]) => key === 'userFontSize')[1], '用户消息字号');
+  assert.equal(panel.textSliders.find(([key]) => key === 'chatFontSize')[1], '助手回复字号');
   for (const [key, label] of [['toolFontSize', '工具调用字号'], ['thinkingFontSize', '思考字号']]) {
     const slider = panel.textSliders.find(([field]) => field === key);
     assert.equal(slider[1], label);
@@ -234,9 +235,9 @@ test('chat text and diagrams use chat typography while pi code uses the code fon
   assert.match(pi, /\.md code \{[^}]*font-family: var\(--font-code\)/);
   assert.match(pi, /\.md pre\.code code \{[^}]*font-family: var\(--font-code\); font-size: var\(--fs-code\)/);
   assert.doesNotMatch(pi, /--pi-font|--pi-md-size/);
-  assert.match(composer, /\.ta \{ font-family: var\(--font-chat\); font-size: var\(--fs-chat\)/);
+  assert.match(composer, /\.ta \{ font-family: var\(--font-chat\); font-size: var\(--fs-user\)/);
   assert.match(message, /\.pre \{ font-family: var\(--font-chat\)/);
-  assert.match(editor, /textarea \{[^}]*font-family: var\(--font-chat\); font-size: var\(--fs-chat\)/);
+  assert.match(editor, /textarea \{[^}]*font-family: var\(--font-chat\); font-size: var\(--fs-user\)/);
   assert.match(util, /const font = cs\.getPropertyValue\('--font-chat'\)/);
   assert.match(util, /const mono = cs\.getPropertyValue\('--font-code'\)/);
 });
@@ -269,6 +270,76 @@ test('user bubbles use automatic pale accent backgrounds with black text in ever
       assert.ok(contrast >= 7, `${hex} at ${tint * 100}%: ${contrast.toFixed(2)}:1 contrast`);
     }
   }
+});
+
+test('user and assistant message sizes are independent, persist, and share equal preset defaults', async (t) => {
+  const s = await settings(t, { __v: 18, userFontSize: 18, chatFontSize: 22 });
+  assert.equal(s.values.get('--fs-user'), '18px');
+  assert.equal(s.values.get('--fs-chat'), '22px');
+  const resets = s.diagramResets;
+  s.UI.userFontSize = 20;
+  await vue.nextTick();
+  assert.equal(s.values.get('--fs-user'), '20px');
+  assert.equal(s.values.get('--fs-chat'), '22px');
+  assert.equal(s.diagramResets, resets, 'changing user text cannot affect assistant diagrams');
+  s.UI.chatFontSize = 24;
+  await vue.nextTick();
+  assert.equal(s.values.get('--fs-user'), '20px');
+  assert.equal(s.values.get('--fs-chat'), '24px');
+  assert.ok(s.diagramResets > resets);
+  const saved = JSON.parse(s.storage.get('seed-pi-web-settings'));
+  assert.equal(saved.userFontSize, 20);
+  assert.equal(saved.chatFontSize, 24);
+  assert.equal(saved.__v, 18);
+  for (const style of s.STYLES) {
+    s.useStyle(style.value);
+    await vue.nextTick();
+    const expected = style.value === 'pi' ? 12 : 14;
+    assert.equal(s.UI.userFontSize, expected);
+    assert.equal(s.UI.chatFontSize, expected);
+  }
+  s.UI.userFontSize = 24;
+  s.UI.chatFontSize = 18;
+  s.resetSettings();
+  await vue.nextTick();
+  assert.equal(s.UI.userFontSize, 14);
+  assert.equal(s.UI.chatFontSize, 14);
+});
+
+test('old chat size initializes equal user and assistant sizes without the former minus-one offset', async (t) => {
+  for (const uiStyle of ['modern', 'github', 'pi']) {
+    const s = await settings(t, { __v: 17, uiStyle, chatFontSize: 18 });
+    assert.equal(s.UI.userFontSize, 18);
+    assert.equal(s.UI.chatFontSize, 18);
+  }
+  const partial = await settings(t, { __v: 17, fontSize: 20 });
+  assert.equal(partial.UI.userFontSize, 14, 'missing chat size used the global chat default, not the UI size');
+  assert.equal(partial.UI.chatFontSize, 14);
+  const ancient = await settings(t, { __v: 15, fontSize: 18 });
+  assert.equal(ancient.UI.userFontSize, 18);
+  assert.equal(ancient.UI.chatFontSize, 18);
+  const custom = await settings(t, { __v: 17, userFontSize: 21, chatFontSize: 16 });
+  assert.equal(custom.UI.userFontSize, 21);
+  assert.equal(custom.UI.chatFontSize, 16);
+});
+
+test('user bubbles, composer and editor use user size while replies and diagrams retain assistant size', async () => {
+  const read = (path) => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
+  const [base, pi, message, composer, editor, panel, util] = await Promise.all([
+    read('style.css'), read('pi.css'), read('components/MessageItem.vue'), read('components/Composer.vue'),
+    read('components/UserMessageEditor.vue'), read('components/Settings.vue'), read('util.js'),
+  ]);
+  assert.match(message, /\.me-bubble \{[^}]*font-size: var\(--fs-user\)/);
+  assert.match(pi, /\.msg \.me-bubble \{[^}]*font-size: var\(--fs-user\)/);
+  assert.doesNotMatch(message + pi, /font-size: calc\(var\(--fs-chat\) - 1px\)/);
+  assert.match(composer, /\.ta \{[^}]*font-size: var\(--fs-user\)/);
+  assert.match(composer, /watch\(\(\) => \[S\.composer\.text, UI\.font, UI\.chatFont, UI\.userFontSize/);
+  assert.match(editor, /textarea \{[^}]*font-size: var\(--fs-user\)/);
+  assert.match(base, /\.md \{[^}]*font-size: var\(--fs-chat\)/);
+  assert.match(util, /parseFloat\(cs\.getPropertyValue\('--fs-chat'\)\)/);
+  assert.match(panel, /aria-label="用户消息字号预览"/);
+  assert.match(panel, /aria-label="助手回复字号预览"/);
+  assert.match(panel, /\.sample-bubble \{[^}]*font-size: var\(--fs-user\)/);
 });
 
 test('tool and thinking sizes are independent, persist, and reset with every style preset', async (t) => {

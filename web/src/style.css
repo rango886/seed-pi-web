@@ -7,6 +7,7 @@
   --font-chat: var(--font);
   --font-code: Consolas, 'Cascadia Mono', 'Liberation Mono', 'LXGW WenKai Mono Screen', '霞鹜文楷等宽 屏幕阅读版', 'Noto Sans Mono CJK SC', ui-monospace, monospace;
   --fs: 14px;
+  --fs-user: 14px;
   --fs-chat: 14px;
   --fs-code: 13px;
   --fs-tool: 12px;

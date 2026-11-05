@@ -160,7 +160,7 @@
 :root[data-ui='pi'] .chat .inner { padding-top: var(--pi-line); }
 :root[data-ui='pi'] .msg { margin-bottom: var(--pi-line); }
 :root[data-ui='pi'] .msg .col { gap: 0; align-items: stretch; }
-:root[data-ui='pi'] .msg .me-bubble { max-width: 100%; width: 100%; border: 0; border-radius: var(--r); padding: var(--pi-line); font-size: var(--fs-chat); line-height: var(--lh); }
+:root[data-ui='pi'] .msg .me-bubble { max-width: 100%; width: 100%; border: 0; border-radius: var(--r); padding: var(--pi-line); font-size: var(--fs-user); line-height: var(--lh); }
 :root[data-ui='pi'] .msg .ai-bubble { padding: var(--pi-line); padding-bottom: 0; margin: 0; }
 :root[data-ui='pi'] .user-actions { align-self: flex-end; }
 :root[data-ui='pi'] .ai .meta { font-size: var(--fs-xs); padding: 0 var(--pi-line); }

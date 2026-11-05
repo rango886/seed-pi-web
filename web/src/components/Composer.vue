@@ -301,7 +301,7 @@ function autosize() {
   el.style.height = Math.min(el.scrollHeight, max) + 'px';
   el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
 }
-watch(() => [S.composer.text, UI.font, UI.chatFont, UI.chatFontSize, UI.lineHeight, UI.letterSpacing, big.value], () => nextTick(autosize));
+watch(() => [S.composer.text, UI.font, UI.chatFont, UI.userFontSize, UI.lineHeight, UI.letterSpacing, big.value], () => nextTick(autosize));
 watch(
   () => S.activeTab,
   (t) => t === 'chat' && nextTick(() => ta.value?.focus()),
@@ -602,7 +602,7 @@ async function onTakeOver() {
 /* 上下留白都按同一个数来：卡片 8px + 输入框 6px，再加上行高自带的半行空隙，文字上下一样宽。
    min-height 也只留一行的量（内容 + 上下 padding），不然单行时下面会多出一截空的，看着上紧下松。
    下边再留 8px：让输入框跟下面那排按钮（+ / 模型 / 发送）拉开一点，不贴着 */
-.ta { font-family: var(--font-chat); font-size: var(--fs-chat); display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 6px 34px 6px 2px; margin-bottom: 8px; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 12px); max-height: 40vh; overflow-y: hidden; }
+.ta { font-family: var(--font-chat); font-size: var(--fs-user); display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 6px 34px 6px 2px; margin-bottom: 8px; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 12px); max-height: 40vh; overflow-y: hidden; }
 .box.big .ta { min-height: 32vh; max-height: 72vh; }
 
 .bar { display: flex; align-items: center; gap: 6px; min-width: 0; }

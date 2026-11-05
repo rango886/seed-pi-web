@@ -188,7 +188,7 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 .ai .col { align-items: flex-start; }
 
 .bubble { border-radius: var(--r-bubble); padding: calc(var(--sp2) + 2px) var(--pad-x); line-height: var(--lh); max-width: 100%; }
-.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); padding: calc(var(--sp2) - 1px) calc(var(--pad-x) - 2px); font-size: calc(var(--fs-chat) - 1px); line-height: 1.6; }
+.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); padding: calc(var(--sp2) - 1px) calc(var(--pad-x) - 2px); font-size: var(--fs-user); line-height: 1.6; }
 /* 正文上下都多留些空间，和前后的思考/工具块拉开距离；工具块之间仍保持紧凑 */
 /* align-self: stretch：正文铺满整栏，里面的代码块、图、表格才能真正两边填满（否则这块会缩到最长那行文字那么宽） */
 .ai-bubble { align-self: stretch; min-width: 0; background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); margin-block: var(--sp3); }

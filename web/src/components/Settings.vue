@@ -99,7 +99,8 @@ function onKey(e) {
 // 滑块：[字段, 标题, 最小, 最大, 步长, 单位格式]
 const textSliders = [
   ['fontSize', '界面字号', 12, 20, 1, (v) => `${v}px`],
-  ['chatFontSize', '聊天字号', 12, 24, 1, (v) => `${v}px`],
+  ['userFontSize', '用户消息字号', 12, 24, 1, (v) => `${v}px`],
+  ['chatFontSize', '助手回复字号', 12, 24, 1, (v) => `${v}px`],
   ['codeFontSize', '代码字号', 11, 18, 1, (v) => `${v}px`],
   ['toolFontSize', '工具调用字号', 10, 24, 1, (v) => `${v}px`],
   ['thinkingFontSize', '思考字号', 10, 24, 1, (v) => `${v}px`],
@@ -219,14 +220,17 @@ const layoutSliders = [
                 </select>
                 <input v-if="fontCustom[field.key]" v-model.lazy="UI[field.key]" class="input" :aria-label="field.label + '（自定义）'" placeholder="CSS 字体名，例如 'LXGW WenKai' 或 'JetBrains Mono'" />
               </div>
-              <p class="dim small-tip">字体需安装在打开网页的设备上。聊天字体用于消息正文和输入框；代码、日志和终端单独使用等宽字体。pi Markdown 也遵循这些设置。</p>
+              <p class="dim small-tip">字体需安装在打开网页的设备上。聊天字体用于消息正文和输入框；代码、日志和终端单独使用等宽字体。pi Markdown 也遵循这些设置。用户消息字号也用于输入框和消息编辑框，助手回复字号只调整回复正文。</p>
               <div v-for="[k, l, min, max, step, fmt] in textSliders" :key="k" class="item">
                 <span class="label">{{ l }}</span>
                 <input v-model.number="UI[k]" type="range" :aria-label="l" :min="min" :max="max" :step="step" class="range" @dblclick="UI[k] = DEFAULTS[k]" />
                 <span class="val">{{ fmt(UI[k]) }}</span>
               </div>
-              <div class="preview md">
-                <p>预览 Preview：敏捷的棕色狐狸跳过了懒狗。The quick brown fox jumps over the lazy dog. <code>const x = 42</code></p>
+              <div class="preview user-message-sample" aria-label="用户消息字号预览">
+                <div class="sample-bubble">用户消息预览：你好 Hello，帮我看一下这段代码。</div>
+              </div>
+              <div class="preview md" aria-label="助手回复字号预览">
+                <p>助手回复预览 Preview：敏捷的棕色狐狸跳过了懒狗。The quick brown fox jumps over the lazy dog. <code>const x = 42</code></p>
                 <p>第二段，用来看段落间距和行高是否舒服。0O 1lI {} [] =&gt; ===</p>
                 <blockquote><p>引用块长这样</p></blockquote>
               </div>
@@ -333,6 +337,8 @@ label.item { cursor: pointer; }
 select.input { cursor: pointer; }
 
 .preview { padding: 12px 14px; background: var(--chat-bg); font-size: var(--fs-chat); border-top: 1px solid var(--line-2); }
+.user-message-sample { display: flex; justify-content: flex-end; }
+.sample-bubble { font-family: var(--font-chat); font-size: var(--fs-user); line-height: 1.6; padding: 8px 12px; border: 1px solid var(--bubble-me-border); border-radius: var(--r-bubble); background: var(--bubble-me); color: var(--bubble-me-text); }
 .process-samples { display: grid; gap: 8px; }
 .process-samples .blk { margin: 0; }
 .tip { font-size: var(--fs-xs); margin: 10px 4px 0; line-height: 1.7; }
