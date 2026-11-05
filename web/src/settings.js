@@ -2,42 +2,41 @@
 import { reactive, watch } from 'vue';
 import { resetDiagramCache } from './util.js';
 
-// “系统默认字体”这一串：真实字体名写在前面，system-ui 这类通用关键字只留最后兜底。
-// -apple-system / BlinkMacSystemFont 不是字体名，是 macOS / iOS 上的“系统字体暗号”，
-// 别的系统不认，会往后落到 Segoe UI（拉丁）+ 后面的中文字体。
-// 中文首选霞鹜文楷屏幕阅读版：装了就用，没装就自动往后落到苹方 / 微软雅黑 UI，跟以前一模一样。
-// Windows 上这个字体注册的名字是中文的“霞鹜文楷 屏幕阅读版”，macOS / Linux 那边发布的叫 LXGW WenKai Screen，两个都写上。
+// 字体只使用浏览器本机安装的版本。明确的西文字体在前，中文缺字兜底在后，通用字体族最后。
+// 中文字体也覆盖英文：用户主动选苹方 / 文楷时，会优先使用它们自己的英文字形。
 export const WENKAI_SCREEN = "'LXGW WenKai Screen', '霞鹜文楷 屏幕阅读版'";
-export const SYSTEM_FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', ${WENKAI_SCREEN}, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif`;
-// GitHub 那套的界面字体：苹方排最前，没装就落到后面的西文 / 中文兜底
-const GITHUB_FONT_OLD = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif";
-export const GITHUB_FONT = `'PingFang SC', ${GITHUB_FONT_OLD}`;
-// 等宽字体同理：拉丁字符还是前面的 Cascadia / Consolas（对齐不乱），
-// 只有这些字体里没有的汉字落到霞鹜文楷等宽屏幕阅读版；没装则照旧落到系统 monospace。
 export const WENKAI_MONO_SCREEN = "'LXGW WenKai Mono Screen', '霞鹜文楷等宽 屏幕阅读版'";
-export const GITHUB_MONO = `ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', ${WENKAI_MONO_SCREEN}, monospace`;
-/** 代码 / 等宽字体统一用 Consolas（GitHub 那套的默认就是它） */
+export const SYSTEM_FONT = "'Segoe UI', 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif";
+const GITHUB_FONT_OLD = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif";
+export const GITHUB_FONT = "'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif";
+export const GITHUB_MONO = `SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', ${WENKAI_MONO_SCREEN}, ui-monospace, monospace`;
+/** 默认代码字体；缺字和跨平台兜底由 buildFontStack() 补齐。 */
 export const GITHUB_CODE = "'Consolas'";
 
-// 与 Pi export-html/template.css 的原版字体栈一致。
-export const PI_FONT = "ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace";
+// 保留 Pi 的字体候选，但把 ui-monospace 移到明确的字体之后，避免提前截断匹配。
+export const PI_FONT = "'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', ui-monospace, monospace";
 export const PI_SETTINGS = {
-  accent: '#7459b4', mdStyle: 'pi', font: PI_FONT, codeFont: PI_FONT,
-  radius: 4, chatWidth: 800, spacing: 1, fontSize: 12, codeFontSize: 12,
+  accent: '#7459b4', mdStyle: 'pi', font: PI_FONT, chatFont: '', codeFont: PI_FONT,
+  radius: 4, chatWidth: 800, spacing: 1, fontSize: 12, chatFontSize: 12, codeFontSize: 12,
+  toolFontSize: 12, thinkingFontSize: 12,
   lineHeight: 1.5, letterSpacing: 0, paraGap: 1.5,
 };
 
-/** GitHub 那一套（现在是默认的整体样式）：配色 + 苹方 + Consolas + GitHub 的 Markdown 排版，紧凑方正 */
+/** GitHub 那一套（默认整体样式）：配色 + 无衬线正文 + Consolas + GitHub Markdown 排版。 */
 const GITHUB_SETTINGS = {
   accent: '#0969da',
   mdStyle: 'github',
   font: GITHUB_FONT,
+  chatFont: '', // 空字符串表示跟随界面字体
   codeFont: GITHUB_CODE,
   radius: 6,
   chatWidth: 980,
   spacing: 1,
   fontSize: 14,
+  chatFontSize: 14,
   codeFontSize: 13,
+  toolFontSize: 12,
+  thinkingFontSize: 12,
   lineHeight: 1.55,
   letterSpacing: 0,
   paraGap: 0.6,
@@ -72,12 +71,16 @@ export const STYLES = [
       accent: '#3b82f6',
       mdStyle: 'default',
       font: SYSTEM_FONT,
+      chatFont: '',
       codeFont: GITHUB_CODE,
       radius: 10,
       chatWidth: 920,
       spacing: 1,
       fontSize: 14,
+      chatFontSize: 14,
       codeFontSize: 13,
+      toolFontSize: 12,
+      thinkingFontSize: 12,
       lineHeight: 1.7,
       letterSpacing: 0.2,
       paraGap: 0.6,
@@ -108,6 +111,7 @@ export const ACCENT_NAMES = { '#7459b4': 'pi 紫', '#0969da': 'GitHub 蓝（默�
 /** 字体下拉框：一个选项就是一款字体，不往里塞一串（缺字、缺等宽的兜底交给 apply() 统一补） */
 export const FONT_PRESETS = [
   { label: '系统默认', value: SYSTEM_FONT },
+  { label: 'GitHub 默认', value: GITHUB_FONT },
   { label: 'pi 等宽（原版）', value: PI_FONT },
   { label: '霞鹜文楷屏幕阅读版 LXGW WenKai Screen', value: WENKAI_SCREEN },
   { label: '霞鹜文楷 LXGW WenKai', value: "'LXGW WenKai'" },
@@ -134,7 +138,7 @@ export const MONO_PRESETS = [
 ];
 
 const KEY = 'seed-pi-web-settings';
-export const VER = 15; // v14：pi 样式；v15：思考和工具恢复展开／折叠，旧半折叠迁移为折叠。
+export const VER = 17; // v17：工具调用和思考字号独立设置。
 // 设置结构历史：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版；<12 默认整体样式换成 GitHub（苹方 + Consolas），等宽字体统一 Consolas；<13 输入框上面的状态信息改成默认显示
 let saved = {};
 try {
@@ -187,9 +191,28 @@ if ((saved.__v || 1) < 13) {
   // 状态信息改成默认显示：存档里的 false 就是旧默认（当时根本没地方单独打开），删掉让新默认生效
   delete saved.showUsage;
 }
+if ((saved.__v || 1) < 16) {
+  // 只替换完整匹配的旧内置预设，保留用户自定义字体。
+  const oldSystem = `-apple-system, BlinkMacSystemFont, 'Segoe UI', ${WENKAI_SCREEN}, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif`;
+  const oldMono = `ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', ${WENKAI_MONO_SCREEN}, monospace`;
+  const oldPi = "ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace";
+  const replacements = new Map([[oldSystem, SYSTEM_FONT], [`'PingFang SC', ${GITHUB_FONT_OLD}`, GITHUB_FONT], [oldMono, GITHUB_MONO], [oldPi, PI_FONT]]);
+  for (const key of ['font', 'chatFont', 'codeFont']) {
+    if (replacements.has(saved[key])) saved[key] = replacements.get(saved[key]);
+  }
+  saved.chatFont ??= '';
+  saved.chatFontSize ??= saved.fontSize ?? DEFAULTS.fontSize;
+}
 // 同样处理导入的旧设置，即使导入文件的版本号已是当前版本。
 if (saved.uiStyle === 'wechat') Object.assign(saved, PI_SETTINGS, { uiStyle: 'pi' });
 if (saved.mdStyle === 'github-compact') saved.mdStyle = 'github';
+if ((saved.__v || 1) < 17) {
+  // 原先 pi 过程块跟随界面字号，其他样式是界面字号减 2px；升级后保持当前显示大小。
+  const oldSize = saved.fontSize ?? DEFAULTS.fontSize;
+  const blockSize = saved.uiStyle === 'pi' ? oldSize : oldSize - 2;
+  saved.toolFontSize ??= blockSize;
+  saved.thinkingFontSize ??= blockSize;
+}
 for (const [key, oldKey] of [['thinkingDisplay', 'thinkingOpen'], ['toolsDisplay', 'toolsOpen']]) {
   if (!['collapsed', 'expanded'].includes(saved[key])) {
     saved[key] = saved[key] === undefined && saved[oldKey] === true ? 'expanded' : 'collapsed';
@@ -257,11 +280,28 @@ export function resetSettings() {
   Object.assign(UI, DEFAULTS);
 }
 
-/** 中文字体的兜底链：用户的字体里没有汉字（比如选了 Segoe UI）时，中文按这个顺序找。
- *  首选霞鹜文楷屏幕阅读版，没装再落到苹方 / 雅黑 */
-const FALLBACK = `${WENKAI_SCREEN}, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', sans-serif`;
-/** 等宽的兜底链：用户的等宽字体里没有汉字时，先找霞鹜文楷等宽屏幕阅读版 */
-const MONO_FALLBACK = `${WENKAI_MONO_SCREEN}, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace`;
+// 常规正文优先黑体，文楷保留为最后的具名字体兜底，也可以在设置里主动选到最前。
+const FALLBACK = `'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', ${WENKAI_SCREEN}, system-ui, sans-serif`;
+const MONO_FALLBACK = `'Cascadia Mono', Consolas, 'Liberation Mono', ${WENKAI_MONO_SCREEN}, 'Noto Sans Mono CJK SC', ui-monospace, monospace`;
+const GENERIC_FONTS = new Set(['-apple-system', 'blinkmacsystemfont', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'sans-serif', 'serif', 'monospace', 'cursive', 'fantasy', 'math', 'fangsong']);
+
+/** 合并预设 / 自定义字体和兜底：保留具名字体顺序、去重，把系统别名和通用族统一放最后。
+ *  带引号的字体名允许包含逗号；例如 'Example, Mono' 仍是一款字体。
+ */
+export function buildFontStack(font, mono = false) {
+  const names = [], generic = [], seen = new Set();
+  const tokens = `${font || (mono ? GITHUB_CODE : SYSTEM_FONT)}, ${mono ? MONO_FALLBACK : FALLBACK}`.match(/(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,'"])+/g) || [];
+  for (const token of tokens) {
+    const value = token.trim();
+    const isGeneric = GENERIC_FONTS.has(value.toLowerCase());
+    const key = (isGeneric ? 'generic:' : 'font:') + value.replace(/^(['"])(.*)\1$/, '$2').toLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    // 引号内的 "serif" 等是具名字体，不是 CSS 通用族。
+    (isGeneric ? generic : names).push(value);
+  }
+  return [...names, ...generic].join(', ');
+}
 const mql = window.matchMedia('(prefers-color-scheme: dark)');
 
 // 图（mermaid）是先把文字量一遍再算尺寸的，所以字体或字号一变就得重新量、重画。
@@ -279,17 +319,24 @@ function apply() {
   // 原版 pi 在深色下用更亮的紫色；用户自选的主题色仍照常保留。
   const accent = UI.uiStyle === 'pi' && UI.accent === PI_SETTINGS.accent && dark ? '#a798d7' : UI.accent;
   set('--accent', accent);
-  set('--font', `${UI.font || SYSTEM_FONT}, ${FALLBACK}`);
-  set('--font-code', `${UI.codeFont || UI.font || SYSTEM_FONT}, ${MONO_FALLBACK}`);
+  const font = buildFontStack(UI.font);
+  const chatFont = buildFontStack(UI.chatFont || UI.font);
+  const codeFont = buildFontStack(UI.codeFont, true);
+  set('--font', font);
+  set('--font-chat', chatFont);
+  set('--font-code', codeFont);
   set('--fs', UI.fontSize + 'px');
+  set('--fs-chat', UI.chatFontSize + 'px');
   set('--fs-code', UI.codeFontSize + 'px');
+  set('--fs-tool', UI.toolFontSize + 'px');
+  set('--fs-thinking', UI.thinkingFontSize + 'px');
   set('--lh', String(UI.lineHeight));
   set('--ls', UI.letterSpacing + 'px');
   set('--para', UI.paraGap + 'em');
   set('--r', UI.radius + 'px');
   set('--s', String(UI.spacing));
   set('--chat-w', UI.chatWidth ? UI.chatWidth + 'px' : '100%');
-  const fontKey = `${UI.font}|${UI.codeFont}|${UI.fontSize}`;
+  const fontKey = `${chatFont}|${codeFont}|${UI.chatFontSize}`;
   if (fontKey !== lastFontKey) {
     lastFontKey = fontKey;
     resetDiagramCache();

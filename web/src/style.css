@@ -2,12 +2,15 @@
 :root {
   /* 由 settings.js 覆盖的可调参数 */
   --accent: #3b82f6;
-  /* 和 settings.js 里的 SYSTEM_FONT 保持一致（脚本跑起来后会被实时值覆盖，这里只是首屏就绪前的底） */
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'LXGW WenKai Screen', '霞鹜文楷 屏幕阅读版', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif;
-  /* 和 settings.js 里的 GITHUB_MONO 保持一致：拉丁字符走 Cascadia / Consolas，汉字落到霞鹜文楷等宽屏幕阅读版 */
-  --font-code: ui-monospace, 'Cascadia Mono', Consolas, 'Liberation Mono', 'LXGW WenKai Mono Screen', '霞鹜文楷等宽 屏幕阅读版', monospace;
+  /* 首屏兜底与默认 GitHub 样式一致；运行后由 settings.js 统一生成并覆盖。 */
+  --font: 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', 'LXGW WenKai Screen', '霞鹜文楷 屏幕阅读版', system-ui, sans-serif;
+  --font-chat: var(--font);
+  --font-code: Consolas, 'Cascadia Mono', 'Liberation Mono', 'LXGW WenKai Mono Screen', '霞鹜文楷等宽 屏幕阅读版', 'Noto Sans Mono CJK SC', ui-monospace, monospace;
   --fs: 14px;
+  --fs-chat: 14px;
   --fs-code: 13px;
+  --fs-tool: 12px;
+  --fs-thinking: 12px;
   --lh: 1.7;
   --ls: 0.2px;
   --para: 0.6em;
@@ -122,12 +125,15 @@
   color-scheme: dark;
 }
 
-/* 自己的气泡：颜色直接跟主题色走，文字用白色 */
+/* 用户消息固定黑字，主题色与白色混出浅底；不混入深色页面背景，避免黑字失去对比。
+   预设色和自定义颜色走同一条规则，pi 样式也共用。 */
 :root {
-  --bubble-me: var(--accent);
-  --bubble-me-text: #fff;
-  --bubble-me-border: transparent;
+  --bubble-me-tint: 14%;
+  --bubble-me: color-mix(in srgb, var(--accent) var(--bubble-me-tint), white);
+  --bubble-me-text: #111111;
+  --bubble-me-border: color-mix(in srgb, var(--accent) 30%, white);
 }
+:root[data-theme='dark'] { --bubble-me-tint: 22%; }
 
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; height: 100%; }
@@ -142,8 +148,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
-/* 自己的气泡本身就是主题色，全局那个半透明的主题色选中底完全看不出来：换成一层白 */
-.me-bubble ::selection { background: rgba(255, 255, 255, 0.35); color: var(--bubble-me-text); }
+/* 浅色气泡里的选中文字仍保留黑色，用半透明主题色突出选择范围。 */
+.me-bubble ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--bubble-me-text); }
 button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
 a { color: var(--accent-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -267,22 +273,24 @@ a:hover { text-decoration: underline; }
 /* ---- 过程块：思考过程、工具调用共用同一套外观。
    不再是卡片：只有一行头部，鼠标移上去浮出一层浅底表示能点；展开的内容靠浅色面板拉出层次，不用描边。
    头部和正文、正文内容都用同一个 --pad-x 左右内边距，跟对话正文的左边缘对成一条线 ---- */
-.blk { font-size: var(--fs-sm); align-self: stretch; max-width: 100%; margin: -2px 0; }
+.blk { --fs-block: var(--fs-sm); font-size: var(--fs-block); align-self: stretch; max-width: 100%; margin: -2px 0; }
+.tool-execution { --fs-block: var(--fs-tool); }
+.thinking-block { --fs-block: var(--fs-thinking); }
 .blk-head { display: flex; align-items: center; gap: 8px; padding: 3px var(--pad-x); border-radius: var(--r-sm); cursor: pointer; user-select: none; transition: background 0.12s; }
 .blk-head:hover { background: var(--hover); }
 .blk > summary { list-style: none; }
 .blk > summary::-webkit-details-marker { display: none; }
 /* 没有卡片以后，头部这一行就是主体：标签跟摘要用同一个字号，只靠颜色分开 */
-.blk-chip { flex: none; font-family: var(--font-code); font-size: var(--fs-sm); color: var(--accent-text); }
-.blk-sum { color: var(--text-3); font-family: var(--font-code); font-size: var(--fs-sm); }
-.blk-meta { flex: none; color: var(--text-3); font-size: var(--fs-xs); }
+.blk-chip { flex: none; font-family: var(--font-code); font-size: inherit; color: var(--accent-text); }
+.blk-sum { color: var(--text-3); font-family: var(--font-code); font-size: inherit; }
+.blk-meta { flex: none; color: var(--text-3); font-size: max(10px, calc(1em - 1px)); }
 .blk-chev { margin-left: auto; flex: none; color: var(--text-3); opacity: 0.45; transition: transform 0.15s, opacity 0.15s; }
 .blk-head:hover .blk-chev { opacity: 1; }
 .blk.open .blk-chev,
 .blk[open] .blk-chev { transform: rotate(90deg); }
 .blk-head .spin { width: 11px; height: 11px; }
-/* 展开后的内容跟头部同一字号（--fs-sm），思考和工具输出都用等宽字体，只是配色和底色不同 */
-.blk-body { margin: 2px 0; padding: var(--sp2) var(--pad-x); background: var(--code-bg); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; font-size: var(--fs-sm); font-family: var(--font-code); line-height: 1.6; max-height: 380px; overflow: auto; }
+/* 标题、折叠预览和展开内容统一继承各自的过程块字号；思考与工具仍共用等宽字体。 */
+.blk-body { margin: 2px 0; padding: var(--sp2) var(--pad-x); background: var(--code-bg); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; font-size: inherit; font-family: var(--font-code); line-height: 1.6; max-height: 380px; overflow: auto; }
 /* 思考过程（散文）不用面板底色，行高也松一点：缩进的一段灰字，和正文分开就够了。
    字体不在这里改，跟着 .blk-body 用等宽 */
 .blk-body.prose { line-height: var(--lh); background: none; }
@@ -308,7 +316,7 @@ a:hover { text-decoration: underline; }
 .switch:checked::after { transform: translateX(16px); }
 
 /* ---- Markdown ---- */
-.md { word-wrap: break-word; line-height: var(--lh); }
+.md { font-family: var(--font-chat); font-size: var(--fs-chat); word-wrap: break-word; line-height: var(--lh); }
 .md > :first-child { margin-top: 0 !important; }
 .md > :last-child { margin-bottom: 0 !important; }
 .md p, .md ul, .md ol, .md blockquote, .md table, .md pre.code { margin: var(--para) 0; }
@@ -367,7 +375,7 @@ a:hover { text-decoration: underline; }
   --pele-accent: var(--accent);
   --pele-critical: var(--err);
   --pele-error: var(--err);
-  --pele-font: var(--font);
+  --pele-font: var(--font-chat);
   --pele-font-mono: var(--font-code);
   --pele-radius: var(--r-sm);
 }

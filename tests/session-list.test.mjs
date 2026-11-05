@@ -179,6 +179,26 @@ test('sidebar compensates for actual scrollbar width, including overlay scrollba
   assert.match(source, /ref="listElement" class="list"/);
 });
 
+test('sidebar header shares the search and list gutters and uses a font-independent centered pi mark', async () => {
+  const source = await fs.readFile(new URL('../web/src/components/SidePanel.vue', import.meta.url), 'utf8');
+  const icons = await fs.readFile(new URL('../web/src/components/Icon.vue', import.meta.url), 'utf8');
+  const brand = source.match(/\.brand \{([^}]+)\}/)[1];
+  const logo = source.match(/\.logo \{([^}]+)\}/)[1];
+  const toggle = source.match(/\.brand > \.ib \{([^}]+)\}/)[1];
+  assert.match(brand, /padding: 0 var\(--side-gutter\);/);
+  assert.doesNotMatch(brand, /--side-inset/);
+  assert.match(source, /\.search \{[^}]*margin: 0 var\(--side-gutter\) 8px/);
+  for (const rule of [logo, toggle]) {
+    assert.match(rule, /width: 28px; height: 28px;/);
+  }
+  assert.match(toggle, /padding: 0;/);
+  assert.match(logo, /align-items: center; justify-content: center; flex: none/);
+  assert.doesNotMatch(logo, /font-/);
+  assert.match(source, /<span class="logo" role="img" aria-label="pi"><Icon name="pi" :size="18" aria-hidden="true" \/><\/span>/);
+  assert.doesNotMatch(source, /class="name"|\.name \{/);
+  assert.match(icons, /pi: 'M4 6h16M8 6 7 18M16 6v9c0 2 1 3 3 3h1'/);
+});
+
 test('display dropdown hides directory-only options, emits patches, stays open and supports keyboard dismissal', async (t) => {
   const props = vue.reactive({ mode: 'all', settings: preferences.readSessionView(storageOf(), 'all') });
   const document = { activeElement: null };

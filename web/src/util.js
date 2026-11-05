@@ -455,7 +455,7 @@ let fontSig = '';
 function currentFontSig() {
   if (fontSig) return fontSig;
   const cs = getComputedStyle(document.documentElement);
-  fontSig = `${cs.getPropertyValue('--fs').trim()}|${cs.getPropertyValue('--font').trim()}`;
+  fontSig = `${cs.getPropertyValue('--fs-chat').trim()}|${cs.getPropertyValue('--font-chat').trim()}|${cs.getPropertyValue('--font-code').trim()}`;
   return fontSig;
 }
 /** 主题/字体改了就作废：下次渲染按新变量重新量、重画 */
@@ -469,9 +469,9 @@ export function resetDiagramCache() {
 // pele 的配色全部走 CSS 变量，这里把当前字体交过去（量节点宽高用），Id 前缀保证同页多张图不撞
 function diagramOptions(src) {
   const cs = getComputedStyle(document.documentElement);
-  const font = cs.getPropertyValue('--font').trim() || 'sans-serif';
+  const font = cs.getPropertyValue('--font-chat').trim() || 'sans-serif';
   const mono = cs.getPropertyValue('--font-code').trim() || 'monospace';
-  const size = Math.max(10, Math.round(parseFloat(cs.getPropertyValue('--fs')) || 14));
+  const size = Math.max(10, Math.round(parseFloat(cs.getPropertyValue('--fs-chat')) || 14));
   return { idPrefix: 'pm' + hash(src), fontFamily: font, fontFamilyMono: mono, fontSize: size, math: diagramMath };
 }
 

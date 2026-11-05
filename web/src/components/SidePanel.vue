@@ -208,8 +208,7 @@ function sessionMenu(e, s) {
 <template>
   <aside class="side">
     <div class="brand">
-      <span class="logo">π</span>
-      <span class="name">pi</span>
+      <span class="logo" role="img" aria-label="pi"><Icon name="pi" :size="18" aria-hidden="true" /></span>
       <div class="grow" />
       <button class="ib" :title="view.mobile ? '关闭' : '收起侧栏 (Ctrl+B)'" @click="toggleSide(false)"><Icon :name="view.mobile ? 'close' : 'sidebar'" /></button>
     </div>
@@ -262,9 +261,12 @@ function sessionMenu(e, s) {
 
 <style scoped>
 .side { --side-gutter: 12px; --side-inset: 8px; --session-indent: 47px; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel-2); user-select: none; }
-.brand { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 var(--side-gutter) 0 calc(var(--side-gutter) + var(--side-inset)); flex: none; }
-.logo { background: var(--accent); color: #fff; width: 28px; height: 28px; border-radius: var(--r-sm); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
-.name { font-size: calc(var(--fs) + 3px); font-weight: 700; }
+/* 顶部两端和搜索框 / 会话行的外边缘共用同一条对齐线。 */
+.brand { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 var(--side-gutter); flex: none; }
+.logo { background: var(--accent); color: #fff; width: 28px; height: 28px; border-radius: var(--r-sm); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+/* 用固定路径代替文字 π，避免不同字体的基线和字面留白让标记偏下。 */
+.logo :deep(.icon) { stroke-width: 2.6; }
+.brand > .ib { width: 28px; height: 28px; padding: 0; }
 .ib { width: 32px; height: 32px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .ib:hover { background: var(--active); color: var(--text); }
 .ib.sm { width: 26px; height: 26px; }

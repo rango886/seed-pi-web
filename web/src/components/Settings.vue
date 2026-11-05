@@ -68,37 +68,28 @@ async function importSettings(e) {
   toast(`已导入 ${n} 项，正在重新载入…`, 'info', 3000);
   setTimeout(() => location.reload(), 700);
 }
-// 界面字体和代码字体各自一张表：一个选项一款字体，代码字体那张只放等宽的
-const presetsOf = (which) => (which === 'font' ? FONT_PRESETS : MONO_PRESETS);
-const isPreset = (v, which = 'font') => presetsOf(which).some((f) => f.value === v);
-
-// 字体下拉框：选“自定义…”时把当前预设值清掉，露出下面那个输入框
-const fontCustom = ref(!isPreset(UI.font, 'font'));
-const codeCustom = ref(!isPreset(UI.codeFont, 'code'));
-function onFontPick(e, which) {
+// 按用途分三项：界面、聊天正文、代码 / 终端。聊天可选择跟随界面。
+const fontFields = [
+  { key: 'font', label: '界面字体', presets: FONT_PRESETS },
+  { key: 'chatFont', label: '聊天字体', presets: FONT_PRESETS },
+  { key: 'codeFont', label: '代码／终端等宽字体', presets: MONO_PRESETS },
+];
+const isPreset = (v, field) => (field.key === 'chatFont' && v === '') || field.presets.some((f) => f.value === v);
+const fontCustom = ref(Object.fromEntries(fontFields.map((field) => [field.key, !isPreset(UI[field.key], field)])));
+function onFontPick(e, field) {
   const v = e.target.value;
-  const custom = which === 'font' ? fontCustom : codeCustom;
   if (v === '__custom') {
-    custom.value = true;
-    if (isPreset(which === 'font' ? UI.font : UI.codeFont, which)) {
-      if (which === 'font') UI.font = '';
-      else UI.codeFont = '';
-    }
+    fontCustom.value[field.key] = true;
+    // 保留现有值，避免“自定义”空输入与聊天的“跟随界面”互相混淆。
     return;
   }
-  custom.value = false;
-  if (which === 'font') UI.font = v;
-  else UI.codeFont = v;
+  fontCustom.value[field.key] = false;
+  UI[field.key] = v;
 }
-// 整体样式会把字体换成预设值，换完把“自定义”输入框收起来
-watch(
-  () => UI.font,
-  (v) => isPreset(v, 'font') && (fontCustom.value = false),
-);
-watch(
-  () => UI.codeFont,
-  (v) => isPreset(v, 'code') && (codeCustom.value = false),
-);
+// 切换整体样式 / 恢复默认时同步下拉框状态。
+for (const field of fontFields) {
+  watch(() => UI[field.key], (v) => { fontCustom.value[field.key] = !isPreset(v, field); });
+}
 function onKey(e) {
   if (e.key === 'Escape') {
     e.stopPropagation();
@@ -107,8 +98,11 @@ function onKey(e) {
 }
 // 滑块：[字段, 标题, 最小, 最大, 步长, 单位格式]
 const textSliders = [
-  ['fontSize', '字号', 12, 20, 1, (v) => `${v}px`],
+  ['fontSize', '界面字号', 12, 20, 1, (v) => `${v}px`],
+  ['chatFontSize', '聊天字号', 12, 24, 1, (v) => `${v}px`],
   ['codeFontSize', '代码字号', 11, 18, 1, (v) => `${v}px`],
+  ['toolFontSize', '工具调用字号', 10, 24, 1, (v) => `${v}px`],
+  ['thinkingFontSize', '思考字号', 10, 24, 1, (v) => `${v}px`],
   ['lineHeight', '行高', 1.3, 2.1, 0.05, (v) => v.toFixed(2)],
   ['letterSpacing', '字间距', 0, 1.5, 0.1, (v) => `${v.toFixed(1)}px`],
   ['paraGap', '段落间距', 0.2, 2, 0.1, (v) => `${v.toFixed(1)}em`],
@@ -167,7 +161,7 @@ const layoutSliders = [
             <h3>主题色</h3>
             <div class="card">
               <div class="item col">
-                <span class="label">主题色<span class="dim small-tip">（pi 样式的消息底色使用原版配色）</span></span>
+                <span class="label">主题色<span class="dim small-tip">（用户气泡自动使用同色系浅底、黑色文字）</span></span>
                 <div class="swatches">
                   <button
                     v-for="c in ACCENTS"
@@ -216,31 +210,29 @@ const layoutSliders = [
           <section>
             <h3>文字</h3>
             <div class="card">
-              <div class="item col">
-                <span class="label">界面字体</span>
-                <select class="input" :value="fontCustom ? '__custom' : UI.font" @change="onFontPick($event, 'font')">
-                  <option v-for="f in FONT_PRESETS" :key="f.value" :value="f.value">{{ f.label }}</option>
+              <div v-for="field in fontFields" :key="field.key" class="item col">
+                <span class="label">{{ field.label }}</span>
+                <select class="input" :aria-label="field.label" :value="fontCustom[field.key] ? '__custom' : UI[field.key]" @change="onFontPick($event, field)">
+                  <option v-if="field.key === 'chatFont'" value="">跟随界面字体</option>
+                  <option v-for="f in field.presets" :key="f.value" :value="f.value">{{ f.label }}</option>
                   <option value="__custom">自定义…</option>
                 </select>
-                <input v-if="fontCustom" v-model.lazy="UI.font" class="input" placeholder="CSS 字体名，例如 'LXGW WenKai'" />
+                <input v-if="fontCustom[field.key]" v-model.lazy="UI[field.key]" class="input" :aria-label="field.label + '（自定义）'" placeholder="CSS 字体名，例如 'LXGW WenKai' 或 'JetBrains Mono'" />
               </div>
-              <div class="item col">
-                <span class="label">代码字体</span>
-                <select class="input" :value="codeCustom ? '__custom' : UI.codeFont" @change="onFontPick($event, 'code')">
-                  <option v-for="f in MONO_PRESETS" :key="f.value" :value="f.value">{{ f.label }}</option>
-                  <option value="__custom">自定义…</option>
-                </select>
-                <input v-if="codeCustom" v-model.lazy="UI.codeFont" class="input" placeholder="CSS 字体名，例如 'JetBrains Mono'" />
-              </div>
+              <p class="dim small-tip">字体需安装在打开网页的设备上。聊天字体用于消息正文和输入框；代码、日志和终端单独使用等宽字体。pi Markdown 也遵循这些设置。</p>
               <div v-for="[k, l, min, max, step, fmt] in textSliders" :key="k" class="item">
                 <span class="label">{{ l }}</span>
-                <input v-model.number="UI[k]" type="range" :min="min" :max="max" :step="step" class="range" @dblclick="UI[k] = DEFAULTS[k]" />
+                <input v-model.number="UI[k]" type="range" :aria-label="l" :min="min" :max="max" :step="step" class="range" @dblclick="UI[k] = DEFAULTS[k]" />
                 <span class="val">{{ fmt(UI[k]) }}</span>
               </div>
               <div class="preview md">
                 <p>预览 Preview：敏捷的棕色狐狸跳过了懒狗。The quick brown fox jumps over the lazy dog. <code>const x = 42</code></p>
                 <p>第二段，用来看段落间距和行高是否舒服。0O 1lI {} [] =&gt; ===</p>
                 <blockquote><p>引用块长这样</p></blockquote>
+              </div>
+              <div class="preview process-samples" aria-label="工具调用和思考字号预览">
+                <div class="blk tool-execution"><div class="blk-body">工具调用预览 Tool output：读取文件，共 42 行。</div></div>
+                <div class="blk prose thinking-block"><div class="blk-body prose">思考预览 Thinking：先分析问题，再逐步验证。</div></div>
               </div>
             </div>
           </section>
@@ -340,7 +332,9 @@ label.item { cursor: pointer; }
 .sw.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
 select.input { cursor: pointer; }
 
-.preview { padding: 12px 14px; background: var(--chat-bg); font-size: var(--fs); border-top: 1px solid var(--line-2); }
+.preview { padding: 12px 14px; background: var(--chat-bg); font-size: var(--fs-chat); border-top: 1px solid var(--line-2); }
+.process-samples { display: grid; gap: 8px; }
+.process-samples .blk { margin: 0; }
 .tip { font-size: var(--fs-xs); margin: 10px 4px 0; line-height: 1.7; }
 .small { font-size: var(--fs-sm); }
 .tip b { font-weight: 600; color: var(--text-2); }

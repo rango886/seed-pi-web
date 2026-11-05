@@ -2,6 +2,7 @@
 // 统一的线性图标，name 对应下面的路径
 defineProps({ name: String, size: { type: [Number, String], default: 18 } });
 const P = {
+  pi: 'M4 6h16M8 6 7 18M16 6v9c0 2 1 3 3 3h1',
   plus: 'M12 5v14M5 12h14',
   minus: 'M5 12h14',
   list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',

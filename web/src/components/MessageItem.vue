@@ -188,7 +188,7 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 .ai .col { align-items: flex-start; }
 
 .bubble { border-radius: var(--r-bubble); padding: calc(var(--sp2) + 2px) var(--pad-x); line-height: var(--lh); max-width: 100%; }
-.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); padding: calc(var(--sp2) - 1px) calc(var(--pad-x) - 2px); font-size: calc(var(--fs) - 1px); line-height: 1.6; }
+.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); padding: calc(var(--sp2) - 1px) calc(var(--pad-x) - 2px); font-size: calc(var(--fs-chat) - 1px); line-height: 1.6; }
 /* 正文上下都多留些空间，和前后的思考/工具块拉开距离；工具块之间仍保持紧凑 */
 /* align-self: stretch：正文铺满整栏，里面的代码块、图、表格才能真正两边填满（否则这块会缩到最长那行文字那么宽） */
 .ai-bubble { align-self: stretch; min-width: 0; background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); margin-block: var(--sp3); }
@@ -201,7 +201,7 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 .user-actions button:disabled { opacity: 0.4; cursor: default; }
 .version-count { font-variant-numeric: tabular-nums; }
 @media (hover: none) { .user-actions, .hover-actions { opacity: 1; } }
-.pre { white-space: pre-wrap; word-break: break-word; }
+.pre { font-family: var(--font-chat); white-space: pre-wrap; word-break: break-word; }
 .imgs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .imgs img { max-height: 160px; max-width: 260px; border-radius: var(--r-md); display: block; cursor: zoom-in; }
 /* 消息里带的附件：和输入框上面那一排长得一样（中间是类型、底部一条淡色横条放图标 + 名字），
@@ -209,6 +209,8 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 .atts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: flex-start; }
 .atts:last-child { margin-bottom: 0; }
 .att { display: inline-flex; align-items: center; height: 72px; max-width: 260px; padding: 0; border-radius: var(--r-md); background: color-mix(in srgb, var(--panel) 86%, transparent); color: var(--text-2); border: 1px solid var(--line-2); }
+/* 气泡始终是浅底，附件也用浅色卡片和黑字，不继承深色主题的浅字 / 深底。 */
+.me-bubble .att { --panel: color-mix(in srgb, var(--bubble-me) 55%, white); --text-2: var(--bubble-me-text); --line-2: var(--bubble-me-border); }
 .att.link { cursor: pointer; }
 .att.link:hover { border-color: var(--text-3); }
 /* 图片附件跟输入框里一个样：只露一张缩略图，文件名和编号都在悬停浮层里 */

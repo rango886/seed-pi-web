@@ -48,7 +48,7 @@ function drop(e) {
 
 <style scoped>
 .user-editor { width: min(80%, 720px); border: 1px solid var(--accent); border-radius: var(--r-md); padding: var(--sp3); background: var(--panel); }
-textarea { display: block; width: 100%; min-height: 100px; max-height: 55vh; resize: vertical; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; line-height: 1.6; }
+textarea { display: block; width: 100%; min-height: 100px; max-height: 55vh; resize: vertical; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-family: var(--font-chat); font-size: var(--fs-chat); line-height: 1.6; }
 .actions { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .edit-atts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .edit-att { display: flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-xs); }

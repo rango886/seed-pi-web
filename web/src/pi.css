@@ -1,8 +1,7 @@
 /* Pi 1.5.0 export-html：使用内置 light/dark 主题解析后的原始颜色。
    布局沿用 Web UI；正文、工具、面板和控件共用导出页的视觉语言。
-   data-ui 与 data-md 独立，单独选择 pi Markdown 也有完整的原版字体与配色。 */
+   data-ui 与 data-md 独立；pi Markdown 保留原版排版与配色，字体 / 字号遵循聊天和代码设置。 */
 :root:is([data-ui='pi'], [data-md='pi']) {
-  --pi-font: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
   --pi-page: #efeeee;
   --pi-card: #f7f6f6;
   --pi-info: #ede3dd;
@@ -13,7 +12,6 @@
   --pi-border: #3d8eb3;
   --pi-border-accent: #8a72cb;
   --pi-selected: #dfe7ec;
-  --pi-user: #dfe7ec;
   --pi-custom: #e6e4ee;
   --pi-thinking: #7c868c;
   --pi-pending: #e4e5e6;
@@ -39,7 +37,6 @@
   --pi-border: #5fa8cc;
   --pi-border-accent: #a08ed5;
   --pi-selected: #213b49;
-  --pi-user: #213b49;
   --pi-custom: #3a3055;
   --pi-thinking: #96a0a4;
   --pi-pending: #34383a;
@@ -68,9 +65,6 @@
   --hover: var(--pi-selected);
   --active: var(--pi-selected);
   --accent-text: var(--accent);
-  --bubble-me: var(--pi-user);
-  --bubble-me-text: var(--pi-text);
-  --bubble-me-border: transparent;
   --bubble-ai: transparent;
   --code-bg: transparent;
   --inline-code: rgba(128, 128, 128, 0.2);
@@ -98,7 +92,6 @@
   --fs-xs: calc(var(--fs) - 2px);
   --pi-line: calc(var(--fs) * var(--lh));
   --pi-paragraph: var(--para);
-  --pi-md-size: var(--fs);
   --pad-x: var(--pi-line);
   --hl-comment: var(--pi-muted);
   --hl-keyword: var(--pi-link);
@@ -167,14 +160,13 @@
 :root[data-ui='pi'] .chat .inner { padding-top: var(--pi-line); }
 :root[data-ui='pi'] .msg { margin-bottom: var(--pi-line); }
 :root[data-ui='pi'] .msg .col { gap: 0; align-items: stretch; }
-:root[data-ui='pi'] .msg .me-bubble { max-width: 100%; width: 100%; border: 0; border-radius: var(--r); padding: var(--pi-line); font-size: var(--fs); line-height: var(--lh); }
-:root[data-ui='pi'] .me-bubble ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+:root[data-ui='pi'] .msg .me-bubble { max-width: 100%; width: 100%; border: 0; border-radius: var(--r); padding: var(--pi-line); font-size: var(--fs-chat); line-height: var(--lh); }
 :root[data-ui='pi'] .msg .ai-bubble { padding: var(--pi-line); padding-bottom: 0; margin: 0; }
 :root[data-ui='pi'] .user-actions { align-self: flex-end; }
 :root[data-ui='pi'] .ai .meta { font-size: var(--fs-xs); padding: 0 var(--pi-line); }
 :root[data-ui='pi'] .sys-card,
 :root[data-ui='pi'] .sys-pill { background: var(--pi-custom); border: 0; color: var(--pi-muted); }
-:root[data-ui='pi'] .blk { margin: 0; font-size: var(--fs); line-height: var(--lh); }
+:root[data-ui='pi'] .blk { margin: 0; font-size: var(--fs-block); line-height: var(--lh); }
 :root[data-ui='pi'] .tool-execution { padding: var(--pi-line); border-radius: var(--r); background: var(--pi-pending); }
 :root[data-ui='pi'] .tool-execution.success { background: var(--pi-success); }
 :root[data-ui='pi'] .tool-execution.error { background: var(--pi-error); }
@@ -202,15 +194,15 @@
 :root[data-ui='pi'] .tool-execution .body { min-width: 0; }
 
 /* Markdown：标题全部 1em，18px 段距，无代码卡片底色，原版表格和引用。 */
-:root[data-md='pi'] .md { font-family: var(--pi-font); font-size: var(--pi-md-size, 12px); line-height: var(--pi-line); letter-spacing: 0; color: var(--pi-text); }
+:root[data-md='pi'] .md { font-family: var(--font-chat); font-size: var(--fs-chat); line-height: var(--lh); letter-spacing: var(--ls); color: var(--pi-text); }
 :root[data-md='pi'] .md :is(h1, h2, h3, h4, h5, h6) { color: var(--pi-yellow); margin: var(--pi-line) 0 0; padding: 0; border: 0; font-size: 1em; font-weight: bold; line-height: inherit; }
 :root[data-md='pi'] .md strong { font-weight: bold; }
 :root[data-md='pi'] .md p { margin: 0; }
 :root[data-md='pi'] .md p + p { margin-top: var(--pi-paragraph); }
 :root[data-md='pi'] .md a { color: var(--pi-link); text-decoration: underline; }
-:root[data-md='pi'] .md code { background: rgba(128, 128, 128, 0.2); color: var(--pi-accent); padding: 0 4px; border-radius: 3px; font: inherit; }
+:root[data-md='pi'] .md code { background: rgba(128, 128, 128, 0.2); color: var(--pi-accent); padding: 0 4px; border-radius: 3px; font-family: var(--font-code); font-size: 0.9em; }
 :root[data-md='pi'] .md pre.code { position: relative; background: transparent; margin: var(--pi-line) 0; border: 0; border-radius: 0; overflow: visible; }
-:root[data-md='pi'] .md pre.code code { display: block; background: none; color: var(--pi-text); padding: 0 4px; border-radius: 3px; font: inherit; overflow-x: auto; white-space: pre; }
+:root[data-md='pi'] .md pre.code code { display: block; background: none; color: var(--pi-text); padding: 0 4px; border-radius: 3px; font-family: var(--font-code); font-size: var(--fs-code); line-height: 1.55; overflow-x: auto; white-space: pre; }
 /* 唯一的增强：复制按钮悬停浮现，不占原版代码块的版面。触屏和键盘也能用。 */
 :root[data-md='pi'] .md .code-bar { position: absolute; right: 0; top: 0; z-index: 1; height: auto; padding: 0; border: 0; background: transparent; opacity: 0; }
 :root[data-md='pi'] .md .code-bar span { display: none; }

@@ -8,6 +8,7 @@ import { useBlockDisplay, DISPLAY_MODES } from '../web/src/block-display.js';
 
 async function settings(t, saved = {}) {
   const values = new Map();
+  let diagramResets = 0;
   const storage = new Map([['seed-pi-web-settings', JSON.stringify(saved)]]);
   const root = { dataset: {}, style: { setProperty: (k, v) => values.set(k, v) } };
   const link = {};
@@ -19,7 +20,7 @@ async function settings(t, saved = {}) {
   const source = await fs.readFile(new URL('../web/src/settings.js', import.meta.url), 'utf8');
   const mod = new vm.SourceTextModule(source, { context });
   await mod.link(async (name) => {
-    const exports = name === 'vue' ? vue : { resetDiagramCache() {} };
+    const exports = name === 'vue' ? vue : { resetDiagramCache() { diagramResets++; } };
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [k, v] of Object.entries(exports)) this.setExport(k, v);
     }, { context });
@@ -27,7 +28,7 @@ async function settings(t, saved = {}) {
   const scope = vue.effectScope();
   t.after(() => scope.stop());
   await scope.run(() => mod.evaluate());
-  return { ...mod.namespace, values, root, storage };
+  return { ...mod.namespace, values, root, storage, get diagramResets() { return diagramResets; } };
 }
 
 async function tool(t, UI, props, file = 'ToolCard.vue') {
@@ -100,6 +101,244 @@ test('removed styles and controls migrate even when restored from a current-vers
   compact.useStyle('pi');
   compact.resetSettings();
   assert.equal(compact.UI.uiStyle, 'github');
+});
+
+test('font stacks keep named fonts before generic families, deduplicate and preserve quoted commas', async (t) => {
+  const s = await settings(t);
+  for (const [presets, mono] of [[s.FONT_PRESETS, false], [s.MONO_PRESETS, true]]) {
+    for (const preset of presets) {
+      const stack = s.buildFontStack(preset.value, mono);
+      const firstGeneric = stack.search(/(?:^|, )(?:system-ui|sans-serif|ui-monospace|monospace)(?:,|$)/);
+      const namedTail = mono ? "'Noto Sans Mono CJK SC'" : "'霞鹜文楷 屏幕阅读版'";
+      assert.ok(firstGeneric > stack.indexOf(namedTail), preset.label + ': generic families must follow named fallbacks');
+    }
+  }
+  const stack = s.buildFontStack("sans-serif, 'Segoe UI', Segoe UI, 'Example, Text', system-ui");
+  assert.ok(stack.startsWith("'Segoe UI', 'Example, Text', 'PingFang SC'"));
+  assert.equal(stack.split('Segoe UI').length, 2);
+  assert.ok(stack.indexOf('sans-serif') > stack.indexOf('Noto Sans CJK SC'));
+  assert.ok(s.buildFontStack("'serif', serif").includes("'serif'"), 'quoted family names are not generic keywords');
+  assert.ok(s.buildFontStack('', true).startsWith("'Consolas'"), 'empty code font never inherits proportional UI fonts');
+});
+
+test('old typography migrates without losing custom fonts or changing the chat text size', async (t) => {
+  const oldGitHub = "'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif";
+  const s = await settings(t, { __v: 15, font: oldGitHub, fontSize: 18, codeFont: "'My Mono'" });
+  assert.equal(s.UI.font, s.GITHUB_FONT);
+  assert.equal(s.UI.chatFont, '');
+  assert.equal(s.UI.chatFontSize, 18);
+  assert.equal(s.UI.codeFont, "'My Mono'");
+  const custom = await settings(t, { __v: 15, font: "'My Body'", fontSize: 16 });
+  assert.equal(custom.UI.font, "'My Body'");
+  assert.equal(custom.values.get('--font-chat'), custom.values.get('--font'));
+  assert.equal(custom.values.get('--fs-chat'), '16px');
+  const pi = await settings(t, { __v: 15, uiStyle: 'pi', font: "ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace", fontSize: 12 });
+  assert.equal(pi.UI.font, pi.PI_FONT);
+  assert.equal(pi.UI.chatFontSize, 12);
+});
+
+test('UI, chat and code fonts and sizes are independent; following UI remains reactive and persists', async (t) => {
+  const s = await settings(t);
+  s.UI.font = "'Segoe UI'";
+  s.UI.chatFont = "'LXGW WenKai'";
+  s.UI.codeFont = "'JetBrains Mono'";
+  s.UI.fontSize = 13;
+  s.UI.chatFontSize = 19;
+  s.UI.codeFontSize = 15;
+  await vue.nextTick();
+  assert.ok(s.values.get('--font').startsWith("'Segoe UI'"));
+  assert.ok(s.values.get('--font-chat').startsWith("'LXGW WenKai'"));
+  assert.ok(s.values.get('--font-code').startsWith("'JetBrains Mono'"));
+  assert.equal(s.values.get('--fs'), '13px');
+  assert.equal(s.values.get('--fs-chat'), '19px');
+  assert.equal(s.values.get('--fs-code'), '15px');
+  const resets = s.diagramResets;
+  s.UI.font = "'Arial'";
+  await vue.nextTick();
+  assert.equal(s.diagramResets, resets, 'unrelated UI font changes do not redraw chat diagrams');
+  s.UI.chatFont = '';
+  await vue.nextTick();
+  assert.equal(s.values.get('--font-chat'), s.values.get('--font'));
+  assert.ok(s.diagramResets > resets);
+  s.useStyle('pi');
+  await vue.nextTick();
+  s.UI.chatFont = "'Microsoft YaHei UI'";
+  s.UI.codeFont = "'Fira Code'";
+  await vue.nextTick();
+  assert.ok(s.values.get('--font-chat').startsWith("'Microsoft YaHei UI'"));
+  assert.ok(s.values.get('--font-code').startsWith("'Fira Code'"));
+  const saved = JSON.parse(s.storage.get('seed-pi-web-settings'));
+  assert.equal(saved.chatFont, s.UI.chatFont);
+  assert.equal(saved.__v, s.VER);
+  s.resetSettings();
+  await vue.nextTick();
+  assert.equal(s.UI.chatFont, '');
+  assert.equal(s.UI.chatFontSize, 14);
+});
+
+test('font selectors support independent custom values, following UI, and preset resets', async (t) => {
+  const s = await settings(t);
+  const source = await fs.readFile(new URL('../web/src/components/Settings.vue', import.meta.url), 'utf8');
+  const code = compileScript(parse(source).descriptor, { id: 'test-font-settings' }).content;
+  const context = vm.createContext({});
+  const mod = new vm.SourceTextModule(code, { context });
+  const imports = { vue, '../settings.js': s, '../store.js': { toast() {} }, '../block-display.js': { DISPLAY_MODES } };
+  await mod.link((name) => {
+    const exports = imports[name];
+    assert.ok(exports, name);
+    return new vm.SyntheticModule(Object.keys(exports), function () {
+      for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
+    }, { context });
+  });
+  await mod.evaluate();
+  const scope = vue.effectScope();
+  t.after(() => scope.stop());
+  const panel = scope.run(() => mod.namespace.default.setup({}, { expose() {} }));
+  const chat = panel.fontFields.find((field) => field.key === 'chatFont');
+  const codeField = panel.fontFields.find((field) => field.key === 'codeFont');
+  assert.equal(panel.fontCustom.value.chatFont, false);
+  panel.onFontPick({ target: { value: '__custom' } }, chat);
+  assert.equal(panel.fontCustom.value.chatFont, true);
+  s.UI.chatFont = "'My Chat Font'";
+  await vue.nextTick();
+  assert.equal(panel.fontCustom.value.chatFont, true);
+  panel.onFontPick({ target: { value: "'Fira Code'" } }, codeField);
+  await vue.nextTick();
+  assert.equal(s.UI.chatFont, "'My Chat Font'");
+  assert.equal(s.UI.codeFont, "'Fira Code'");
+  assert.equal(panel.fontCustom.value.codeFont, false);
+  panel.onFontPick({ target: { value: '' } }, chat);
+  await vue.nextTick();
+  assert.equal(s.UI.chatFont, '');
+  assert.equal(panel.fontCustom.value.chatFont, false);
+  s.useStyle('pi');
+  await vue.nextTick();
+  for (const field of panel.fontFields) assert.equal(panel.fontCustom.value[field.key], false);
+  assert.ok(panel.textSliders.some(([key]) => key === 'chatFontSize'));
+  for (const [key, label] of [['toolFontSize', '工具调用字号'], ['thinkingFontSize', '思考字号']]) {
+    const slider = panel.textSliders.find(([field]) => field === key);
+    assert.equal(slider[1], label);
+    assert.equal(slider[2], 10);
+    assert.equal(slider[3], 24);
+    assert.equal(slider[5](18), '18px');
+  }
+});
+
+test('chat text and diagrams use chat typography while pi code uses the code font instead of inheriting prose', async () => {
+  const read = (path) => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
+  const [base, pi, composer, message, editor, util] = await Promise.all([
+    read('style.css'), read('pi.css'), read('components/Composer.vue'), read('components/MessageItem.vue'), read('components/UserMessageEditor.vue'), read('util.js'),
+  ]);
+  assert.match(base, /\.md \{ font-family: var\(--font-chat\); font-size: var\(--fs-chat\)/);
+  assert.match(pi, /\[data-md='pi'\] \.md \{ font-family: var\(--font-chat\); font-size: var\(--fs-chat\)/);
+  assert.match(pi, /\.md code \{[^}]*font-family: var\(--font-code\)/);
+  assert.match(pi, /\.md pre\.code code \{[^}]*font-family: var\(--font-code\); font-size: var\(--fs-code\)/);
+  assert.doesNotMatch(pi, /--pi-font|--pi-md-size/);
+  assert.match(composer, /\.ta \{ font-family: var\(--font-chat\); font-size: var\(--fs-chat\)/);
+  assert.match(message, /\.pre \{ font-family: var\(--font-chat\)/);
+  assert.match(editor, /textarea \{[^}]*font-family: var\(--font-chat\); font-size: var\(--fs-chat\)/);
+  assert.match(util, /const font = cs\.getPropertyValue\('--font-chat'\)/);
+  assert.match(util, /const mono = cs\.getPropertyValue\('--font-code'\)/);
+});
+
+test('user bubbles use automatic pale accent backgrounds with black text in every style and theme', async (t) => {
+  const s = await settings(t);
+  const read = (path) => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
+  const [base, pi, github, message, panel] = await Promise.all([
+    read('style.css'), read('pi.css'), read('github.css'), read('components/MessageItem.vue'), read('components/Settings.vue'),
+  ]);
+  assert.match(base, /--bubble-me: color-mix\(in srgb, var\(--accent\) var\(--bubble-me-tint\), white\)/);
+  assert.match(base, /--bubble-me-text: #111111/);
+  assert.match(base, /--bubble-me-tint: 14%/);
+  assert.match(base, /:root\[data-theme='dark'\] \{ --bubble-me-tint: 22%; \}/);
+  assert.match(base, /\.me-bubble ::selection \{[^}]*color: var\(--bubble-me-text\)/);
+  assert.doesNotMatch(pi + github, /--bubble-me(?:-text|-border)?:|--pi-user:/);
+  assert.match(message, /\.me-bubble \{[^}]*color: var\(--bubble-me-text\)/);
+  assert.match(message, /\.me-bubble \.att \{[^}]*--panel: color-mix\(in srgb, var\(--bubble-me\) 55%, white\); --text-2: var\(--bubble-me-text\)/);
+  assert.match(panel, /用户气泡自动使用同色系浅底、黑色文字/);
+
+  const luminance = (rgb) => rgb.map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const foreground = luminance([17 / 255, 17 / 255, 17 / 255]);
+  // Pure black is the worst-case accent when mixed with white; also cover all presets and pi dark accent.
+  for (const hex of [...s.ACCENTS, '#000000', '#ffffff', '#a798d7', '#ff0000', '#00ff00', '#0000ff']) {
+    const accent = hex.slice(1).match(/../g).map((v) => parseInt(v, 16) / 255);
+    for (const tint of [0.14, 0.22]) {
+      const background = accent.map((v) => v * tint + 1 - tint);
+      const contrast = (luminance(background) + 0.05) / (foreground + 0.05);
+      assert.ok(contrast >= 7, `${hex} at ${tint * 100}%: ${contrast.toFixed(2)}:1 contrast`);
+    }
+  }
+});
+
+test('tool and thinking sizes are independent, persist, and reset with every style preset', async (t) => {
+  const s = await settings(t, { __v: 17, toolFontSize: 17, thinkingFontSize: 19 });
+  assert.equal(s.values.get('--fs-tool'), '17px');
+  assert.equal(s.values.get('--fs-thinking'), '19px');
+  s.UI.toolFontSize = 21;
+  s.UI.thinkingFontSize = 15;
+  await vue.nextTick();
+  assert.equal(s.values.get('--fs-tool'), '21px');
+  assert.equal(s.values.get('--fs-thinking'), '15px');
+  const saved = JSON.parse(s.storage.get('seed-pi-web-settings'));
+  assert.equal(saved.toolFontSize, 21);
+  assert.equal(saved.thinkingFontSize, 15);
+  const resets = s.diagramResets;
+  s.UI.fontSize = 18;
+  s.UI.codeFontSize = 16;
+  s.UI.chatFontSize = 20;
+  await vue.nextTick();
+  assert.equal(s.values.get('--fs-tool'), '21px');
+  assert.equal(s.values.get('--fs-thinking'), '15px');
+  const afterChat = s.diagramResets;
+  s.UI.thinkingFontSize = 22;
+  await vue.nextTick();
+  assert.equal(s.diagramResets, afterChat, 'block typography does not invalidate chat diagrams');
+  assert.ok(afterChat > resets);
+  for (const style of s.STYLES) {
+    s.useStyle(style.value);
+    await vue.nextTick();
+    assert.equal(s.UI.toolFontSize, 12);
+    assert.equal(s.UI.thinkingFontSize, 12);
+  }
+  s.UI.toolFontSize = 24;
+  s.UI.thinkingFontSize = 10;
+  s.resetSettings();
+  await vue.nextTick();
+  assert.equal(s.UI.toolFontSize, 12);
+  assert.equal(s.UI.thinkingFontSize, 12);
+});
+
+test('old block typography migrates from its actual UI size without losing explicit sizes', async (t) => {
+  for (const [uiStyle, fontSize, expected] of [['github', 18, 16], ['modern', 16, 14], ['pi', 18, 18], ['pi', 12, 12]]) {
+    const s = await settings(t, { __v: 16, uiStyle, fontSize });
+    assert.equal(s.UI.toolFontSize, expected);
+    assert.equal(s.UI.thinkingFontSize, expected);
+  }
+  const defaults = await settings(t, { __v: 16 });
+  assert.equal(defaults.UI.toolFontSize, 12);
+  const partialPi = await settings(t, { __v: 16, uiStyle: 'pi' });
+  assert.equal(partialPi.UI.thinkingFontSize, 14, 'missing fontSize used the global default, not the pi preset');
+  const custom = await settings(t, { __v: 16, fontSize: 18, toolFontSize: 20, thinkingFontSize: 15 });
+  assert.equal(custom.UI.toolFontSize, 20);
+  assert.equal(custom.UI.thinkingFontSize, 15);
+});
+
+test('block headings, summaries, previews, diffs and output inherit their own size even in pi', async () => {
+  const read = (path) => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
+  const [base, pi, panel] = await Promise.all([read('style.css'), read('pi.css'), read('components/Settings.vue')]);
+  assert.match(base, /\.blk \{ --fs-block: var\(--fs-sm\); font-size: var\(--fs-block\)/);
+  assert.match(base, /\.tool-execution \{ --fs-block: var\(--fs-tool\); \}/);
+  assert.match(base, /\.thinking-block \{ --fs-block: var\(--fs-thinking\); \}/);
+  for (const selector of ['blk-chip', 'blk-sum', 'blk-body']) {
+    const rule = base.match(new RegExp('\\.' + selector + ' \\{([^}]+)\\}'))[1];
+    assert.match(rule, /font-size: inherit/);
+  }
+  assert.match(pi, /\[data-ui='pi'\] \.blk \{[^}]*font-size: var\(--fs-block\)/);
+  assert.match(panel, /:aria-label="l"/);
+  assert.match(panel, /class="preview process-samples"/);
+  assert.match(panel, /工具调用预览 Tool output/);
+  assert.match(panel, /思考预览 Thinking/);
 });
 
 test('two disclosure modes are independent, reactive and local overrides never change defaults', async () => {
