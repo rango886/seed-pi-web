@@ -63,11 +63,11 @@ test('archive filtering treats legacy/unsaved sessions as active; count and time
   assert.equal(sessionInfo({ unsaved: true }, {}, () => ''), '未保存');
 });
 
-async function setup(t, file, { props = {}, imports = {}, storage = storageOf(), document = {} } = {}) {
+async function setup(t, file, { props = {}, imports = {}, storage = storageOf(), document = {}, timers = { setTimeout, clearTimeout } } = {}) {
   const source = await fs.readFile(new URL('../web/src/components/' + file, import.meta.url), 'utf8');
   const code = compileScript(parse(source).descriptor, { id: 'test' }).content;
   const noop = () => {};
-  const context = vm.createContext({ console, document, localStorage: storage,
+  const context = vm.createContext({ console, document, localStorage: storage, ...timers,
     window: { innerWidth: 1000, innerHeight: 800, addEventListener: noop, removeEventListener: noop },
   });
   const mod = new vm.SourceTextModule(code, { context });
@@ -177,6 +177,48 @@ test('sidebar compensates for actual scrollbar width, including overlay scrollba
   assert.match(source, /scrollbar-gutter: stable/);
   assert.match(source, /calc\(var\(--side-gutter\) - var\(--list-scrollbar-width, 0px\)\)/);
   assert.match(source, /ref="listElement" class="list"/);
+});
+
+test('sidebar scrolling reveals the thumb and resets its idle timeout without changing its gutter', async (t) => {
+  const pending = new Map();
+  let nextId = 0;
+  const { state: s } = await setup(t, 'SidePanel.vue', { timers: {
+    setTimeout(callback, ms) { const id = ++nextId; pending.set(id, { callback, ms }); return id; },
+    clearTimeout(id) { pending.delete(id); },
+  }, imports: {
+    '../store.js': { S: {}, openSession() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
+    '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
+  } });
+  assert.equal(s.listScrolling.value, false);
+  s.listElement.value = { offsetWidth: 272, clientWidth: 262 };
+  s.syncListGutter();
+  s.onListScroll();
+  assert.equal(s.listScrolling.value, true);
+  assert.equal(pending.size, 1);
+  const firstId = nextId;
+  s.onListScroll();
+  assert.equal(pending.has(firstId), false, 'continued scrolling cancels the old hide timer');
+  assert.equal(pending.size, 1);
+  const timer = pending.get(nextId);
+  assert.equal(timer.ms, 800);
+  timer.callback();
+  assert.equal(s.listScrolling.value, false);
+  assert.equal(s.listScrollbarWidth.value, 10, 'hiding the thumb must not resize the scrollbar gutter');
+});
+
+test('sidebar hides only the thumb at rest and shows it for hover, scrolling and keyboard focus', async () => {
+  const source = await fs.readFile(new URL('../web/src/components/SidePanel.vue', import.meta.url), 'utf8');
+  assert.match(source, /\.list \{ --list-scroll-thumb: transparent/);
+  assert.match(source, /\.list:is\(:hover, \.scrolling, :focus-visible, :has\(:focus-visible\)\)/);
+  assert.match(source, /\.list::-webkit-scrollbar-thumb \{ background-color: var\(--list-scroll-thumb\)/);
+  assert.match(source, /@supports not selector\(::-webkit-scrollbar\)/);
+  assert.match(source, /scrollbar-color: var\(--list-scroll-thumb\) transparent/);
+  assert.doesNotMatch(source, /scrollbar-width: none|::-webkit-scrollbar\s*\{[^}]*width:\s*0/);
+  assert.match(source, /:class="\{ scrolling: listScrolling \}"/);
+  assert.match(source, /@scroll.passive="onListScroll"/);
+  assert.match(source, /onUnmounted\(\(\) => \{[^}]*clearTimeout\(scrollHideTimer\)/);
+  assert.match(source, /prefers-reduced-motion: reduce/);
+  assert.match(source, /forced-colors: active/);
 });
 
 test('sidebar header shares the search and list gutters and uses a font-independent centered pi mark', async () => {

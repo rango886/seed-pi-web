@@ -9,7 +9,14 @@ import { readSessionView, saveSessionView, matchesArchive, sessionInfo } from '.
 const q = ref('');
 const listElement = ref(null);
 const listScrollbarWidth = ref(0);
+const listScrolling = ref(false);
+let scrollHideTimer;
 let listObserver;
+function onListScroll() {
+  listScrolling.value = true;
+  clearTimeout(scrollHideTimer);
+  scrollHideTimer = setTimeout(() => { listScrolling.value = false; }, 800);
+}
 function syncListGutter() {
   const el = listElement.value;
   if (el) listScrollbarWidth.value = Math.max(0, el.offsetWidth - el.clientWidth);
@@ -19,7 +26,10 @@ onMounted(() => {
   listObserver = new ResizeObserver(syncListGutter);
   listObserver.observe(listElement.value);
 });
-onUnmounted(() => listObserver?.disconnect());
+onUnmounted(() => {
+  listObserver?.disconnect();
+  clearTimeout(scrollHideTimer);
+});
 const base = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
 
 // 排序和显示设置跟随当前模式，各自记忆。
@@ -221,7 +231,7 @@ function sessionMenu(e, s) {
         <button type="button" class="sbtn" :title="`当前模式按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
         <SessionDisplayMenu :mode="S.sessionMode" :settings="cur" @mode-change="setSessionMode" @change="saveUI" />
       </div>
-      <div ref="listElement" class="list" :style="{ '--list-scrollbar-width': listScrollbarWidth + 'px' }" @contextmenu="listMenu">
+      <div ref="listElement" class="list" :class="{ scrolling: listScrolling }" :style="{ '--list-scrollbar-width': listScrollbarWidth + 'px' }" @scroll.passive="onListScroll" @contextmenu="listMenu">
         <div v-if="!groups.length" class="empty">{{ emptyText }}</div>
         <template v-for="g in groups" :key="g.path || g.name">
           <!-- 目录：像文件夹一样，点一下折叠/展开；右键可以全部展开折叠、切路径显示 -->
@@ -277,7 +287,21 @@ function sessionMenu(e, s) {
 .search:focus-within { border-color: var(--accent); }
 .search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-size: var(--fs-sm); }
 /* 右侧总留白包含滚动条宽度；预留滚动槽，展开目录或切换模式时不挤动列表。 */
-.list { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 0 max(0px, calc(var(--side-gutter) - var(--list-scrollbar-width, 0px))) 12px var(--side-gutter); }
+.list { --list-scroll-thumb: transparent; flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 0 max(0px, calc(var(--side-gutter) - var(--list-scrollbar-width, 0px))) 12px var(--side-gutter); }
+/* 只隐藏滑块颜色，滚动槽宽度不变。键盘操作时也显示，但鼠标点击留下的焦点不会阻止隐藏。 */
+.list:is(:hover, .scrolling, :focus-visible, :has(:focus-visible)) { --list-scroll-thumb: var(--scroll); }
+.list::-webkit-scrollbar-thumb { background-color: var(--list-scroll-thumb); transition: background-color 0.18s ease; }
+.list::-webkit-scrollbar-thumb:hover { background-color: var(--text-3); }
+/* Chromium 使用上面的细滑块；Firefox 使用标准属性，避免两套规则互相覆盖。 */
+@supports not selector(::-webkit-scrollbar) {
+  .list { scrollbar-color: var(--list-scroll-thumb) transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .list::-webkit-scrollbar-thumb { transition: none; }
+}
+@media (forced-colors: active) {
+  .list { --scroll: CanvasText; --list-scroll-thumb: CanvasText; }
+}
 .tree { padding: 2px 6px 12px; }
 .gname { font-size: var(--fs-xs); color: var(--text-3); padding: 12px var(--side-inset) 4px; display: flex; align-items: center; gap: 6px; }
 .gname:first-child { padding-top: 4px; }

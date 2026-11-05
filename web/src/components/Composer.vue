@@ -612,7 +612,7 @@ async function onTakeOver() {
 /* 和右边那几个 chip 一个观感：浅底 + 细边，悬停换成主题色 */
 .ibtn { width: 30px; height: 30px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-pill); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: border-color 0.15s, color 0.15s, background 0.15s; }
 .ibtn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
-.chip { height: 30px; max-width: 260px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-pill); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); transition: all 0.15s; }
+.chip { height: 30px; max-width: 260px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-pill); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); transition: background 0.15s, border-color 0.15s, color 0.15s; }
 .chip:hover, .chip.on { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
 .chip:disabled { opacity: 0.5; pointer-events: none; }
 /* 下拉箭头：用线画的小折线，比 ▾ 这种字体符号更匀称，跟着 chip 颜色走 */
@@ -630,10 +630,10 @@ async function onTakeOver() {
 /* 整条都能点（打开会话详情）：悬停时把边框提一提，告诉用户这块是能点的 */
 .u.click { cursor: pointer; }
 .u.click:hover { border-color: var(--text-3); }
-/* “排队 / 插话”：高度和圆角都跟两边的 chip、圆按钮一样（30 + 胶囊） */
+/* “排队 / 插话”：和两边的 chip、图标按钮统一 30px 高度与全局圆角。 */
 .bar .btn { height: 30px; padding: 0 12px; border-radius: var(--r-pill); }
-/* 发送 / 停止：跟旁边的 chip 一样高（都是一排 30px），圆形 */
-.round { width: 30px; height: 30px; border-radius: 50%; border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background 0.15s, transform 0.1s; }
+/* 发送 / 停止：与同一排其他按钮使用相同的全局圆角。 */
+.round { width: 30px; height: 30px; border-radius: var(--r-sm); border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background 0.15s, transform 0.1s; }
 .round:active { transform: scale(0.94); }
 .send { background: var(--accent); color: #fff; }
 .send:hover { background: var(--accent-hover); }
@@ -653,7 +653,7 @@ async function onTakeOver() {
    底部一条加深的横条，里面是图标 + 文件名，像缩略图底下的说明条 */
 .att .atxt { display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; }
 .att .ameta { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; padding: 0 10px; font-size: var(--fs-sm); line-height: 1.25; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.att .aline { flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 4px 10px 5px; border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px); background: var(--accent-soft); font-size: 11px; line-height: 1.3; color: var(--text-2); }
+.att .aline { flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 4px 10px 5px; border-radius: 0 0 var(--r-inner) var(--r-inner); background: var(--accent-soft); font-size: 11px; line-height: 1.3; color: var(--text-2); }
 .att .aname { min-width: 0; }
 /* 图片附件：只露一张缩略图，文件名、序号都等悬停浮层再说 */
 .att.img { width: 72px; height: 72px; padding: 0; gap: 0; background: transparent; border-color: transparent; overflow: visible; }
@@ -664,7 +664,7 @@ async function onTakeOver() {
 .att .prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--line-2); }
 .att .prog i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
 /* 移除：圆形，圆心就落在右上角的角上（一半悬在外面）；中间的叉用图标画（字形的 ✕ 靠基线会歪，圆形里居中不了） */
-.att .x { position: absolute; top: -9px; right: -9px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: var(--elev); color: var(--text-2); cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; box-shadow: var(--shadow-sm); z-index: 2; transition: background 0.12s, border-color 0.12s, color 0.12s; }
+.att .x { position: absolute; top: -9px; right: -9px; width: 18px; height: 18px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--elev); color: var(--text-2); cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; box-shadow: var(--shadow-sm); z-index: 2; transition: background 0.12s, border-color 0.12s, color 0.12s; }
 .att:hover .x, .att:focus-within .x { display: inline-flex; }
 .att .x:hover { background: var(--err); border-color: var(--err); color: #fff; }
 /* “清空”：跟缩略图一样是 72 方块，虚线框 */

@@ -2,7 +2,10 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, fork } from 'node:child_process';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 let pty = null;
 try {
@@ -29,6 +32,44 @@ function defaultShell() {
   return process.env.SHELL || '/bin/bash';
 }
 
+// node-pty 1.1 的系统 ConPTY 关闭路径会 fork 控制台进程枚举助手，但没有传 windowsHide。
+// 只替换当前实例的兼容钩子，保留原有后端、进程树清理和 PTY / worker 释放逻辑。
+function hideConsoleHelper(terminal) {
+  const agent = terminal._agent;
+  if (process.platform !== 'win32' || typeof agent?._getConsoleProcessList !== 'function') return;
+  let helper;
+  try {
+    helper = require.resolve('node-pty/lib/conpty_console_list_agent.js');
+  } catch {
+    return; // 新版依赖若移除了这个助手，就保留它自己的关闭实现。
+  }
+  agent._getConsoleProcessList = () => new Promise((resolve) => {
+    const fallback = [terminal.pid];
+    let child, timer, settled = false;
+    const finish = (pids) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(pids);
+    };
+    try {
+      child = fork(helper, [String(terminal.pid)], {
+        windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], execArgv: [],
+      });
+    } catch {
+      finish(fallback);
+      return;
+    }
+    timer = setTimeout(() => {
+      finish(fallback);
+      try { child.kill(); } catch {}
+    }, 5000);
+    child.once('message', (message) => finish(Array.isArray(message?.consoleProcessList) ? message.consoleProcessList : fallback));
+    child.once('error', () => finish(fallback));
+    child.once('exit', () => finish(fallback));
+  });
+}
+
 const MAX_BUFFER = 256 * 1024;
 let seq = 0;
 
@@ -48,6 +89,7 @@ class Terminal extends EventEmitter {
       cwd,
       env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
     });
+    hideConsoleHelper(this.p);
     this.p.onData((d) => {
       this.buffer = (this.buffer + d).slice(-MAX_BUFFER);
       this.emit('data', d);

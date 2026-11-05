@@ -271,7 +271,7 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
 /* 从右侧大纲跳过来的那个问题：气泡外面闪一圈强调色 */
 .mw.flash :deep(.me-bubble) { animation: q-flash 1.6s ease-out; }
 @keyframes q-flash { 0%, 35% { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent, 0 0 0 1px transparent; } }
-.tobottom { position: absolute; left: 50%; top: -52px; transform: translateX(-50%); width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 5; }
+.tobottom { position: absolute; left: 50%; top: -52px; transform: translateX(-50%); width: 38px; height: 38px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--panel); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 5; }
 .tobottom:hover { color: var(--accent-text); }
 /* --sb 是滚动条左右两边预留的总宽度（scrollbar-gutter: stable both-edges），输入框两边各让一半，和对话对齐。
    输入框比对话内容左右各宽 14px（--gut 减掉的量），不那么挤在卡片边上。

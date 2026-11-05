@@ -352,10 +352,10 @@ function apply() {
 }
 
 /** 标签页图标：和左上角的 π 方块保持一致，跟着主题色和全局圆角变。
- *  logo 用的是 --r-sm 这一档（现代风 = 全局圆角 × 0.7，GitHub 风 = 全局圆角），
- *  logo 是 28px、图标画布是 32，再按 32 / 28 换算一下，两者看起来就一样圆 */
+ *  所有样式的 logo 都使用全局圆角；logo 是 28px、图标画布是 32，
+ *  按 32 / 28 换算，两者看起来就一样圆。 */
 function setFavicon(accent) {
-  const rx = Math.min(16, (UI.radius * (UI.uiStyle === 'github' ? 1 : UI.uiStyle === 'pi' ? 0.75 : 0.7) * 32) / 28).toFixed(1);
+  const rx = Math.min(16, Math.max(0, UI.radius) * 32 / 28).toFixed(1);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="${rx}" fill="${accent}"/><text x="16" y="24.5" font-size="22" font-weight="700" text-anchor="middle" fill="#fff" font-family="system-ui, 'Segoe UI', 'Helvetica Neue', sans-serif">π</text></svg>`;
   let link = document.querySelector('link[rel="icon"]');
   if (!link) {

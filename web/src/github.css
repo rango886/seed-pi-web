@@ -120,14 +120,6 @@
   --del-bg: #ffebe9;
   --del-fg: #82071e;
   --scroll: #818b9866;
-  /* 圆角：GitHub 几乎所有东西都是同一个圆角，所以各档都拉平成 --r，只有弹层（菜单 / 弹窗）是两倍 */
-  --r-xs: var(--r);
-  --r-sm: var(--r);
-  --r-md: var(--r);
-  --r-lg: calc(var(--r) * 2);
-  --r-xl: var(--r);
-  --r-pill: var(--r);
-  --r-bubble: var(--r);
   --term-bg: #ffffff;
   /* GitHub 的按钮：灰底细边；主按钮是标志性的绿色 */
   --gh-btn: #f6f8fa;
@@ -218,9 +210,6 @@
 :root[data-ui='github'] .send { background: var(--gh-green); }
 :root[data-ui='github'] .send:hover { background: var(--gh-green-h); }
 :root[data-ui='github'] .send:disabled { background: var(--gh-btn); color: var(--text-3); }
-/* 现代风里是正圆的按钮（发送 / 停止、回到底部），GitHub 风里也跟着全局圆角走 */
-:root[data-ui='github'] .round,
-:root[data-ui='github'] .tobottom { border-radius: var(--r-sm); }
 
 /* 思考 / 工具卡片的小标签：不再描边，跟着上面的 .blk-chip 走；只把悬停底色换成 GitHub 的 */
 :root[data-ui='github'] .blk-head:hover { background: var(--panel-2); }

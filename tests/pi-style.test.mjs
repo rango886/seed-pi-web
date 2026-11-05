@@ -28,7 +28,7 @@ async function settings(t, saved = {}) {
   const scope = vue.effectScope();
   t.after(() => scope.stop());
   await scope.run(() => mod.evaluate());
-  return { ...mod.namespace, values, root, storage, get diagramResets() { return diagramResets; } };
+  return { ...mod.namespace, values, root, storage, link, get diagramResets() { return diagramResets; } };
 }
 
 async function tool(t, UI, props, file = 'ToolCard.vue') {
@@ -86,6 +86,21 @@ test('pi preset restores the export font, 12px/18px typography and 800px column 
   await vue.nextTick();
   assert.equal(s.root.dataset.ui, 'pi');
   assert.equal(s.root.dataset.md, 'github', 'Markdown remains independent');
+});
+
+test('global radius and favicon corners agree across styles, including zero and maximum radius', async (t) => {
+  const s = await settings(t);
+  for (const style of s.STYLES) {
+    s.useStyle(style.value);
+    for (const radius of [0, 8, 20]) {
+      s.UI.radius = radius;
+      await vue.nextTick();
+      assert.equal(s.values.get('--r'), radius + 'px');
+      const svg = decodeURIComponent(s.link.href.split(',')[1]);
+      const expected = Math.min(16, radius * 32 / 28).toFixed(1);
+      assert.ok(svg.includes(`rx="${expected}"`), style.value + ': favicon must match the sidebar logo');
+    }
+  }
 });
 
 test('removed styles and controls migrate even when restored from a current-version backup', async (t) => {
@@ -445,10 +460,10 @@ test('old half-expanded preferences migrate to collapsed, while expanded prefere
   assert.equal(defaults.UI.toolsDisplay, 'collapsed');
 });
 
-test('collapsed thinking keeps a single-line preview and expands the complete text without changing its default', async (t) => {
+test('completed thinking keeps a compact summary and expands the complete text without changing its default', async (t) => {
   const UI = vue.reactive({ thinkingDisplay: 'collapsed' });
   const text = 'First thought.\n\n  Second thought.\t' + 'More thoughts. '.repeat(50);
-  const props = vue.reactive({ block: { thinking: text }, streaming: true });
+  const props = vue.reactive({ block: { thinking: text }, streaming: false });
   const s = await tool(t, UI, props, 'ThinkingBlock.vue');
   assert.equal(s.open.value, false);
   assert.equal(s.preview.value.length, 200);
@@ -459,9 +474,72 @@ test('collapsed thinking keeps a single-line preview and expands the complete te
   assert.equal(s.text.value, text.trim());
   assert.equal(UI.thinkingDisplay, 'collapsed');
   s.toggle();
+  props.streaming = true;
   props.block.thinking += '\nNew streamed thought';
   await vue.nextTick();
   assert.equal(s.open.value, false, 'streaming cannot force a manually collapsed block open');
+});
+
+test('collapsed thinking follows the latest six lines, font changes and remounts without opening itself', async (t) => {
+  const UI = vue.reactive({ thinkingDisplay: 'collapsed', thinkingFontSize: 12, lineHeight: 1.5 });
+  const props = vue.reactive({ block: { thinking: Array.from({ length: 30 }, (_, i) => `thought ${i + 1}`).join('\n') }, streaming: true });
+  const s = await tool(t, UI, props, 'ThinkingBlock.vue');
+  assert.equal(s.livePreview.value.split('\n').length, 6);
+  assert.ok(s.livePreview.value.startsWith('thought 25\n'));
+  assert.ok(s.livePreview.value.endsWith('thought 30'));
+  const viewport = { scrollTop: 0, scrollHeight: 480 };
+  s.tailEl.value = viewport;
+  await vue.nextTick();
+  assert.equal(viewport.scrollTop, 480, 'initial ref assignment follows already-streamed content');
+  viewport.scrollHeight = 600;
+  props.block.thinking += '\nthought 31';
+  await vue.nextTick();
+  assert.equal(viewport.scrollTop, 600);
+  assert.ok(s.livePreview.value.startsWith('thought 26\n'));
+  assert.ok(s.livePreview.value.endsWith('thought 31'));
+  assert.equal(s.open.value, false);
+  viewport.scrollTop = 0;
+  viewport.scrollHeight = 720;
+  UI.thinkingFontSize = 20;
+  await vue.nextTick();
+  assert.equal(viewport.scrollTop, 720, 'changing the font keeps the wrapped tail in view');
+  s.tailEl.value = null;
+  await vue.nextTick();
+  s.tailEl.value = { scrollTop: 0, scrollHeight: 900 };
+  await vue.nextTick();
+  assert.equal(s.tailEl.value.scrollTop, 900);
+  assert.equal(UI.thinkingDisplay, 'collapsed');
+});
+
+test('long wrapped thinking stays bounded and expanded reading is never pulled to the bottom', async (t) => {
+  const UI = vue.reactive({ thinkingDisplay: 'collapsed' });
+  const props = vue.reactive({ block: { thinking: 'Beginning. ' + 'Long thought. '.repeat(1000) + 'Latest thought.' }, streaming: true });
+  const s = await tool(t, UI, props, 'ThinkingBlock.vue');
+  assert.equal(s.livePreview.value.length, 2400);
+  assert.ok(s.livePreview.value.endsWith('Latest thought.'));
+  assert.ok(!s.livePreview.value.includes('Beginning.'));
+  const viewport = { scrollTop: 0, scrollHeight: 800 };
+  s.tailEl.value = viewport;
+  await vue.nextTick();
+  s.toggle();
+  viewport.scrollTop = 100;
+  props.block.thinking += ' Next thought.';
+  await vue.nextTick();
+  assert.equal(viewport.scrollTop, 100, 'expanded reading is not auto-scrolled');
+  assert.ok(s.text.value.startsWith('Beginning.'));
+  s.toggle();
+  await vue.nextTick();
+  assert.equal(viewport.scrollTop, 800, 'collapsing resumes the live tail');
+  props.streaming = false;
+  viewport.scrollTop = 50;
+  await vue.nextTick();
+  assert.equal(s.livePreview.value, '');
+  assert.equal(viewport.scrollTop, 50);
+  assert.ok(s.preview.value.startsWith('Beginning.'));
+  props.block.thinking = '';
+  props.streaming = true;
+  await vue.nextTick();
+  assert.equal(s.livePreview.value, '');
 });
 
 test('tools keep the live tail while collapsed, hide completed output and expand the full scrollable result', async (t) => {
@@ -549,7 +627,12 @@ test('expanded blocks stay scrollable in pi and the base style, without half-exp
   assert.match(tool, /\.body \{ max-height: min\(440px, 50vh\); overflow: auto/);
   assert.match(base, /\.thinking-block \.blk-body \{ max-height: min\(380px, 50vh\); overflow: auto/);
   assert.match(pi, /\.thinking-block \.blk-body \{[^}]*max-height: min\(380px, 50vh\); overflow: auto/);
-  assert.match(thinking, /v-if="!open && preview" class="ellipsis grow blk-sum think-prev"/);
+  assert.match(thinking, /v-if="!open && !streaming && preview" class="ellipsis grow blk-sum think-prev"/);
+  assert.match(thinking, /v-if="!open && livePreview" ref="tailEl" class="blk-body prose thinking-tail"/);
+  assert.match(thinking, /flush: 'post'/);
+  for (const css of [base, pi]) {
+    assert.match(css, /\.thinking-block \.blk-body\.thinking-tail \{ max-height: 6lh; overflow: hidden/);
+  }
   assert.match(thinking, /v-if="open && text"/);
   assert.doesNotMatch(base + pi + tool + thinking + settings, /block-expand|block-preview|半折叠|收起为预览|展开全部/);
 });

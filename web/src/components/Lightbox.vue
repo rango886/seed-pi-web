@@ -273,7 +273,7 @@ onUnmounted(() => (document.body.style.overflow = ''));
 .lb-btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.12); color: #fff; border-radius: var(--r-md); cursor: pointer; padding: 0; transition: background 0.15s, border-color 0.15s, transform 0.15s; }
 .lb-btn:hover { background: rgba(255, 255, 255, 0.24); border-color: rgba(255, 255, 255, 0.38); }
 .lb-pct { width: auto; min-width: 56px; padding: 0 8px; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
-.lb-nav { position: absolute; z-index: 1; top: 50%; width: 44px; height: 44px; margin-top: -22px; border-radius: 50%; }
+.lb-nav { position: absolute; z-index: 1; top: 50%; width: 44px; height: 44px; margin-top: -22px; border-radius: var(--r-md); }
 .lb-prev { left: 16px; }
 .lb-next { right: 16px; }
 .lb-prev :deep(svg) { transform: rotate(180deg); }

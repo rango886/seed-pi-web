@@ -50,7 +50,7 @@
   --pi-string: #de8d5a;
 }
 
-/* 整体界面：原版 12/11/10px 字号层级、4px 卡片与 3px 控件圆角，无阴影。 */
+/* 整体界面：默认 12/11/10px 字号层级、4px 全局圆角，无阴影。 */
 :root[data-ui='pi'] {
   --bg: var(--pi-page);
   --chat-bg: var(--pi-page);
@@ -81,13 +81,6 @@
   --shadow-sm: none;
   --shadow: none;
   --shadow-lg: none;
-  --r-xs: calc(var(--r) * 0.75);
-  --r-sm: calc(var(--r) * 0.75);
-  --r-md: var(--r);
-  --r-lg: var(--r);
-  --r-xl: var(--r);
-  --r-pill: calc(var(--r) * 0.75);
-  --r-bubble: var(--r);
   --fs-sm: calc(var(--fs) - 1px);
   --fs-xs: calc(var(--fs) - 2px);
   --pi-line: calc(var(--fs) * var(--lh));
@@ -132,8 +125,6 @@
 :root[data-ui='pi'] .send { color: var(--pi-page); background: var(--accent); border-color: var(--accent); }
 :root[data-ui='pi'] .btn.danger { color: var(--err); }
 :root[data-ui='pi'] .send:disabled { background: var(--pi-pending); color: var(--pi-dim); }
-:root[data-ui='pi'] .round,
-:root[data-ui='pi'] .tobottom { border-radius: var(--r-sm); }
 :root[data-ui='pi'] .box { background: var(--pi-card); box-shadow: none; }
 :root[data-ui='pi'] .box.focused,
 :root[data-ui='pi'] .input:focus { border-color: var(--accent); box-shadow: none; }
@@ -146,6 +137,7 @@
 :root[data-ui='pi'] .select-menu,
 :root[data-ui='pi'] .directory-menu,
 :root[data-ui='pi'] .att-tip,
+:root[data-ui='pi'] .toast,
 :root[data-ui='pi'] .settings-drawer { background: var(--pi-card); border: 1px solid var(--pi-dim); box-shadow: none; }
 :root[data-ui='pi'] .modal-mask { background: rgba(0, 0, 0, 0.5); backdrop-filter: none; }
 :root[data-ui='pi'] .settings-mask { background: rgba(0, 0, 0, 0.3); }
@@ -189,6 +181,7 @@
 :root[data-ui='pi'] .thinking-block { padding: var(--pi-line); color: var(--pi-thinking); font-style: italic; }
 :root[data-ui='pi'] .thinking-block .blk-chip { color: var(--pi-thinking); font-weight: normal; }
 :root[data-ui='pi'] .thinking-block .blk-body { margin: 0; color: var(--pi-thinking); max-height: min(380px, 50vh); overflow: auto; }
+:root[data-ui='pi'] .thinking-block .blk-body.thinking-tail { max-height: 6lh; overflow: hidden; }
 :root[data-ui='pi'] .thinking-block .think-prev { color: var(--pi-thinking); }
 :root[data-ui='pi'] .thinking-block + .ai-bubble { padding-top: 0; }
 :root[data-ui='pi'] .tool-execution .body { min-width: 0; }
@@ -200,15 +193,15 @@
 :root[data-md='pi'] .md p { margin: 0; }
 :root[data-md='pi'] .md p + p { margin-top: var(--pi-paragraph); }
 :root[data-md='pi'] .md a { color: var(--pi-link); text-decoration: underline; }
-:root[data-md='pi'] .md code { background: rgba(128, 128, 128, 0.2); color: var(--pi-accent); padding: 0 4px; border-radius: 3px; font-family: var(--font-code); font-size: 0.9em; }
+:root[data-md='pi'] .md code { background: rgba(128, 128, 128, 0.2); color: var(--pi-accent); padding: 0 4px; border-radius: var(--r-xs); font-family: var(--font-code); font-size: 0.9em; }
 :root[data-md='pi'] .md pre.code { position: relative; background: transparent; margin: var(--pi-line) 0; border: 0; border-radius: 0; overflow: visible; }
-:root[data-md='pi'] .md pre.code code { display: block; background: none; color: var(--pi-text); padding: 0 4px; border-radius: 3px; font-family: var(--font-code); font-size: var(--fs-code); line-height: 1.55; overflow-x: auto; white-space: pre; }
+:root[data-md='pi'] .md pre.code code { display: block; background: none; color: var(--pi-text); padding: 0 4px; border-radius: var(--r-sm); font-family: var(--font-code); font-size: var(--fs-code); line-height: 1.55; overflow-x: auto; white-space: pre; }
 /* 唯一的增强：复制按钮悬停浮现，不占原版代码块的版面。触屏和键盘也能用。 */
 :root[data-md='pi'] .md .code-bar { position: absolute; right: 0; top: 0; z-index: 1; height: auto; padding: 0; border: 0; background: transparent; opacity: 0; }
 :root[data-md='pi'] .md .code-bar span { display: none; }
 :root[data-md='pi'] .md pre.code:hover .code-bar,
 :root[data-md='pi'] .md pre.code:focus-within .code-bar { opacity: 1; }
-:root[data-md='pi'] .md .copy-btn { font: inherit; font-size: 10px; padding: 2px 8px; background: var(--pi-card); border: 1px solid var(--pi-dim); border-radius: 3px; color: var(--pi-muted); }
+:root[data-md='pi'] .md .copy-btn { font: inherit; font-size: 10px; padding: 2px 8px; background: var(--pi-card); border: 1px solid var(--pi-dim); border-radius: var(--r-sm); color: var(--pi-muted); }
 :root[data-md='pi'] .md blockquote { border-left: 3px solid var(--pi-muted); padding: 0 0 0 var(--pi-line); margin: var(--pi-line) 0; color: var(--pi-muted); font-style: italic; background: none; border-radius: 0; }
 :root[data-md='pi'] .md ul,
 :root[data-md='pi'] .md ol { margin: var(--pi-line) 0; padding-left: calc(var(--pi-line) * 2); }
@@ -220,7 +213,7 @@
 :root[data-md='pi'] .md th,
 :root[data-md='pi'] .md td { border: 1px solid var(--pi-muted); padding: 6px 10px; text-align: left; }
 :root[data-md='pi'] .md th { background: rgba(128, 128, 128, 0.1); font-weight: bold; }
-:root[data-md='pi'] .md img { max-width: 100%; max-height: none; border-radius: 4px; margin: 0; }
+:root[data-md='pi'] .md img { max-width: 100%; max-height: none; border-radius: var(--r-md); margin: 0; }
 :root[data-md='pi'] .md .md-diagram { margin: var(--pi-line) 0; }
 :root[data-md='pi'] .md .md-diagram .dgm-code { margin: 0; }
 :root[data-md='pi'] .md .md-diagram:not(.err) .dgm-code .code-bar { padding-right: 0; }

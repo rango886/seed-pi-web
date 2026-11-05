@@ -327,7 +327,7 @@ export class PiAgent extends EventEmitter {
 function killTree(pid) {
   if (!pid) return;
   if (process.platform === 'win32') {
-    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => {});
+    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, () => {});
   } else {
     try {
       process.kill(pid, 'SIGKILL');

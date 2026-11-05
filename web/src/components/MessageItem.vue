@@ -188,7 +188,7 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 .ai .col { align-items: flex-start; }
 
 .bubble { border-radius: var(--r-bubble); padding: calc(var(--sp2) + 2px) var(--pad-x); line-height: var(--lh); max-width: 100%; }
-.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); border-top-right-radius: min(var(--r-bubble), 4px); padding: calc(var(--sp2) - 1px) calc(var(--pad-x) - 2px); font-size: var(--fs-user); line-height: 1.6; }
+.me-bubble { background: var(--bubble-me); color: var(--bubble-me-text); border: 1px solid var(--bubble-me-border, transparent); max-width: min(80%, 720px); padding: calc(var(--sp2) - 1px) calc(var(--pad-x) - 2px); font-size: var(--fs-user); line-height: 1.6; }
 /* 正文上下都多留些空间，和前后的思考/工具块拉开距离；工具块之间仍保持紧凑 */
 /* align-self: stretch：正文铺满整栏，里面的代码块、图、表格才能真正两边填满（否则这块会缩到最长那行文字那么宽） */
 .ai-bubble { align-self: stretch; min-width: 0; background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); margin-block: var(--sp3); }
@@ -219,7 +219,7 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 .att.img .pic { flex: none; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; border: 1px solid var(--line-2); display: block; }
 .att .atxt { display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; }
 .att .ameta { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; padding: 0 10px; font-size: var(--fs-sm); line-height: 1.25; color: var(--text-2); }
-.att .aline { flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 4px 10px 5px; border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px); background: var(--accent-soft); font-size: 11px; line-height: 1.3; color: var(--text-2); }
+.att .aline { flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 4px 10px 5px; border-radius: 0 0 var(--r-inner) var(--r-inner); background: var(--accent-soft); font-size: 11px; line-height: 1.3; color: var(--text-2); }
 .att .aname { min-width: 0; }
 
 .errbox { margin: 0 var(--pad-x); background: var(--err-bg); color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--r-md); padding: 8px var(--pad-x); white-space: pre-wrap; font-size: var(--fs-sm); }

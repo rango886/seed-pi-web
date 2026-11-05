@@ -199,6 +199,7 @@ const layoutSliders = [
           <section>
             <h3>布局</h3>
             <div class="card">
+              <p class="dim small-tip radius-tip">圆角值统一用于按钮、输入框、菜单、弹窗和气泡；设为 0 即直角。加载圈和状态点保留圆形。</p>
               <div v-for="[k, l, min, max, step, fmt] in layoutSliders" :key="k" class="item">
                 <span class="label">{{ l }}</span>
                 <input v-model.number="UI[k]" type="range" :min="min" :max="max" :step="step" class="range" @dblclick="UI[k] = DEFAULTS[k]" />
@@ -329,7 +330,7 @@ label.item { cursor: pointer; }
 .style.on { border-color: var(--accent); background: var(--accent-softer); }
 .sty-name { font-weight: 600; color: var(--text); }
 .style.on .sty-name { color: var(--accent-text); }
-.sw { width: 28px; height: 28px; border-radius: 50%; border: 0; cursor: pointer; position: relative; padding: 0; transition: transform 0.12s; }
+.sw { width: 28px; height: 28px; border-radius: var(--r-sm); border: 0; cursor: pointer; position: relative; padding: 0; transition: transform 0.12s; }
 .sw:hover { transform: scale(1.1); }
 .sw.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--text-2); }
 .sw.custom { background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; text-shadow: 0 0 3px rgba(0, 0, 0, 0.6); }
@@ -345,6 +346,7 @@ select.input { cursor: pointer; }
 .small { font-size: var(--fs-sm); }
 .tip b { font-weight: 600; color: var(--text-2); }
 .small-tip { font-size: var(--fs-xs); line-height: 1.7; }
+.radius-tip { margin: 10px 14px 0; }
 .small-tip code { font-family: var(--font-code); font-size: 11px; background: var(--hover); padding: 0 4px; border-radius: var(--r-xs); }
 .input.mono { font-family: var(--font-code); font-size: var(--fs-sm); }
 .input.num { width: 90px; }

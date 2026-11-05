@@ -90,6 +90,45 @@ test('floating panels dismiss outside clicks but not panel, toggle, menu or dial
   assert.equal(events.length, 1, 'inline branches stay open while typing in the composer');
 });
 
+test('toast dismissal only removes the selected notice, including keyboard-accessible close controls', async (t) => {
+  const S = vue.reactive({ toasts: [{ id: 1, text: 'first' }, { id: 2, text: 'second' }, { id: 3, text: 'third' }] });
+  const { state: s } = await setup(t, 'Toasts.vue', { imports: { '../store.js': { S } } });
+  s.dismiss(2);
+  assert.deepEqual(S.toasts.map((notice) => notice.id), [1, 3]);
+  s.dismiss(999);
+  assert.equal(S.toasts.length, 2);
+  const source = await fs.readFile(new URL('../web/src/components/Toasts.vue', import.meta.url), 'utf8');
+  assert.match(source, /<TransitionGroup name="notice" tag="div" class="toasts"/);
+  assert.match(source, /:role="t.kind === 'error' \? 'alert' : 'status'"/);
+  assert.match(source, /aria-atomic="true"/);
+  assert.match(source, /<button type="button" class="toast-close"[^>]*aria-label="关闭通知"[^>]*@click.stop="dismiss\(t.id\)"/);
+});
+
+test('toast stack sits below the top-right toolbar, fits small viewports and uses theme tokens', async () => {
+  const source = await fs.readFile(new URL('../web/src/components/Toasts.vue', import.meta.url), 'utf8');
+  const pi = await fs.readFile(new URL('../web/src/pi.css', import.meta.url), 'utf8');
+  const stack = source.match(/\.toasts \{([^}]+)\}/)[1];
+  const card = source.match(/\.toast \{([^}]+)\}/)[1];
+  assert.match(stack, /position: fixed/);
+  assert.match(stack, /top: calc\(56px \+ env\(safe-area-inset-top, 0px\)\)/);
+  assert.match(stack, /right: calc\(16px \+ env\(safe-area-inset-right, 0px\)\)/);
+  assert.doesNotMatch(stack, /(?:^|;)\s*bottom:/);
+  assert.match(stack, /width: min\(380px, calc\(100vw - 32px/);
+  assert.match(stack, /max-height: calc\(100dvh/);
+  assert.match(stack, /overflow-x: hidden/, 'horizontal slide transitions must not flash a bottom scrollbar');
+  assert.match(stack, /overflow-y: auto/, 'long notification stacks must remain vertically scrollable');
+  assert.match(stack, /pointer-events: none/);
+  for (const token of ['--elev', '--text', '--line', '--r-md', '--shadow', '--font', '--fs-sm']) {
+    assert.ok(card.includes(`var(${token})`), token);
+  }
+  assert.match(card, /pointer-events: auto/);
+  assert.doesNotMatch(card, /border-left:/, 'use the same clean card borders as the rest of the UI');
+  assert.match(source, /\.toast.error \{ --notice-color: var\(--err\)/);
+  assert.match(source, /\.toast.warning \{ --notice-color: var\(--warn\)/);
+  assert.match(source, /prefers-reduced-motion: reduce/);
+  assert.match(pi, /:root\[data-ui='pi'\] \.toast,/);
+});
+
 test('custom select aligns to trigger, focuses current choice, selects with keyboard and dismisses', async (t) => {
   const document = { activeElement: null };
   const props = vue.reactive({ modelValue: 'working', label: '对比范围', disabled: false, options: [

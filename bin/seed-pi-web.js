@@ -111,7 +111,7 @@ async function probe() {
 
 function killTree(pid) {
   try {
-    if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
     else {
       try {
         process.kill(-pid, 'SIGKILL'); // 后台启动时是独立进程组

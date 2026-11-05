@@ -139,7 +139,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.directory-trigger { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; transition: all 0.15s; }
+.directory-trigger { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s; }
 .directory-trigger:hover, .directory-trigger.on { border-color: var(--accent); background: var(--accent-softer); color: var(--accent-text); }
 .directory-trigger.compact { height: 28px; width: 28px; margin-right: 5px; padding: 0; justify-content: center; border: 0; border-radius: var(--r-sm); background: transparent; flex: none; }
 .directory-trigger.compact:hover, .directory-trigger.compact.on { background: transparent; color: var(--text); }

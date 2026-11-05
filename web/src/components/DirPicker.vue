@@ -320,7 +320,7 @@ function onKey(e) {
 .item.active { background: var(--accent-soft); }
 .item.active .path { color: var(--accent-text); }
 /* 取消收藏：平时不占眼力，悬停才淡出来；位置留着，免得鼠标一上去就跳 */
-.favdel { flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s; }
+.favdel { flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s; }
 .item:hover .favdel { opacity: 1; }
 .favdel:hover { background: var(--err); color: #fff; }
 /* 收藏行可以直接拖着换位置：抓起来时整行淡下去，落点在哪行的上/下边就画一条线 */
