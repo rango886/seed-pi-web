@@ -102,12 +102,11 @@ function onEnter() {
 </script>
 
 <template>
-  <nav v-if="n >= 2" class="outline" aria-label="本会话的问题" @mouseenter="onEnter">
+  <nav v-if="n >= 2" class="outline" aria-label="对话大纲" @mouseenter="onEnter">
     <div class="rail" :style="{ height: `min(${n * 12}px, 40vh)` }">
       <i v-for="(it, i) in items" :key="it.k" class="tick" :class="{ on: it.k === active }" :style="{ top: tickTop(i) }" />
     </div>
     <div ref="listEl" class="list">
-      <div class="head">本会话的问题 · {{ n }}</div>
       <button v-for="(it, i) in items" :key="it.k" class="item" :class="{ on: it.k === active }" :title="it.title" @click="jump(it.k)">
         <span class="no">{{ i + 1 }}</span>
         <span class="txt">{{ it.text }}</span>
@@ -134,7 +133,6 @@ function onEnter() {
   transition: opacity 0.15s, transform 0.15s, visibility 0s linear 0.15s;
 }
 .outline:hover .list { opacity: 1; visibility: visible; pointer-events: auto; transform: translate(0, -50%); transition-delay: 0.08s, 0.08s, 0s; }
-.head { padding: 4px 8px 6px; font-size: var(--fs-xs); color: var(--text-3); }
 .item { display: flex; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: var(--r-sm); background: none; text-align: left; cursor: pointer; color: var(--text-2); font: inherit; font-size: var(--fs-sm); line-height: 1.45; }
 .item:hover { background: var(--hover); color: var(--text); }
 .item.on { color: var(--accent-text); background: var(--accent-softer, var(--hover)); }

@@ -1,14 +1,12 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
-import { S, openSession, newSession, deleteSession, setSessionArchived, renameSession, sessionStatus, setSessionMode, isFav } from '../store.js';
+import { S, openSession, deleteSession, setSessionArchived, renameSession, sessionStatus, setSessionMode, isFav } from '../store.js';
 import { view, toggleSide, closeDrawer, openMenu } from '../settings.js';
 import Icon from './Icon.vue';
-import DirectoryMenu from './DirectoryMenu.vue';
 import SessionDisplayMenu from './SessionDisplayMenu.vue';
 import { readSessionView, saveSessionView, matchesArchive, sessionInfo } from '../session-list.js';
 
 const q = ref('');
-const newDirMenu = ref(null);
 const listElement = ref(null);
 const listScrollbarWidth = ref(0);
 let listObserver;
@@ -192,10 +190,6 @@ function open(s) {
   openSession(s.file);
   closeDrawer();
 }
-function onNew() {
-  newSession(); // 默认沿用当前目录，不再弹目录选择窗口
-  closeDrawer();
-}
 function sessionMenu(e, s) {
   openMenu(e.clientX, e.clientY, [
     { label: '打开', run: () => open(s) },
@@ -220,26 +214,13 @@ function sessionMenu(e, s) {
       <button class="ib" :title="view.mobile ? '关闭' : '收起侧栏 (Ctrl+B)'" @click="toggleSide(false)"><Icon :name="view.mobile ? 'close' : 'sidebar'" /></button>
     </div>
 
-    <div class="nav">
-      <div class="new-session" @contextmenu.prevent.stop="newDirMenu?.open()">
-        <button type="button" class="nv" title="在当前目录开始新会话" @click="onNew()"><Icon name="newchat" /><span>新会话</span></button>
-        <DirectoryMenu ref="newDirMenu" mode="new" compact label="选目录" @select="closeDrawer()" />
-      </div>
-    </div>
-
     <!-- 左边只放会话；文件、进程在右边的浮动侧栏里（按钮在顶栏），终端在顶部标签页里 -->
     <div class="pane">
-      <!-- 三种看法：全部目录 / 当前目录 / 收藏的目录。全部和收藏都会把不同目录的会话凑在一起，可平铺也可按目录折叠 -->
-      <div class="modes">
-        <button class="mode" :class="{ on: S.sessionMode === 'all' }" title="所有目录的会话，右键列表可以切换平铺 / 折叠" @click="setSessionMode('all')">全部</button>
-        <button class="mode" :class="{ on: S.sessionMode === 'dir' }" title="只看当前目录的会话" @click="setSessionMode('dir')">当前目录</button>
-        <button class="mode" :class="{ on: S.sessionMode === 'fav' }" :title="`只看收藏目录的会话${S.favorites.length ? '（' + S.favorites.length + ' 个目录）' : ''}`" @click="setSessionMode('fav')">收藏</button>
-      </div>
       <div class="search">
         <Icon name="search" :size="15" />
         <input v-model="q" placeholder="搜索会话" @keydown.esc="q = ''" />
         <button type="button" class="sbtn" :title="`当前模式按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
-        <SessionDisplayMenu :mode="S.sessionMode" :settings="cur" @change="saveUI" />
+        <SessionDisplayMenu :mode="S.sessionMode" :settings="cur" @mode-change="setSessionMode" @change="saveUI" />
       </div>
       <div ref="listElement" class="list" :style="{ '--list-scrollbar-width': listScrollbarWidth + 'px' }" @contextmenu="listMenu">
         <div v-if="!groups.length" class="empty">{{ emptyText }}</div>
@@ -288,25 +269,6 @@ function sessionMenu(e, s) {
 .ib:hover { background: var(--active); color: var(--text); }
 .ib.sm { width: 26px; height: 26px; }
 .ib.on { color: var(--accent-text); background: var(--accent-soft); }
-
-.nav { padding: 0 var(--side-gutter) 8px; display: flex; flex-direction: column; flex: none; font-size: calc(var(--fs) - 1px); }
-.new-session { display: flex; align-items: center; gap: 4px; }
-.new-session .nv { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; padding: 0 var(--side-inset); border: 0; background: transparent; font: inherit; }
-.new-session .nv:hover { background: var(--active); }
-.new-session :deep(.directory-trigger.compact) { flex: 1; min-width: 0; width: auto; height: 34px; margin: 0; padding: 0 var(--side-inset); justify-content: flex-start; gap: 8px; border-radius: var(--r-md); font-size: inherit; }
-.new-session :deep(.directory-trigger.compact:hover),
-.new-session :deep(.directory-trigger.compact.on) { background: var(--active); color: var(--text); }
-.nv { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 var(--side-inset); border-radius: var(--r-md); cursor: pointer; color: var(--text); }
-.nv:hover { background: var(--active); }
-.nv.dis { opacity: 0.45; cursor: default; }
-.nv :deep(.icon) { color: var(--text-2); }
-
-/* 会话列表的三种看法（全部 / 当前目录 / 收藏）：一格一格的小按钮，选了的那格浮起来 */
-.modes { display: flex; gap: 2px; margin: 0 var(--side-gutter) 8px; padding: 3px; background: var(--active); border-radius: var(--r-sm); flex: none; }
-.mode { flex: 1; min-width: 0; height: 26px; padding: 0; border: 0; background: transparent; border-radius: calc(var(--r-sm) - 2px); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; white-space: nowrap; }
-.mode:hover { color: var(--text); }
-.mode.on { background: var(--panel); color: var(--accent-text); font-weight: 600; box-shadow: var(--shadow-sm); }
-[data-theme='dark'] .mode.on { background: var(--elev); }
 
 .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .search { display: flex; align-items: center; gap: 6px; margin: 0 var(--side-gutter) 8px; padding: 0 4px 0 var(--side-inset); height: 34px; border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--text-3); flex: none; }

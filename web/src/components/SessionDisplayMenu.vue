@@ -3,13 +3,15 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import Icon from './Icon.vue';
 
 const props = defineProps({ mode: String, settings: Object });
-const emit = defineEmits(['change']);
+const emit = defineEmits(['change', 'mode-change']);
 const trigger = ref(null);
 const panel = ref(null);
 const opened = ref(false);
 const position = ref({});
-const label = computed(() => props.settings.archive === 'archived' ? '已归档' : props.settings.archive === 'all' ? '全部会话' : '显示');
 const sections = computed(() => [
+  { label: '会话范围', key: 'mode', options: [
+    { value: 'all', label: '全部目录' }, { value: 'dir', label: '当前目录' }, { value: 'fav', label: '收藏目录' },
+  ] },
   { label: '归档筛选', key: 'archive', options: [
     { value: 'active', label: '仅未归档' }, { value: 'archived', label: '仅已归档' }, { value: 'all', label: '全部会话' },
   ] },
@@ -23,8 +25,13 @@ const sections = computed(() => [
     ...(props.mode === 'dir' ? [] : [{ key: 'showPath', label: '显示路径' }]),
   ] },
 ]);
-const checked = (section, option) => section.toggle ? props.settings[option.key] : props.settings[section.key] === option.value;
+const checked = (section, option) => section.key === 'mode' ? props.mode === option.value : section.toggle ? props.settings[option.key] : props.settings[section.key] === option.value;
 function choose(section, option) {
+  if (section.key === 'mode') {
+    emit('mode-change', option.value);
+    close(true);
+    return;
+  }
   emit('change', section.toggle ? { [option.key]: !props.settings[option.key] } : { [section.key]: option.value });
 }
 function close(focus = false) {
@@ -84,7 +91,7 @@ onUnmounted(() => {
 
 <template>
   <button ref="trigger" type="button" class="display-trigger" :class="{ on: opened || settings.archive !== 'active' }" title="会话筛选和显示设置（当前模式单独保存）" aria-label="会话筛选和显示设置" aria-haspopup="menu" :aria-expanded="opened" @click="opened ? close() : open()" @keydown.down.prevent="open()" @keydown.up.prevent="open(true)">
-    {{ label }}
+    显示
   </button>
   <Teleport to="body">
     <div v-if="opened" ref="panel" class="display-menu" :style="position" role="menu" aria-label="会话筛选和显示设置" @keydown="keydown" @contextmenu.prevent.stop>

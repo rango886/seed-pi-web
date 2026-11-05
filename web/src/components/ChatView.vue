@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { S, openDirPicker, restartExited, viewer } from '../store.js';
 import MessageItem from './MessageItem.vue';
 import Composer from './Composer.vue';
+import ConversationBranches from './ConversationBranches.vue';
 import ChatOutline from './ChatOutline.vue';
 import { UI, view, openLightbox } from '../settings.js';
 import Icon from './Icon.vue';
@@ -96,6 +97,19 @@ watch(
 watch(
   () => S.messages,
   () => {
+    const jump = S.branchJump;
+    S.branchJump = null;
+    if (jump) {
+      const old = jump.fromId && scroller.value?.querySelector(`[data-entry="${CSS.escape(jump.fromId)}"]`);
+      const offset = old ? old.getBoundingClientRect().top - scroller.value.getBoundingClientRect().top : 12;
+      stick = !!jump.bottom;
+      nextTick(() => {
+        if (jump.bottom) toBottom();
+        else jumpEntry(jump.toId, offset);
+        syncAway();
+      });
+      return;
+    }
     stick = true;
     away.value = false;
     nextTick(() => {
@@ -104,6 +118,14 @@ watch(
     });
   },
 );
+function jumpEntry(id, offset = 12) {
+  const sc = scroller.value;
+  const el = id && sc?.querySelector(`[data-entry="${CSS.escape(id)}"]`);
+  if (!sc || !el) return;
+  stick = false;
+  sc.scrollTop += el.getBoundingClientRect().top - sc.getBoundingClientRect().top - offset;
+  syncAway();
+}
 
 // 点对话里的图片：全屏看大图，左右能翻这个会话里的所有图片（markdown 的图和用户发的图都算）
 function openImg(img) {
@@ -197,7 +219,7 @@ const model = computed(() => S.state?.model);
       </div>
     </div>
 
-    <ChatOutline :scroller="scroller" :style="{ '--sb': sbw + 'px' }" @jump="onOutlineJump" />
+    <ChatOutline v-if="!S.branchesOpen" :scroller="scroller" :style="{ '--sb': sbw + 'px' }" @jump="onOutlineJump" />
 
     <div ref="dockEl" class="dock" :style="{ '--sb': sbw + 'px' }">
       <button v-show="away" class="tobottom" title="回到底部" @click="jumpBottom"><Icon name="down" :size="18" /></button>
@@ -209,6 +231,7 @@ const model = computed(() => S.state?.model);
           <span class="tag">{{ kind }}</span><span class="ellipsis">{{ t }}</span>
         </div>
       </div>
+      <ConversationBranches @jump="jumpEntry" />
       <Composer />
       <div v-for="[k, w] in widgetsBelow" :key="k" class="widget">
         <div v-for="(l, i) in w.lines" :key="i">{{ l }}</div>

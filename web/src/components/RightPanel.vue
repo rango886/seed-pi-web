@@ -7,6 +7,7 @@ import GitChanges from './GitChanges.vue';
 import { G } from '../git.js';
 import { downloadPath, packing } from '../file-download.js';
 import Icon from './Icon.vue';
+import FloatingPanel from './FloatingPanel.vue';
 
 const filesOpen = ref(true);
 const sectionsEl = ref(null);
@@ -82,12 +83,6 @@ const title = computed(() => (view.panel === 'files' ? '文件' : '进程'));
 // 顶部有标签栏时往下让一点，别挡住标签栏右边的“关闭全部”
 const hasTabs = computed(() => S.tabs.length > 0 || S.terms.length > 0);
 
-function onDown(e) {
-  if (!view.panel) return;
-  // 面板自己、顶栏上的开关按钮、右键菜单、弹窗里点击都不算“外面”
-  if (e.target.closest('.rpanel, .panel-btn, .ctxmenu, .modal-mask')) return;
-  view.panel = null;
-}
 // 文件面板顶上那行路径：右键能把当前工作目录收藏起来（树里根节点本身不画，所以给它留个入口）
 function cwdMenu(e) {
   openMenu(e.clientX, e.clientY, [
@@ -97,28 +92,21 @@ function cwdMenu(e) {
   ]);
 }
 onMounted(() => {
-  window.addEventListener('mousedown', onDown);
   window.addEventListener('blur', finishResize);
 });
 onUnmounted(() => {
   finishResize();
   resizeObserver?.disconnect();
-  window.removeEventListener('mousedown', onDown);
   window.removeEventListener('blur', finishResize);
 });
 </script>
 
 <template>
-  <Transition name="rp">
-    <aside v-if="view.panel" class="rpanel" :class="{ low: hasTabs }">
-      <div class="rhead">
-        <Icon :name="view.panel === 'files' ? 'folder' : 'cpu'" :size="16" />
-        <span class="rtitle">{{ title }}</span>
-        <span v-if="view.panel === 'agents' && S.agents.length" class="cnt">{{ S.agents.length }}</span>
-        <div class="grow" />
+  <FloatingPanel :open="!!view.panel" :low="hasTabs" :title="title" :icon="view.panel === 'files' ? 'folder' : 'cpu'" @close="view.panel = null">
+      <template #badge><span v-if="view.panel === 'agents' && S.agents.length" class="cnt">{{ S.agents.length }}</span></template>
+      <template #actions>
         <button v-if="view.panel === 'files'" class="ib" title="刷新文件和 Git 状态" @click="S.fsEpoch++"><Icon name="refresh" :size="15" /></button>
-        <button class="ib" title="关闭 (Esc)" @click="view.panel = null"><Icon name="close" :size="15" /></button>
-      </div>
+      </template>
 
       <!-- 两个面板都用 v-show 挂着：来回切换不用重新读目录 -->
       <div v-show="view.panel === 'files'" class="pane">
@@ -158,15 +146,10 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-    </aside>
-  </Transition>
+  </FloatingPanel>
 </template>
 
 <style scoped>
-.rpanel { position: absolute; z-index: 30; top: 58px; right: 8px; bottom: 8px; width: min(340px, calc(100% - 16px)); display: flex; flex-direction: column; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; user-select: none; }
-.rpanel.low { top: 86px; }
-.rhead { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 6px 0 14px; flex: none; color: var(--text-2); border-bottom: 1px solid var(--line-2); }
-.rtitle { font-weight: 600; color: var(--text); }
 .cnt { font-size: 11px; background: var(--active); padding: 0 6px; border-radius: var(--r-pill); color: var(--text-2); }
 .ib { width: 30px; height: 30px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .ib:hover { background: var(--active); color: var(--text); }
@@ -201,6 +184,4 @@ onUnmounted(() => {
 .kill { width: 26px; height: 26px; opacity: 0.5; }
 .kill:hover { background: var(--err); color: #fff; opacity: 1; }
 
-.rp-enter-active, .rp-leave-active { transition: opacity 0.15s, transform 0.15s; }
-.rp-enter-from, .rp-leave-to { opacity: 0; transform: translateX(12px); }
 </style>

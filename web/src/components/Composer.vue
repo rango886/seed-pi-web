@@ -1,6 +1,6 @@
 <script setup>
 import { ref, toRef, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, otherAgents, viewer, takeOver, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL } from '../store.js';
+import { S, submit, stop, newSession, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, otherAgents, viewer, takeOver, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL } from '../store.js';
 import { UI, view, openMenu } from '../settings.js';
 import { http, rawUrl } from '../api.js';
 import { fmtTokens, levelName, joinPath, fmtSize } from '../util.js';
@@ -46,10 +46,10 @@ function pick(c, run) {
 
 // ---- 发送 ----
 const atts = computed(() => S.composer.attachments);
-const hasInput = computed(() => !!S.composer.text.trim() || atts.value.some((a) => a.status === 'ready'));
+const hasInput = computed(() => !!S.composer.text.trim() || atts.value.some((a) => a.status === 'ready') || S.composer.images.length > 0);
 async function send(followUp = false) {
   const text = S.composer.text;
-  if (!text.trim() && !atts.value.length) return;
+  if (S.branchBusy || (!text.trim() && !atts.value.length && !S.composer.images.length)) return;
   S.composer.text = ''; // 先清空，失败再放回去，感觉更跟手（附件清不清由 submit 按设置决定）
   const ok = await submit(text, { followUp });
   if (ok) {
@@ -336,16 +336,17 @@ const statusItems = computed(() => {
   const out = [];
   const u = usage.value;
   if (u) {
-    out.push({ label: '输入', text: u.inTok, title: '累计输入 tokens' });
-    out.push({ label: '输出', text: u.outTok, title: '累计输出 tokens' });
-    out.push({ label: '缓存读', text: u.cacheTok, title: '输入里来自缓存的那部分 tokens' });
-    if (u.hit != null) out.push({ label: '缓存率', text: `${u.hit}%`, title: '缓存命中率（缓存读 / 全部输入）' });
-    if (u.cost) out.push({ label: '花费', text: u.cost, title: '本会话花费，点击看详情', run: showSessionInfo });
+    out.push({ label: '输入', text: u.inTok, title: '整个会话累计输入 tokens（包含所有分支）' });
+    out.push({ label: '输出', text: u.outTok, title: '整个会话累计输出 tokens（包含所有分支）' });
+    out.push({ label: '缓存读', text: u.cacheTok, title: '整个会话累计从缓存读取的 tokens（包含所有分支）' });
+    if (u.hit != null) out.push({ label: '缓存率', text: `${u.hit}%`, title: '所有分支累计缓存读 / 累计全部输入，不代表下一次请求的命中率' });
+    if (u.cost) out.push({ label: '累计花费', text: u.cost, title: '整个会话的实际消耗，包含所有分支；点击比较当前路径', run: showSessionInfo });
   }
   if (ctx.value) {
-    out.push({ label: '上下文', text: pctText.value, title: `当前上下文占用 ${pctText.value}，点击压缩`, run: compact });
+    out.push({ label: '当前上下文', text: pctText.value, title: `当前路径上下文占用 ${pctText.value}，点击压缩`, run: compact });
     out.push({ text: `${fmtTokens(ctx.value.tokens)} / ${fmtTokens(ctx.value.contextWindow)}`, title: '当前上下文 tokens / 窗口大小' });
   }
+  if (!ctx.value && S.stats) out.push({ label: '当前上下文', text: '待更新', title: '尚无当前路径的有效上下文估计，不沿用其他分支的数值' });
   if (otherAgents.value) out.push({ label: '后台', text: `${otherAgents.value} 个在跑`, title: '其他会话还有几个 pi 进程在跑' });
   for (const [k, v] of Object.entries(S.statusItems)) out.push({ text: v, title: `${k}: ${v}` });
   return out;
@@ -409,7 +410,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize));
 watch(menu, (v) => (v ? nextTick(alignPop) : nextTick(() => ta.value?.focus())));
 
 // 输入、添加附件和选择模型不会启动会话进程。
-const disabled = computed(() => !(S.agentId || S.lazy) || !!S.agentExited || viewer.value);
+const disabled = computed(() => !(S.agentId || S.lazy) || !!S.agentExited || viewer.value || S.branchBusy);
 function onInput() {
   syncCaret();
 }
@@ -521,6 +522,12 @@ async function onTakeOver() {
         <button v-if="atts.length > 1" class="att-clear" title="移除全部附件" @click="clearAttachments">清空</button>
       </div>
 
+      <div v-if="S.composer.images.length" class="atts">
+        <div v-for="(im, i) in S.composer.images" :key="i" class="att img">
+          <img class="pic" :src="`data:${im.mimeType};base64,${im.data}`" alt="原消息图片" />
+          <button class="x" title="移除图片" @click="S.composer.images.splice(i, 1)"><Icon name="close" :size="11" /></button>
+        </div>
+      </div>
       <!-- 悬停浮层：编号、全名、完整路径、来源和大小都在这（图片附件平时只有缩略图） -->
       <AttTooltip :tip="tip" />
       <textarea
@@ -545,10 +552,11 @@ async function onTakeOver() {
         </button>
         <input ref="fileInput" type="file" multiple hidden @change="onPickFiles" />
 
-        <!-- 工作目录 / 模型 / 思考强度靠右，和发送按钮排在一起 -->
+        <!-- 新会话 / 工作目录 / 模型 / 思考强度靠右，和发送按钮排在一起 -->
         <div class="grow" />
         <span v-if="S.starting" class="dim small starting" title="这个会话之前没有 pi 进程，正在启动">启动 pi…</span>
 
+        <button type="button" class="chip new-session" title="在当前目录开始新会话" @click="newSession">新会话</button>
         <DirectoryMenu />
 
         <button ref="modelChip" class="chip" :class="{ on: menu === 'model' }" title="切换模型 (Ctrl+L)" :disabled="disabled" @click="toggleMenu('model')">
@@ -600,6 +608,7 @@ async function onTakeOver() {
 .bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .bar > * { flex-shrink: 0; }
 .bar > .chip { flex-shrink: 1; min-width: 0; }
+.bar > .new-session { flex-shrink: 0; white-space: nowrap; }
 /* 和右边那几个 chip 一个观感：浅底 + 细边，悬停换成主题色 */
 .ibtn { width: 30px; height: 30px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-pill); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: border-color 0.15s, color 0.15s, background 0.15s; }
 .ibtn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }

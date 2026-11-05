@@ -56,6 +56,7 @@ function onKey(e) {
     <div class="modal picker">
       <div class="modal-title">{{ S.picker.title }}</div>
       <div class="modal-body">
+        <p v-if="S.picker.hint" class="hint dim">{{ S.picker.hint }}</p>
         <input ref="input" v-model="q" class="input" placeholder="输入关键字过滤，↑↓ 选择，Enter 确认" @keydown="onKey" />
         <div ref="listEl" class="list">
           <div
@@ -80,6 +81,7 @@ function onKey(e) {
 <style scoped>
 .picker { width: 640px; }
 .modal-body { padding-bottom: 18px; }
+.hint { margin: 0 0 10px; font-size: var(--fs-sm); line-height: var(--lh); }
 .list { max-height: 52vh; overflow: auto; margin: 0 -8px; }
 .input { width: 100%; height: 40px; }
 .sel { min-height: 38px; }

@@ -6,7 +6,8 @@ import { S } from '../store.js';
   <div class="toasts">
     <div v-for="t in S.toasts" :key="t.id" class="toast" :class="t.kind" @click="S.toasts = S.toasts.filter((x) => x.id !== t.id)">
       {{ t.text }}
-      <button v-if="t.action" type="button" class="toast-action" @click.stop="S.toasts = S.toasts.filter((x) => x.id !== t.id); t.action.run()">{{ t.action.label }}</button>
+      <a v-if="t.action?.href" class="toast-action" :href="t.action.href" target="_blank" rel="noopener noreferrer" @click.stop="S.toasts = S.toasts.filter((x) => x.id !== t.id)">{{ t.action.label }}</a>
+      <button v-else-if="t.action" type="button" class="toast-action" @click.stop="S.toasts = S.toasts.filter((x) => x.id !== t.id); t.action.run()">{{ t.action.label }}</button>
     </div>
   </div>
 </template>

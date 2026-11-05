@@ -5,7 +5,7 @@ import {
   openDirPicker,
   pickSession,
   renameSession,
-  pickFork,
+  openBranches,
   cloneSession,
   compact,
   exportHtml,
@@ -53,7 +53,7 @@ export function mainMenu(extra = []) {
       label: '当前会话',
       children: [
         { label: '重命名…', run: () => renameSession() },
-        { label: '从某条消息分叉…', run: pickFork, disabled: !idle },
+        { label: '对话分支…', run: openBranches },
         { label: '复制为新会话', run: cloneSession, disabled: !idle },
         { label: '压缩上下文', run: () => compact(), disabled: !idle },
         '-',

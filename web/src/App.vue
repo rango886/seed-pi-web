@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, closeTab, closeAllTabs, pickSession, pickModel, stop, renameSession, newSession, sessionTitle, toggleTerminal, openTerminal, termTab, termIdOf } from './store.js';
+import { S, closeTab, closeAllTabs, pickSession, pickModel, stop, renameSession, newSession, sessionTitle, toggleTerminal, openTerminal, termTab, termIdOf, openBranches } from './store.js';
 import { view, toggleSide, openMenu, togglePanel, UI } from './settings.js';
 import { mainMenu, contextExtras, openModelMenu } from './menus.js';
 import SidePanel from './components/SidePanel.vue';
@@ -42,6 +42,7 @@ function drag(e) {
 
 /* 顶部标签页：对话 + 打开的文件 + 终端 */
 const tabsEl = ref(null);
+watch(() => view.panel, panel => { if (panel) S.branchesOpen = false; });
 const inTerm = computed(() => !!termIdOf(S.activeTab));
 const hasTabs = computed(() => S.tabs.length > 0 || S.terms.length > 0);
 // 打开的文件多了就横向滚：竖向滚轮在这一条上换成横向滚
@@ -103,6 +104,7 @@ function onKey(e) {
   if (e.key === 'Escape') {
     if (view.menu) return e.preventDefault(), (view.menu = null);
     if (view.settingsOpen) return e.preventDefault(), (view.settingsOpen = false);
+    if (S.branchesOpen) return e.preventDefault(), (S.branchesOpen = false);
     if (view.drawer) return e.preventDefault(), (view.drawer = false);
     if (view.panel && !S.picker && !S.dialogs.length) return e.preventDefault(), (view.panel = null);
   }
@@ -171,11 +173,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
         <div class="ttl" :title="`${S.cwd}\n点击重命名`" @click="renameSession()">
           <div class="t1 ellipsis">{{ title }}</div>
         </div>
-        <!-- 顶栏只留文件 / 终端 / ⋯；进程、状态信息都收在“⋯”菜单里 -->
+        <!-- 顶栏放文件 / 终端 / 分支 / ⋯；进程、状态信息收在“⋯”菜单里 -->
         <template v-if="!compact">
           <button class="ib panel-btn" :class="{ on: view.panel === 'files' }" title="文件 (Ctrl+E)" @click="togglePanel('files')"><Icon name="folder" /></button>
           <button v-if="S.info.terminal" class="ib" :class="{ on: inTerm }" title="终端 (Ctrl+`)" @click="toggleTerminal"><Icon name="terminal" /></button>
         </template>
+        <button class="ib panel-btn" :class="{ on: S.branchesOpen }" title="对话分支 (/tree)" @click="S.branchesOpen ? S.branchesOpen = false : openBranches()"><Icon name="branch" /></button>
         <button class="ib" title="更多（也可以在页面上点右键）" @click.stop="moreMenu"><Icon name="more" /></button>
       </header>
 

@@ -1,7 +1,7 @@
 // 全局状态 + 所有动作。组件只负责显示，逻辑都在这里，方便看懂。
 import { reactive, computed, watch, nextTick } from 'vue';
 import { connect, call, fire, http, rawUrl, upload, CID } from './api.js';
-import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments, setAssetBase, levelName } from './util.js';
+import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments, setAssetBase, levelName, textOf, imagesOf } from './util.js';
 import { view, UI } from './settings.js';
 
 const FAV_KEY = 'seed-pi-web-favorites';
@@ -28,6 +28,12 @@ export const S = reactive({
   models: [],
   commands: [], // 扩展命令 / prompt 模板 / skill
   messages: [],
+  conversation: null, // stable entry ids, user-only tree, current-path usage
+  branchesOpen: false,
+  branchBusy: false,
+  edit: null, // unsent inline edit; submission alone moves the pi cursor
+  branchJump: null,
+  branchBack: [],
   tools: {}, // toolCallId -> { status, args, partial, result, durationMs }
   running: false,
   compacting: false,
@@ -45,7 +51,7 @@ export const S = reactive({
   widgets: {},
   // 界面
   // attachments：输入框上面那一排附件（顺序就是发送时的编号），每个会话各自一份
-  composer: { text: '', attachments: [] },
+  composer: { text: '', attachments: [], images: [] },
   toasts: [],
   picker: null,
   dirPicker: false,
@@ -74,6 +80,7 @@ export const hasStatus = computed(() => !!(S.stats?.tokens || S.stats?.contextUs
 
 // ---------------- 小工具 ----------------
 let keySeq = 0;
+let viewRevision = 0;
 const withKey = (m) => ({ ...m, _k: ++keySeq });
 
 export function toast(text, kind = 'info', ms = 4000, action = null) {
@@ -170,6 +177,13 @@ export function openInNewTab(cwd, { newSession: atNew = false } = {}) {
 
 function onServerMsg(msg) {
   switch (msg.t) {
+    case 'branch_changed':
+      if (msg.agentId === S.agentId && msg.snapshot) {
+        applyConversation(msg.snapshot, !['web_label', 'web_restore_selection'].includes(msg.kind));
+        loadState();
+        loadStats();
+      }
+      break;
     case 'session_archive':
       for (const s of S.sessions) if (normPath(s.file) === normPath(msg.file)) s.archived = msg.archived;
       loadSessionsSoon();
@@ -361,6 +375,9 @@ export function syncTitle() {
 /** 连上一个 pi 进程。后端的回复里带着快照：写完的消息 + 进行中的事件（正在吐的字、正在跑的工具）。
  *  keep：从“只看”接上进程，消息和已经显示的一样就不重新渲染（长对话重新解析 Markdown 会卡一下） */
 async function attachResult({ agent, uiPending, uiState, messages, live }, { keep = false } = {}) {
+  viewRevision++;
+  const changedSession = normPath(S.agent?.sessionFile) !== normPath(agent.sessionFile);
+  if (changedSession) { S.edit = null; S.conversation = null; S.branchBack = []; }
   S.agentId = agent.id;
   S.agent = agent;
   S.agentExited = null;
@@ -380,7 +397,8 @@ async function attachResult({ agent, uiPending, uiState, messages, live }, { kee
   // 补放进行中的事件：和一直开着这个窗口的效果一样
   for (const rec of live || []) onRec(rec);
   flushDeltas();
-  await Promise.all([loadState(), loadCommands(), loadStats()]);
+  await Promise.all([loadCommands(), loadConversation()]);
+  await Promise.all([loadState(), loadStats()]);
   loadSessions();
 }
 
@@ -399,11 +417,11 @@ const readJson = (k, d) => {
     return d;
   }
 };
-function rememberCtx(file, usage) {
+function rememberCtx(file, usage, leafId, model) {
   if (!file) return;
   const m = readJson(CTX_KEY, {});
   delete m[normPath(file)];
-  if (usage) m[normPath(file)] = usage;
+  if (usage && leafId) m[normPath(file)] = { usage, leafId, model: `${model?.provider}/${model?.id}` };
   const keys = Object.keys(m);
   for (const k of keys.slice(0, Math.max(0, keys.length - 200))) delete m[k];
   localStorage.setItem(CTX_KEY, JSON.stringify(m));
@@ -413,7 +431,8 @@ function rememberCtx(file, usage) {
  * “只看”一个会话：不起 pi 进程，内容是后端从会话文件里读的。
  * keep：进程刚被回收，界面上的消息、模型、用量都还对，原样留着
  */
-function openLazy({ cwd, file, messages, state, stats, models }, { keep = false } = {}) {
+function openLazy({ cwd, file, messages, state, stats, models, conversation }, { keep = false } = {}) {
+  viewRevision++;
   S.agentId = null;
   S.lazy = { cwd, file: file || null };
   S.agent = { id: null, cwd, sessionFile: file || null, sessionName: (keep ? S.state?.sessionName : state?.sessionName) || null, alive: false, saved: !!file, running: false, owner: null, lazy: true };
@@ -430,7 +449,12 @@ function openLazy({ cwd, file, messages, state, stats, models }, { keep = false 
   if (S.state) S.state.isStreaming = false;
   if (!keep) {
     S.state = state || null;
-    S.stats = stats ? { ...stats, contextUsage: file ? readJson(CTX_KEY, {})[normPath(file)] : undefined } : null;
+    const cached = file ? readJson(CTX_KEY, {})[normPath(file)] : null;
+    const matches = cached?.leafId === conversation?.leafId && cached?.model === `${state?.model?.provider}/${state?.model?.id}`;
+    S.stats = stats ? { ...stats, contextUsage: matches ? cached.usage : undefined } : null;
+    S.conversation = conversation || null;
+    S.branchBack = [];
+    S.edit = null;
     S.models = models || [];
     updateThinkingLevels();
     setMessages(messages);
@@ -516,6 +540,7 @@ export const takeOver = guard(async () => {
  * （pi 自己不允许加载“记录目录不存在”的会话，所以换目录只会开新会话）
  */
 function openDetached({ file, cwd, messages }) {
+  viewRevision++;
   S.agentId = null;
   S.agent = null;
   S.agentExited = null;
@@ -523,6 +548,8 @@ function openDetached({ file, cwd, messages }) {
   S.lazy = null;
   S.state = null;
   S.stats = null;
+  S.conversation = null;
+  S.edit = null;
   S.thinkingLevels = [];
   S.queue = { steering: [], followUp: [] };
   S.running = false;
@@ -574,7 +601,8 @@ export const killAgent = guard(async (a) => {
 });
 
 export async function reload() {
-  await Promise.all([loadMessages(), loadState(), loadCommands(), loadStats()]);
+  await loadMessages();
+  await Promise.all([loadState(), loadCommands(), loadStats()]);
   loadSessions();
 }
 
@@ -583,13 +611,14 @@ export async function reload() {
 function setMessages(list) {
   const tools = {};
   const out = [];
+  const keys = new Map(S.messages.filter((m) => m._entryId).map((m) => [m._entryId, m._k]));
   for (const m of list || []) {
     if (m.role === 'system') continue;
     if (m.role === 'toolResult') {
       tools[m.toolCallId] = { status: m.isError ? 'error' : 'done', result: m };
       continue;
     }
-    out.push(withKey(m));
+    out.push({ ...m, _k: keys.get(m._entryId) ?? ++keySeq });
   }
   S.tools = tools;
   S.messages = out;
@@ -601,18 +630,29 @@ function setMessages(list) {
 
 async function loadMessages() {
   if (!S.agentId) return;
-  const d = await rpc({ type: 'get_messages' }).catch(() => ({ messages: [] }));
-  setMessages(d.messages);
+  const agentId = S.agentId, revision = viewRevision;
+  try {
+    const d = await rpc({ type: 'get_web_snapshot' });
+    if (S.agentId === agentId && viewRevision === revision) applyConversation(d, true);
+  } catch {
+    if (S.agentId !== agentId || viewRevision !== revision) return;
+    const d = await rpc({ type: 'get_messages' });
+    if (S.agentId === agentId && viewRevision === revision) setMessages(d.messages);
+  }
 }
 
 // 下面几个只是刷新显示：没有进程就算了，不为这个去起 pi
 async function loadState() {
   if (!S.agentId) return;
+  const id = S.agentId, revision = viewRevision;
   try {
-    S.state = await rpc({ type: 'get_state' });
-    S.running = !!S.state.isStreaming;
-    S.compacting = !!S.state.isCompacting;
+    const state = await rpc({ type: 'get_state' });
+    if (S.agentId !== id || viewRevision !== revision) return;
+    S.state = state;
+    S.running = !!state.isStreaming;
+    S.compacting = !!state.isCompacting;
     const t = await rpc({ type: 'get_available_thinking_levels' });
+    if (S.agentId !== id || viewRevision !== revision) return;
     S.thinkingLevels = t.levels || [];
     syncTitle();
   } catch {}
@@ -620,14 +660,243 @@ async function loadState() {
 
 async function loadStats() {
   if (!S.agentId) return;
-  S.stats = await rpc({ type: 'get_session_stats' }).catch(() => null);
-  if (S.stats && S.agent?.sessionFile) rememberCtx(S.agent.sessionFile, S.stats.contextUsage);
+  const id = S.agentId, revision = viewRevision;
+  const stats = await rpc({ type: 'get_session_stats' }).catch(() => null);
+  if (S.agentId !== id || viewRevision !== revision) return;
+  S.stats = stats;
+  if (S.stats && S.agent?.sessionFile) {
+    S.stats.branchStats = S.conversation?.branchStats;
+    rememberCtx(S.agent.sessionFile, S.stats.contextUsage, S.conversation?.leafId, S.state?.model);
+  }
 }
+
+function applyConversation(d, replaceMessages = false) {
+  if (!d?.nodes) return;
+  const { messages, messageIds, contextUsage, ...conversation } = d;
+  if (S.conversation?.leafId !== d.leafId) viewRevision++;
+  S.conversation = conversation;
+  if (replaceMessages) setMessages(messages);
+  else {
+    // Streaming records don't carry session entry ids. Match the ordered snapshot
+    // once finalized, without replacing DOM keys or disturbing an in-flight answer.
+    const queues = new Map();
+    for (const m of messages || messageIds || []) {
+      const k = `${m.role}:${m.timestamp}`;
+      if (!queues.has(k)) queues.set(k, []);
+      queues.get(k).push(m._entryId);
+    }
+    for (const m of S.messages) {
+      const id = queues.get(`${m.role}:${m.timestamp}`)?.shift();
+      if (id) m._entryId = id;
+    }
+  }
+  S.stats = { ...S.stats, ...d.totals, branchStats: d.branchStats, contextUsage };
+}
+
+async function loadConversation() {
+  if (!S.agentId) return;
+  const id = S.agentId, revision = viewRevision;
+  try {
+    const d = await rpc({ type: 'get_web_snapshot', metadataOnly: true });
+    if (S.agentId === id && viewRevision === revision) applyConversation(d);
+  } catch (e) {
+    // Basic chat still works if an older pi cannot load the bridge.
+    if (S.agentId === id && viewRevision === revision) S.conversation = null;
+    console.warn('读取对话分支失败', e.message);
+  }
+}
+
+export const conversationNodes = computed(() => new Map((S.conversation?.nodes || []).map((n) => [n.id, n])));
+export const branchDisabled = computed(() => !S.connected || viewer.value || S.running || S.compacting || !!S.bashLive || !!S.retry || S.branchBusy || !!S.detached || !!S.agentExited);
+
+export const openBranches = guard(async () => {
+  view.panel = null;
+  S.branchesOpen = true;
+  S.activeTab = 'chat';
+  if (S.agentId) await loadConversation(); // inspecting a lazy tree never starts pi
+});
+
+export const beginEdit = guard(async (m) => {
+  if (branchDisabled.value || !m._entryId) return;
+  const file = S.agent?.sessionFile;
+  if (S.edit && S.edit.entryId !== m._entryId) {
+    const r = await ask({ method: 'confirm', title: '修改另一条消息', message: '丢弃当前未发送的修改？' });
+    if (!r.confirmed || normPath(file) !== normPath(S.agent?.sessionFile) || branchDisabled.value) return;
+  }
+  const parts = splitAttachments(textOf(m.content));
+  S.edit = { entryId: m._entryId, text: parts.text, attachments: parts.attachments.map(makeAtt), images: imagesOf(m.content).map((im) => ({ ...im })), error: '' };
+});
+export function cancelEdit() { if (!S.branchBusy) S.edit = null; }
+
+export async function uploadEditFiles(files) {
+  const edit = S.edit;
+  if (!edit || S.branchBusy) return;
+  for (const f of files) {
+    if (UI.uploadMaxMB && f.size > UI.uploadMaxMB * 1048576) { toast(`${f.name} 超过上传大小上限`, 'warning'); continue; }
+    const item = makeAtt({ name: f.name || pastedName(f), status: 'uploading', origin: 'upload' });
+    edit.attachments.push(item);
+    try {
+      const r = await upload(f, { name: item.name, dir: UI.uploadDir, cwd: S.cwd, session: S.state?.sessionId, maxMB: UI.uploadMaxMB }, (p) => (item.progress = p));
+      Object.assign(item, { ...r, kind: attachKind(r.name || r.path), status: 'ready' });
+    } catch (e) {
+      edit.attachments = edit.attachments.filter((a) => a !== item);
+      edit.error = e.message;
+    }
+  }
+}
+
+export const sendEdit = guard(async () => {
+  requireIdle();
+  const edit = S.edit;
+  if (!edit || branchDisabled.value) return false;
+  if (edit.attachments.some((a) => a.status !== 'ready')) { edit.error = '附件还在上传，请稍等'; return false; }
+  const block = edit.attachments.length ? buildAttachmentBlock(edit.attachments) : '';
+  const message = [edit.text.replace(/\s+$/, ''), block].filter(Boolean).join('\n\n');
+  if (!message.trim() && !edit.images.length) { edit.error = '消息不能为空'; return false; }
+  await ensureAgent();
+  if (S.edit !== edit || branchDisabled.value) return false;
+  const id = S.agentId;
+  S.branchBusy = true;
+  edit.error = '';
+  S.branchJump = { fromId: edit.entryId, toId: edit.entryId, bottom: true };
+  try {
+    await rpc({ type: 'web_edit', targetId: edit.entryId, expectedLeafId: S.conversation?.leafId, message, images: edit.images });
+    if (S.agentId === id) { S.edit = null; await loadConversation(); }
+    return true;
+  } catch (e) {
+    edit.error = e.message;
+    return false;
+  } finally { S.branchBusy = false; }
+});
+
+export const switchBranch = guard(async (targetId, { fromId = null, toId = null, back = false, prepare = false } = {}) => {
+  requireIdle();
+  if (branchDisabled.value) return;
+  const file = S.agent?.sessionFile;
+  const edit = S.edit;
+  if (edit || (prepare && (S.composer.text || S.composer.attachments.length || S.composer.images.length))) {
+    const r = await ask({ method: 'confirm', title: '切换分支', message: '当前有未发送的内容，用所选问题替换并切换？' });
+    if (!r.confirmed || normPath(file) !== normPath(S.agent?.sessionFile)) return;
+  }
+  await ensureAgent();
+  if (normPath(file) !== normPath(S.agent?.sessionFile) || branchDisabled.value) return;
+  const oldLeaf = S.conversation?.leafId;
+  if (targetId === oldLeaf && !prepare) return true;
+  const id = S.agentId;
+  S.branchBusy = true;
+  let focusComposer = false;
+  try {
+    let prompt = null;
+    if (prepare) {
+      // Read the original before moving the cursor. Already-running bridges may
+      // not return editorText, and tree previews are truncated/omit attachments.
+      let message = S.messages.find(m => m._entryId === targetId && m.role === 'user');
+      if (!message) {
+        const d = await rpc({ type: 'get_entries' });
+        if (S.agentId !== id || normPath(file) !== normPath(S.agent?.sessionFile)) return;
+        message = d.entries?.find(e => e.id === targetId && e.type === 'message' && e.message?.role === 'user')?.message;
+      }
+      if (!message) throw new Error('找不到所选问题的原文，未切换分支');
+      prompt = { editorText: textOf(message.content), editorImages: imagesOf(message.content).map(im => ({ ...im })) };
+    }
+    S.branchJump = { fromId, toId, bottom: prepare };
+    const r = await rpc({ type: 'web_navigate', targetId, expectedLeafId: oldLeaf });
+    if (S.agentId !== id || normPath(file) !== normPath(S.agent?.sessionFile)) return;
+    if (!back && oldLeaf) S.branchBack = [...S.branchBack, oldLeaf].slice(-30);
+    if (S.edit === edit) S.edit = null;
+    const restored = prompt || r;
+    if (restored?.editorText !== undefined) {
+      if (prepare || (!S.composer.text && !S.composer.attachments.length && !S.composer.images.length)) {
+        await nextTick(); // let lazy-session attachment drafts settle before restoring the prompt
+        if (S.agentId !== id || normPath(file) !== normPath(S.agent?.sessionFile)) return;
+        clearAttachments();
+        S.composer.text = restoreMessage(restored.editorText);
+        S.composer.images = (restored.editorImages || []).map(im => ({ ...im }));
+        focusComposer = true;
+      } else toast('已回到提问之前；输入框原有草稿保留，未覆盖', 'info');
+    }
+    await Promise.all([loadState(), loadStats()]);
+    return true;
+  } catch (e) {
+    S.branchJump = null;
+    throw e;
+  } finally {
+    S.branchBusy = false;
+    if (focusComposer) {
+      await nextTick(); // focus only after the composer is enabled again
+      if (S.agentId === id && normPath(file) === normPath(S.agent?.sessionFile)) S.composerFocus++;
+    }
+  }
+});
+export const previousBranch = guard(async () => {
+  const id = S.branchBack.at(-1);
+  if (!id) return;
+  const question = S.conversation?.nodes.filter((n) => n.targetId === id).at(-1);
+  const ok = await switchBranch(id, { back: true, toId: question?.id });
+  if (ok && S.branchBack.at(-1) === id) S.branchBack.pop();
+});
+export function switchVersion(m, delta) {
+  const node = conversationNodes.value.get(m._entryId);
+  if (!node) return;
+  const target = conversationNodes.value.get(node.versions[node.versions.indexOf(node.id) + delta]);
+  if (target) return switchBranch(target.targetId, { fromId: node.id, toId: target.id });
+}
+export const restoreBranchSelection = guard(async () => {
+  requireIdle();
+  if (branchDisabled.value) return;
+  await ensureAgent();
+  S.branchBusy = true;
+  try {
+    const r = await rpc({ type: 'web_restore_selection', expectedLeafId: S.conversation?.leafId });
+    await Promise.all([loadState(), loadStats()]);
+    toast(r.thinkingLevel !== r.requestedThinkingLevel ? `已恢复模型，思考强度按模型能力调整为 ${r.thinkingLevel}` : '已恢复此分支之前的模型与思考强度');
+  } finally { S.branchBusy = false; }
+});
+
+export const labelBranch = guard(async (node) => {
+  requireIdle();
+  const file = S.agent?.sessionFile;
+  const r = await ask({ method: 'input', title: '分支名称（留空清除）', prefill: node.label });
+  if (r.cancelled || normPath(file) !== normPath(S.agent?.sessionFile) || branchDisabled.value) return;
+  S.branchBusy = true;
+  try { await rpc({ type: 'web_label', targetId: node.id, label: r.value || '' }); }
+  finally { S.branchBusy = false; }
+});
+
+export const forkMessage = guard(async (m) => {
+  requireIdle();
+  if (!m?._entryId || branchDisabled.value) return;
+  const file = S.agent?.sessionFile;
+  if (S.composer.text || S.composer.attachments.length || S.composer.images.length) {
+    const r = await ask({ method: 'confirm', title: 'Fork 为新会话', message: '用这条消息替换输入框里未发送的草稿？' });
+    if (!r.confirmed || normPath(file) !== normPath(S.agent?.sessionFile)) return;
+  }
+  await ensureAgent();
+  if (normPath(file) !== normPath(S.agent?.sessionFile) || branchDisabled.value) return;
+  const id = S.agentId;
+  S.branchBusy = true;
+  try {
+    const r = await rpc({ type: 'fork', entryId: m._entryId });
+    if (S.agentId !== id) return;
+    if (r?.cancelled) return toast('扩展取消了分叉', 'warning');
+    await reload();
+    await nextTick(); // switch the per-session attachment draft before restoring it
+    clearAttachments();
+    S.composer.text = restoreMessage(textOf(m.content));
+    S.composer.images = imagesOf(m.content).map((im) => ({ ...im }));
+    S.edit = null;
+    S.branchBack = [];
+    S.composerFocus++;
+    toast('已 Fork 为新会话，修改后发送；原会话保留');
+  } finally { S.branchBusy = false; }
+});
 
 async function loadCommands() {
   if (!S.agentId) return;
+  const id = S.agentId;
   const d = await rpc({ type: 'get_commands' }).catch(() => ({ commands: [] }));
-  S.commands = d.commands || [];
+  if (S.agentId !== id) return;
+  S.commands = (d.commands || []).filter((c) => !c.name.startsWith('seed-web-tree'));
 }
 
 let sessionsRequest = 0;
@@ -716,9 +985,11 @@ export const setModel = guard(async (m) => {
       S.state.thinkingLevel = S.thinkingLevels.find((l) => order.indexOf(l) >= index) || S.thinkingLevels.at(-1) || 'off';
     }
     S.lazy.pendingThinking = S.state.thinkingLevel;
+    if (S.stats) S.stats.contextUsage = undefined;
   } else {
     await rpc({ type: 'set_model', provider: m.provider, modelId: m.id });
     await loadState();
+    await loadStats();
   }
   const recent = JSON.parse(localStorage.getItem('seed-pi-web-recent-models') || '[]').filter((k) => k !== `${m.provider}/${m.id}`);
   recent.unshift(`${m.provider}/${m.id}`);
@@ -812,8 +1083,7 @@ function onRec(rec) {
     case 'agent_settled':
       S.running = false;
       S.retry = null;
-      loadStats();
-      loadState();
+      loadConversation().then(() => Promise.all([loadStats(), loadState()]));
       loadSessions();
       break;
     case 'message_start': {
@@ -983,9 +1253,10 @@ export function answerDialog(d, payload) {
 // ---------------- 发送消息 ----------------
 /** 返回 true 表示已处理，输入框可以清空 */
 export async function submit(text, { followUp = false } = {}) {
+  if (S.branchBusy) return false;
   const atts = S.composer.attachments;
   const ready = atts.filter((a) => a.status === 'ready' && a.path);
-  if (!text.trim() && !ready.length) {
+  if (!text.trim() && !ready.length && !S.composer.images.length) {
     if (atts.some((a) => a.status === 'uploading')) toast('附件还在上传，稍等一下', 'warning');
     return false;
   }
@@ -1006,10 +1277,11 @@ export async function submit(text, { followUp = false } = {}) {
       const block = buildAttachmentBlock(ready);
       message = text.trim() ? `${text.replace(/\s+$/, '')}\n\n${block}` : block;
     }
-    const cmd = { type: 'prompt', message };
+    const cmd = { type: 'prompt', message, ...(S.composer.images.length ? { images: S.composer.images } : {}) };
     if (S.running) cmd.streamingBehavior = followUp ? 'followUp' : 'steer';
     await rpc(cmd);
     if (ready.length && !UI.keepAttachments) clearAttachments();
+    S.composer.images = [];
     return true;
   } catch (e) {
     toast(e.message, 'error');
@@ -1140,6 +1412,7 @@ try {
   attSaved = JSON.parse(localStorage.getItem(ATT_KEY) || '{}');
 } catch {}
 const attLive = new Map(); // 内存里的：切走时还在上传的也能接着传完
+const imageLive = new Map(); // legacy inline-image drafts stay with their session (not localStorage)
 let attCur = '';
 // 还没说过话、也没起进程的新会话没有会话文件：按目录算一份草稿
 const attKeyOf = () => S.agent?.sessionFile || S.detached?.file || (S.lazy ? `draft:${normPath(S.lazy.cwd)}` : '');
@@ -1164,7 +1437,9 @@ watch(attKeyOf, (k) => {
     return;
   }
   attLive.set(attCur, S.composer.attachments);
+  imageLive.set(attCur, S.composer.images);
   attCur = k;
+  S.composer.images = imageLive.get(k) || [];
   S.composer.attachments = attLive.get(k) || (attSaved[k] || []).map(makeAtt);
 });
 watch(() => S.composer.attachments.map((a) => a.status + a.path).join('|'), saveAtt);
@@ -1209,9 +1484,11 @@ export const BUILTINS = [
   { name: 'resume', desc: '切换到其他历史会话', run: () => pickSession() },
   { name: 'model', args: '[provider/model]', desc: '切换模型', run: (a) => pickModel(a) },
   { name: 'thinking', args: '[level]', desc: '设置思考强度', run: (a) => pickThinking(a) },
+  { name: 'prompt', args: '[模板名] [参数…] | --help', desc: '选择提示词模板 / 查看变量用法', run: (a) => pickPrompt(a) },
   { name: 'name', args: '[名称]', desc: '设置会话名称', run: (a) => renameSession(a) },
   { name: 'compact', args: '[说明]', desc: '压缩上下文', run: (a) => compact(a) },
   { name: 'fork', desc: '从之前的某条消息分叉出新会话', run: () => pickFork() },
+  { name: 'tree', desc: '打开对话分支窗口', run: () => openBranches() },
   { name: 'clone', desc: '复制当前会话', run: () => cloneSession() },
   { name: 'session', desc: '当前会话信息和统计', run: () => showSessionInfo() },
   { name: 'copy', desc: '复制最后一条回复', run: () => copyLast() },
@@ -1224,11 +1501,12 @@ export const BUILTINS = [
   { name: 'quit', desc: '关闭这个会话的 pi 进程', run: () => quitAgent() },
 ];
 // 这些只有终端版 pi 有界面，网页里就在终端里打开 pi 来用
-export const TUI_ONLY = ['settings', 'login', 'logout', 'scoped-models', 'tree', 'trust', 'share', 'bug', 'import', 'changelog'];
+export const TUI_ONLY = ['settings', 'login', 'logout', 'scoped-models', 'trust', 'share', 'bug', 'import', 'changelog'];
 
 export function allCommands() {
-  const list = BUILTINS.map((b) => ({ name: b.name, args: b.args, desc: b.desc, source: 'pi' }));
-  for (const c of S.commands) list.push({ name: c.name, desc: c.description || '', source: c.source });
+  const list = BUILTINS.filter((b) => b.name === 'tree' || !S.commands.some((c) => c.name === b.name))
+    .map((b) => ({ name: b.name, args: b.args, desc: b.desc, source: 'pi' }));
+  for (const c of S.commands) if (c.name !== 'tree') list.push({ name: c.name, args: c.argumentHint, desc: c.description || '', source: c.source });
   for (const n of TUI_ONLY) if (!S.commands.some((c) => c.name === n)) list.push({ name: n, desc: '在终端版 pi 里打开', source: 'tui' });
   return list;
 }
@@ -1237,7 +1515,7 @@ async function runSlash(text) {
   const m = text.match(/^\/(\S+)\s*([\s\S]*)$/);
   if (!m) return false;
   const [, name, arg] = m;
-  if (S.commands.some((c) => c.name === name)) return false; // 交给 pi 处理
+  if (name !== 'tree' && S.commands.some((c) => c.name === name)) return false; // /tree 始终打开网页分支窗口，其余扩展命令交给 pi
   const b = BUILTINS.find((x) => x.name === name);
   if (b) {
     await b.run(arg.trim());
@@ -1252,7 +1530,8 @@ async function runSlash(text) {
 }
 
 const requireIdle = () => {
-  if (S.running) throw new Error('pi 正在运行，先停止或等它结束');
+  if (S.running || S.compacting || S.bashLive || S.retry) throw new Error('pi 正在运行，先停止或等它结束');
+  if (S.branchBusy) throw new Error('正在处理分支，请稍等');
 };
 
 export const newSession = guard(async () => {
@@ -1271,6 +1550,8 @@ export function openDirPicker(mode = 'switch') {
 async function newSessionRaw(cwd) {
   await present(await call('create_session', { cwd: cwd || S.cwd }));
   S.composer.text = '';
+  S.composer.images = [];
+  S.edit = null;
   S.activeTab = 'chat';
   S.composerFocus++;
 }
@@ -1333,6 +1614,58 @@ export const pickModel = guard(async (arg) => {
   });
 });
 
+function showPromptHelp(message = '') {
+  ask({
+    method: 'info',
+    title: '提示词模板变量',
+    message: message || '变量写在模板 .md 正文里；发送 /模板名 参数 时由 pi 替换，不是环境变量，也不会执行 shell。',
+    rows: [
+      ['/prompt', '选择模板，填入输入框；补参数后再发送'],
+      ['/prompt review "API 兼容"', '填入 /review "API 兼容"，不会立即发送'],
+      ['$1、$2、…', '第 1、2、… 个参数；缺省为空字符串'],
+      ['$@ / $ARGUMENTS', '全部参数，用空格连接'],
+      ['${1:-默认值}', '第 1 个参数未传或为空时使用默认值'],
+      ['${@:-默认值}', '全部参数为空时使用默认值'],
+      ['${@:N}', '从第 N 个参数开始，N 从 1 计数'],
+      ['${@:N:L}', '从第 N 个参数开始取 L 个'],
+      ['带空格的参数', '用双引号或单引号包起来，例如 /review "API 兼容"'],
+      ['模板位置', '~/.pi/agent/prompts/*.md 或项目 .pi/prompts/*.md；文件名即命令名'],
+      ['新增 / 修改模板', '输入 /reload 重新加载；项目模板需先在 pi 中授予项目信任'],
+    ],
+  });
+}
+
+async function pickPrompt(arg = '') {
+  if (arg === '--help') return showPromptHelp();
+  await ensureAgent(); // 模板发现交给 pi，不自行扫描文件或绕过项目信任
+  const id = S.agentId;
+  if (!id) return;
+  const revision = viewRevision;
+  const d = await rpc({ type: 'get_commands' });
+  if (S.agentId !== id || viewRevision !== revision) return;
+  S.commands = (d.commands || []).filter((c) => !c.name.startsWith('seed-web-tree'));
+  // 同名扩展优先于模板，与 pi 实际执行顺序一致。
+  const prompts = S.commands.filter((c) => c.source === 'prompt' && !S.commands.some((x) => x.name === c.name && x.source === 'extension'));
+  const fill = (c, args = '') => {
+    if (S.agentId !== id || viewRevision !== revision) return toast('会话已切换，请重新输入 /prompt');
+    S.composer.text = `/${c.name} ${args}`;
+    S.composerFocus++;
+  };
+  if (arg) {
+    const [, name, args = ''] = arg.match(/^\/?(\S+)(?:\s+([\s\S]*))?$/);
+    const c = prompts.find((p) => p.name === name);
+    if (!c) throw new Error(`找不到提示词模板 ${name}；输入 /prompt 查看列表，新增模板后先 /reload`);
+    return fill(c, args); // 保留引号及参数内容，让 pi 负责解析和替换
+  }
+  if (!prompts.length) return showPromptHelp('当前没有已加载且可调用的提示词模板。创建模板后输入 /reload，再用 /prompt 选择。');
+  openPicker({
+    title: '选择提示词模板',
+    hint: '选中后填入输入框，补参数再发送。变量用法：/prompt --help',
+    items: prompts.map((c) => ({ label: `/${c.name}${c.argumentHint ? ' ' + c.argumentHint : ''}`, detail: c.description || '', value: c })),
+    onPick: (c) => fill(c),
+  });
+}
+
 export const pickThinking = guard(async (arg) => {
   const set = (level) => setThinking(level);
   if (arg) return set(arg);
@@ -1376,13 +1709,7 @@ export const pickFork = guard(async () => {
   openPicker({
     title: '从哪条消息分叉？',
     items: list.map((m) => ({ label: stripAttachments(m.text).replace(/\s+/g, ' ').trim().slice(0, 120) || '（只有附件）', value: m })),
-    onPick: guard(async (m) => {
-      const r = await rpc({ type: 'fork', entryId: m.entryId });
-      if (r?.cancelled) return toast('扩展取消了分叉', 'warning');
-      await reload();
-      S.composer.text = restoreMessage(r?.text || m.text);
-      toast('已分叉到新会话，可以修改这条消息后重新发送');
-    }),
+    onPick: (m) => forkMessage(S.messages.find((x) => x._entryId === m.entryId) || { _entryId: m.entryId, content: m.text }),
   });
 });
 
@@ -1404,9 +1731,11 @@ export const showSessionInfo = guard(async () => {
     ['文件', s.sessionFile || st.sessionFile || '(未保存)'],
     ['ID', s.sessionId || st.sessionId],
     ['模型', st.model ? `${st.model.provider}/${st.model.id}` : '-'],
-    ['消息', `用户 ${s.userMessages ?? 0} · 助手 ${s.assistantMessages ?? 0} · 工具调用 ${s.toolCalls ?? 0}`],
-    ['Tokens', s.tokens ? `输入 ${s.tokens.input} · 输出 ${s.tokens.output} · 缓存读 ${s.tokens.cacheRead} · 缓存写 ${s.tokens.cacheWrite}` : '-'],
-    ['费用', s.cost != null ? `$${s.cost.toFixed(4)}` : '-'],
+    ['消息 · 整个会话', `用户 ${s.userMessages ?? 0} · 助手 ${s.assistantMessages ?? 0} · 工具调用 ${s.toolCalls ?? 0}`],
+    ['Tokens · 整个会话', s.tokens ? `输入 ${s.tokens.input} · 输出 ${s.tokens.output} · 缓存读 ${s.tokens.cacheRead} · 缓存写 ${s.tokens.cacheWrite}` : '-'],
+    ['费用 · 整个会话（所有分支）', s.cost != null ? `$${s.cost.toFixed(4)}` : '-'],
+    ['当前路径 Tokens', s.branchStats?.tokens ? `输入 ${s.branchStats.tokens.input} · 输出 ${s.branchStats.tokens.output} · 缓存读 ${s.branchStats.tokens.cacheRead} · 缓存写 ${s.branchStats.tokens.cacheWrite}` : '-'],
+    ['费用 · 当前路径', s.branchStats ? `$${s.branchStats.cost.toFixed(4)}` : '-'],
     ['上下文', s.contextUsage ? `${s.contextUsage.tokens ?? '?'} / ${s.contextUsage.contextWindow} (${s.contextUsage.percent ?? '?'}%)` : '-'],
   ];
   await ask({ method: 'info', title: '会话信息', rows: lines });
@@ -1425,9 +1754,26 @@ export const copyLast = guard(async () => {
 });
 
 export const exportHtml = guard(async (arg) => {
-  const d = await rpc({ type: 'export_html', ...(arg ? { outputPath: arg } : {}) });
-  toast(`已导出：${d.path}`);
-  window.open(rawUrl(d.path), '_blank');
+  // pi 可返回相对于它工作目录的路径，不能交给 Web 服务按自己的 cwd 解析。
+  const cwd = S.cwd;
+  const sep = S.info.sep;
+  // 在用户操作的同步阶段预开标签页，避免 RPC 返回后被当作弹窗拦截。
+  let tab = null;
+  try {
+    tab = window.open('about:blank', '_blank');
+    if (tab) tab.opener = null;
+  } catch { /* 被拦截时，仍可通过成功通知里的链接打开 */ }
+  try {
+    const d = await rpc({ type: 'export_html', ...(arg ? { outputPath: arg } : {}) });
+    if (!d?.path || typeof d.path !== 'string') throw new Error('导出未返回文件路径');
+    const file = isAbsPath(d.path) ? d.path : joinPath(cwd, d.path, sep);
+    const url = rawUrl(file);
+    if (tab && !tab.closed) tab.location.replace(url);
+    toast(`已导出：${file}`, 'info', 15000, { label: '打开 HTML', href: url });
+  } catch (error) {
+    if (tab && !tab.closed) tab.close();
+    throw error;
+  }
 });
 
 export const changeDir = guard(async (arg) => {

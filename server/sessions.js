@@ -10,6 +10,7 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { branchOf, conversationOf, selectionOf, usageOf } from './conversation.js';
 
 export function agentDir() {
   return process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
@@ -262,20 +263,9 @@ export async function readSessionSnapshot(file) {
     if (e.type === 'session') head ??= e;
     else if (e.id) entries.push(e);
   }
-  const byId = new Map(entries.map((e) => [e.id, e]));
-  // 当前分支（从根到 leaf）
-  const branch = [];
-  for (let cur = entries[entries.length - 1]; cur; cur = cur.parentId ? byId.get(cur.parentId) : undefined) branch.push(cur);
-  branch.reverse();
-
-  // 模型、思考强度：分支上最后一次设置的（助手消息也会带上它用的模型）
-  let model = null;
-  let thinkingLevel = 'off';
-  for (const e of branch) {
-    if (e.type === 'thinking_level_change') thinkingLevel = e.thinkingLevel;
-    else if (e.type === 'model_change') model = { provider: e.provider, id: e.modelId };
-    else if (e.type === 'message' && e.message?.role === 'assistant') model = { provider: e.message.provider, id: e.message.model };
-  }
+  const branch = branchOf(entries);
+  const { model, thinkingLevel } = selectionOf(branch);
+  const conversation = conversationOf(entries);
 
   // 压缩：只留最后一次压缩的摘要 + firstKeptEntryId 起保留下来的 + 压缩之后的
   let picked = branch;
@@ -291,7 +281,7 @@ export async function readSessionSnapshot(file) {
   for (const e of picked) {
     if (e.type === 'message' && e.message) {
       const m = e.message;
-      messages.push(m.content == null && m.role !== 'system' ? { ...m, content: [] } : m);
+      messages.push({ ...m, ...(m.content == null && m.role !== 'system' ? { content: [] } : {}), _entryId: e.id });
     } else if (e.type === 'custom_message') {
       messages.push({ role: 'custom', customType: e.customType, content: e.content ?? [], display: e.display, details: e.details, timestamp: ts(e.timestamp) });
     } else if (e.type === 'branch_summary' && e.summary) {
@@ -301,40 +291,15 @@ export async function readSessionSnapshot(file) {
     }
   }
 
-  // 用量统计：和 pi 的 get_session_stats 一样按整个文件算（所有分支都算）。上下文占用要知道模型窗口，这里给不了
-  const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
-  let cost = 0;
-  let userMessages = 0;
-  let assistantMessages = 0;
-  let toolCalls = 0;
-  const add = (u) => {
-    if (!u) return;
-    tokens.input += u.input || 0;
-    tokens.output += u.output || 0;
-    tokens.cacheRead += u.cacheRead || 0;
-    tokens.cacheWrite += u.cacheWrite || 0;
-    cost += u.cost?.total || 0;
-  };
-  let sessionName = null;
-  for (const e of entries) {
-    if (e.type === 'session_info') sessionName = e.name || null;
-    if (e.type === 'usage' || ((e.type === 'branch_summary' || e.type === 'compaction') && e.usage)) add(e.usage);
-    if (e.type !== 'message' || !e.message) continue;
-    const m = e.message;
-    if (m.role === 'user') userMessages++;
-    else if (m.role === 'toolResult') add(m.usage);
-    else if (m.role === 'assistant') {
-      assistantMessages++;
-      if (Array.isArray(m.content)) toolCalls += m.content.filter((c) => c.type === 'toolCall').length;
-      add(m.usage);
-    }
-  }
-  tokens.total = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
+  // Actual spend includes every entry once, not the sum of leaf-path totals.
+  const totals = usageOf(entries);
+  const sessionName = entries.findLast((e) => e.type === 'session_info')?.name || null;
   return {
     cwd: head?.cwd || null,
     messages,
     state: { model, thinkingLevel, sessionName, sessionFile: file, sessionId: head?.id || null, isStreaming: false, isCompacting: false },
-    stats: { sessionFile: file, sessionId: head?.id || null, userMessages, assistantMessages, toolCalls, tokens, cost },
+    conversation,
+    stats: { sessionFile: file, sessionId: head?.id || null, ...totals, branchStats: conversation.branchStats, leafId: conversation.leafId },
   };
 }
 

@@ -72,6 +72,24 @@ test('file sidebar splitter drags, clamps, persists, restores cursor and support
   assert.equal(s.canResize.value, false);
 });
 
+test('floating panels dismiss outside clicks but not panel, toggle, menu or dialog interactions', async t => {
+  const props = vue.reactive({ open: true });
+  const { state: s, events } = await setup(t, 'FloatingPanel.vue', { props });
+  for (const selector of ['.floating-panel', '.panel-btn', '.ctxmenu', '.modal-mask']) {
+    s.onDown({ target: { closest: selectors => selectors.split(', ').includes(selector) } });
+  }
+  assert.equal(events.length, 0);
+  s.onDown({ target: { closest: () => null } });
+  assert.deepEqual(events, [['close']]);
+  props.open = false;
+  s.onDown({ target: { closest: () => null } });
+  assert.equal(events.length, 1, 'hidden panels do not dismiss other UI');
+  props.open = true;
+  props.inline = true;
+  s.onDown({ target: { closest: () => null } });
+  assert.equal(events.length, 1, 'inline branches stay open while typing in the composer');
+});
+
 test('custom select aligns to trigger, focuses current choice, selects with keyboard and dismisses', async (t) => {
   const document = { activeElement: null };
   const props = vue.reactive({ modelValue: 'working', label: '对比范围', disabled: false, options: [

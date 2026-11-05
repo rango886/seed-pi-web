@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watchEffect, onUnmounted } from 'vue';
-import { S, openFile } from '../store.js';
+import { S, openFile, beginEdit, forkMessage, switchVersion, conversationNodes, branchDisabled } from '../store.js';
 import { UI } from '../settings.js';
 import { rawUrl } from '../api.js';
 import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText, delMsgText, splitAttachments } from '../util.js';
@@ -8,10 +8,14 @@ import { vMarkdownHtml } from '../markdown-html.js';
 import ToolCard from './ToolCard.vue';
 import AttTooltip from './AttTooltip.vue';
 import Icon from './Icon.vue';
+import UserMessageEditor from './UserMessageEditor.vue';
 
 const props = defineProps({ m: Object });
 const role = computed(() => props.m.role);
 const open = ref(false);
+const editing = computed(() => !!props.m._entryId && S.edit?.entryId === props.m._entryId);
+const node = computed(() => conversationNodes.value.get(props.m._entryId));
+const versionIndex = computed(() => node.value?.versions.indexOf(props.m._entryId) ?? 0);
 
 // 用户消息前面的 <attachments> 块：不显示原文，还原成和输入框上一样的附件
 const userParts = computed(() => splitAttachments(textOf(props.m.content)));
@@ -73,9 +77,10 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 
 <template>
   <!-- 用户：靠右的气泡 -->
-  <div v-if="role === 'user'" class="msg me" :data-msg="m._k" data-role="user">
+  <div v-if="role === 'user'" class="msg me" :data-msg="m._k" :data-entry="m._entryId" data-role="user">
     <div class="col">
-      <div class="bubble me-bubble">
+      <UserMessageEditor v-if="editing" />
+      <div v-else class="bubble me-bubble">
         <div v-if="atts.length" class="atts">
           <div
             v-for="a in atts"
@@ -101,6 +106,17 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
         <div v-if="images.length" class="imgs">
           <img v-for="(im, i) in images" :key="i" :src="`data:${im.mimeType};base64,${im.data}`" />
         </div>
+      </div>
+      <div v-if="m._entryId && !editing && !S.detached" class="user-actions" :class="{ versions: node?.versions.length > 1 }" aria-label="用户消息操作">
+        <span class="hover-actions">
+          <button type="button" :disabled="branchDisabled" title="修改并在当前会话创建新分支" @click="beginEdit(m)">修改</button>
+          <button type="button" :disabled="branchDisabled" title="从此处分叉为新会话" @click="forkMessage(m)">分叉</button>
+        </span>
+        <template v-if="node?.versions.length > 1">
+          <button type="button" :disabled="branchDisabled || versionIndex <= 0" aria-label="上一个提问版本" @click="switchVersion(m, -1)">‹</button>
+          <span class="version-count" title="此处分叉的提问版本">{{ versionIndex + 1 }} / {{ node.versions.length }}</span>
+          <button type="button" :disabled="branchDisabled || versionIndex >= node.versions.length - 1" aria-label="下一个提问版本" @click="switchVersion(m, 1)">›</button>
+        </template>
       </div>
       <!-- 消息底部的小字（模型/用量/时间）：默认不显示，右键菜单里手动打开才出现 -->
       <div v-if="UI.showMeta && time" class="meta">{{ time }}</div>
@@ -188,6 +204,15 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 .ai-bubble { align-self: stretch; min-width: 0; background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); margin-block: var(--sp3); }
 /* 正文一直带个框，和思考/工具卡片一个样子，一眼能看出这块属于哪条回复。设置里能关 */
 .ai-bubble.boxed { padding: calc(var(--sp2) - 1px) var(--pad-x); border: 1px solid color-mix(in srgb, var(--text-3) 45%, var(--line)); border-radius: var(--r-md); }
+.user-actions { display: flex; align-items: center; gap: 3px; min-height: 24px; color: var(--text-3); font-size: var(--fs-xs); opacity: 0; }
+.me:hover .user-actions, .me:focus-within .user-actions, .user-actions.versions { opacity: 1; }
+.hover-actions { display: inline-flex; opacity: 0; }
+.me:hover .hover-actions, .me:focus-within .hover-actions { opacity: 1; }
+.user-actions button { border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; padding: 3px 7px; cursor: pointer; font: inherit; }
+.user-actions button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.user-actions button:disabled { opacity: 0.4; cursor: default; }
+.version-count { font-variant-numeric: tabular-nums; }
+@media (hover: none) { .user-actions, .hover-actions { opacity: 1; } }
 .pre { white-space: pre-wrap; word-break: break-word; }
 .imgs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .imgs img { max-height: 160px; max-width: 260px; border-radius: var(--r-md); display: block; cursor: zoom-in; }

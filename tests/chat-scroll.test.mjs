@@ -112,6 +112,24 @@ test('switching to a short conversation clears the bottom button', async (t) => 
   assert.equal(s.away.value, false);
 });
 
+test('switching a version keeps the fork question at its previous viewport offset', async (t) => {
+  const { S, el, resize } = await chat(t);
+  el.scrollHeight = 10000;
+  el.scrollTop = 1000;
+  el.getBoundingClientRect = () => ({ top: 0 });
+  el.querySelector = (selector) => selector.includes('old')
+    ? { getBoundingClientRect: () => ({ top: 300 }) }
+    : { getBoundingClientRect: () => ({ top: 2200 - el.scrollTop }) };
+  S.branchJump = { fromId: 'old', toId: 'new' };
+  S.messages = [{ role: 'user', content: 'alternative' }];
+  await vue.nextTick();
+  await vue.nextTick();
+  assert.equal(el.scrollTop, 1900);
+  assert.equal(S.branchJump, null);
+  resize();
+  assert.equal(el.scrollTop, 1900, 'a resize after switching must not pull the reader to the end');
+});
+
 test('Home/End do not schedule corrections that overwrite subsequent manual scrolling', async (t) => {
   const { state: s, el, frames } = await chat(t);
   s.jumpTo(true);

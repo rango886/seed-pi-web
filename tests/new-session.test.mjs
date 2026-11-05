@@ -4,6 +4,21 @@ import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as vue from 'vue';
+import { parse } from 'vue/compiler-sfc';
+
+test('new session lives before the composer directory picker, and sidebar controls move into display menu', async () => {
+  const load = async (name) => parse(await fs.readFile(new URL('../web/src/components/' + name, import.meta.url), 'utf8')).descriptor;
+  const composer = await load('Composer.vue');
+  const template = composer.template.content;
+  assert.match(template, /<button[^>]*title="在当前目录开始新会话"[^>]*@click="newSession">新会话<\/button>\s*<DirectoryMenu\s*\/>/);
+  assert.ok(template.indexOf('fileInput.click()') < template.indexOf('@click="newSession"'), 'upload keeps its original leftmost position');
+  assert.match(composer.styles[0].content, /\.bar > \.new-session \{ flex-shrink: 0; white-space: nowrap; \}/, 'new session text does not shrink or wrap');
+  const sidebar = (await load('SidePanel.vue')).template.content;
+  assert.ok(!sidebar.includes('<DirectoryMenu'));
+  assert.ok(!sidebar.includes('新会话'));
+  assert.ok(!sidebar.includes('class="modes"'));
+  assert.match(sidebar, /<SessionDisplayMenu[^>]*@mode-change="setSessionMode"/);
+});
 
 test('new sessions and directory selection preserve the intended context', async () => {
   const code = await fs.readFile(new URL('../web/src/store.js', import.meta.url), 'utf8');

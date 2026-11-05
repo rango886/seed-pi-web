@@ -5,6 +5,12 @@ import { EventEmitter } from 'node:events';
 import { StringDecoder } from 'node:string_decoder';
 import { execFile } from 'node:child_process';
 import spawn from 'cross-spawn';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { BRIDGE_COMMAND, BRIDGE_REPLY } from './conversation.js';
+
+const CONVERSATION_EXTENSION = fileURLToPath(new URL('./extensions/conversation.js', import.meta.url));
 
 const PI_BIN = process.env.SEED_PI_WEB_PI_BIN || 'pi';
 // 额外传给 pi 的参数，比如 SEED_PI_WEB_PI_ARGS="--provider anthropic" 或 JSON 数组
@@ -40,10 +46,13 @@ export class PiAgent extends EventEmitter {
     this.lastSettledAt = 0; // 最近一次回复完的时间，侧栏靠它显示“有新回复”
     this.saved = false; // 会话文件写到磁盘上没有（pi 新会话要等有消息才写盘）
     this.reqSeq = 0;
+    this.bridgePending = new Map();
+    this.bridgeCommand = null;
+    this.conversationBusy = false;
   }
 
   start() {
-    const args = ['--mode', 'rpc', ...this.extraArgs];
+    const args = ['--mode', 'rpc', ...this.extraArgs, '--extension', CONVERSATION_EXTENSION];
     if (this.sessionFile) args.push('--session', this.sessionFile);
     const child = spawn(PI_BIN, args, {
       cwd: this.cwd,
@@ -88,6 +97,8 @@ export class PiAgent extends EventEmitter {
       this.running = false;
       for (const p of this.pending.values()) p.reject(new Error('pi 进程已退出'));
       this.pending.clear();
+      for (const p of this.bridgePending.values()) p.reject(new Error('pi 进程已退出'));
+      this.bridgePending.clear();
       this.uiPending.clear();
       this.emit('exit', { code, stderr: this.stderrTail });
     });
@@ -95,6 +106,19 @@ export class PiAgent extends EventEmitter {
   }
 
   #handle(rec) {
+    if (rec.type === 'extension_ui_request' && rec.method === 'notify' && rec.message?.startsWith(BRIDGE_REPLY)) {
+      try {
+        const reply = JSON.parse(rec.message.slice(BRIDGE_REPLY.length));
+        const p = this.bridgePending.get(reply.requestId);
+        if (p) {
+          this.bridgePending.delete(reply.requestId);
+          reply.ok ? p.resolve(reply.data) : p.reject(new Error(reply.error || '分支操作失败'));
+          return;
+        }
+      } catch {}
+      // Internal bridge replies never become chat notifications (including late replies).
+      return;
+    }
     if (rec.type === 'response' && rec.id && this.pending.has(rec.id)) {
       const p = this.pending.get(rec.id);
       this.pending.delete(rec.id);
@@ -215,6 +239,43 @@ export class PiAgent extends EventEmitter {
         reject(e);
       }
     });
+  }
+
+  /** Public extension command bridge; discover by provenance before sending a prompt,
+   * so a missing extension can never turn an internal command into an LLM request. */
+  async conversation(payload) {
+    {
+      const res = await this.request({ type: 'get_commands' });
+      const normalize = (p) => path.resolve(p || '').replace(/\\/g, '/').toLowerCase();
+      const command = res.data?.commands?.find((c) =>
+        (c.name === BRIDGE_COMMAND || c.name.startsWith(BRIDGE_COMMAND + ':')) &&
+        normalize(c.sourceInfo?.path) === normalize(CONVERSATION_EXTENSION));
+      if (!command) throw new Error('分支扩展没有加载，请重新加载 pi；需要支持 navigateTree 的 pi 版本');
+      this.bridgeCommand = command.name;
+    }
+    const requestId = randomUUID();
+    let timer;
+    const result = new Promise((resolve, reject) => {
+      this.bridgePending.set(requestId, { resolve, reject });
+      timer = setTimeout(() => {
+        this.bridgePending.delete(requestId);
+        // A timed-out hook may still be awaiting UI. Stop this process rather
+        // than let it navigate later, after the caller has already moved on.
+        if (payload.op !== 'snapshot') { this.quiet = true; this.stop(); }
+        reject(new Error('分支操作超时，请重新加载会话确认当前位置'));
+      }, 120_000);
+      timer.unref?.();
+    });
+    // Attach the rejection handler before invoking a command that may reply immediately.
+    const accepted = this.request({ type: 'prompt', message: `/${this.bridgeCommand} ${JSON.stringify({ ...payload, requestId })}` })
+      .then((r) => { if (!r.success) throw new Error(r.error || '分支命令失败'); });
+    try {
+      const [data] = await Promise.all([result, accepted]);
+      return data;
+    } finally {
+      clearTimeout(timer);
+      this.bridgePending.delete(requestId);
+    }
   }
 
   /** 回复扩展弹窗 */

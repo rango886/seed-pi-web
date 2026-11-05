@@ -203,7 +203,7 @@ async function lazyView(cwd, file) {
   const state = snap?.state || { ...catalog.defaults, isStreaming: false, isCompacting: false };
   const model = catalog.models.find((m) => m.provider === state.model?.provider && m.id === state.model?.id);
   if (model) state.model = model;
-  return { lazy: { cwd: snap?.cwd || cwd, file: file || null, messages: snap?.messages || [], state, stats: snap?.stats || null, models: catalog.models } };
+  return { lazy: { cwd: snap?.cwd || cwd, file: file || null, messages: snap?.messages || [], state, stats: snap?.stats || null, conversation: snap?.conversation || null, models: catalog.models } };
 }
 
 // 正在启动的进程：同一个会话同时被要求启动两次（两个窗口、连点）只起一个
@@ -296,7 +296,7 @@ const SESSION_CHANGING = new Set(['new_session', 'switch_session', 'fork', 'clon
 setInterval(() => {
   const now = Date.now();
   for (const a of agents.values()) {
-    if (a.running || a.uiPending.size) a.lastUsed = now;
+    if (a.running || a.conversationBusy || a.uiPending.size) a.lastUsed = now;
     else if (now - a.lastUsed > (a.saved ? IDLE_MINUTES * 60_000 : UNSAVED_IDLE_MS)) {
       a.quiet = true;
       a.stop();
@@ -676,7 +676,51 @@ wss.on('connection', (ws, req) => {
       const readOnly = isReadOnly(cmd);
       if (!readOnly) mustOwn(a);
       a.lastUsed = Date.now();
-      const res = await a.request(cmd);
+      if (!readOnly && a.conversationBusy && !['abort', 'abort_bash', 'abort_retry', 'clear_queue'].includes(cmd.type)) throw new Error('正在处理会话操作，请稍等');
+      if (cmd.type === 'get_web_snapshot') return { success: true, data: await a.conversation({ op: 'snapshot', includeMessages: !cmd.metadataOnly }) };
+      if (['web_navigate', 'web_label', 'web_edit', 'web_restore_selection'].includes(cmd.type)) {
+        if (ws.agentId !== a.id) throw new Error('请先打开这个会话');
+        if (a.running) throw new Error('pi 正在运行，先停止或等它结束');
+        if (cmd.type === 'web_edit') {
+          if (typeof cmd.message !== 'string' || (!cmd.message.trim() && !cmd.images?.length)) throw new Error('消息不能为空');
+          if (cmd.images !== undefined && (!Array.isArray(cmd.images) || cmd.images.some((im) => im?.type !== 'image' || typeof im.data !== 'string' || typeof im.mimeType !== 'string'))) throw new Error('图片格式无效');
+        }
+        a.conversationBusy = true;
+        let moved;
+        const publish = async () => {
+          const snapshot = await a.conversation({ op: 'snapshot' });
+          // Send the new prefix before starting generation, so viewers cannot mix
+          // old-path history with new-path streaming events.
+          for (const c of watchers(a)) send(c, { t: 'branch_changed', agentId: a.id, kind: cmd.type, snapshot });
+          return snapshot;
+        };
+        try {
+          moved = await a.conversation({ op: cmd.type === 'web_label' ? 'label' : cmd.type === 'web_restore_selection' ? 'restore-selection' : 'navigate', targetId: cmd.targetId, expectedLeafId: cmd.expectedLeafId, label: cmd.label, requireUser: cmd.type === 'web_edit' });
+          await publish();
+          if (cmd.type === 'web_edit') {
+            if (a.owner !== ws.cid || ws.agentId !== a.id) throw new Error('操作权或当前会话已经改变，已取消重发');
+            const accepted = await a.request({ type: 'prompt', message: cmd.message, ...(cmd.images?.length ? { images: cmd.images } : {}) });
+            if (!accepted.success) throw new Error(accepted.error || '重新发送失败');
+          }
+          return { success: true, data: moved };
+        } catch (error) {
+          if (cmd.type === 'web_edit' && moved) {
+            try {
+              await a.conversation({ op: 'navigate', targetId: moved.rollbackId || cmd.expectedLeafId, expectedLeafId: moved.leafId });
+              await publish();
+            } catch { error.message += '；当前位置可能已经改变，修改草稿仍保留'; }
+          }
+          throw error;
+        } finally {
+          a.conversationBusy = false;
+        }
+      }
+      // Manual shell/compaction/session replacement must not overlap a branch move.
+      const exclusive = ['bash', 'compact', 'fork', 'clone', 'new_session', 'switch_session'].includes(cmd.type);
+      if (exclusive) a.conversationBusy = true;
+      let res;
+      try { res = await a.request(cmd); }
+      finally { if (exclusive) a.conversationBusy = false; }
       if (cmd.type === 'get_available_models' && res.success && res.data?.models) {
         const { getSupportedThinkingLevels } = await modelModules;
         res.data.models = res.data.models.map((m) => ({ ...m, thinkingLevels: getSupportedThinkingLevels(m) }));
