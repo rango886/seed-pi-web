@@ -1,21 +1,17 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { S, openFile } from '../store.js';
 import { UI } from '../settings.js';
+import { useBlockDisplay } from '../block-display.js';
 import { toolSummary, toolPath, textOf, imagesOf, stripAnsi, isAbsPath, joinPath } from '../util.js';
 
 const props = defineProps({ call: Object, exec: Object, streaming: Boolean });
-
 const status = computed(() => props.exec?.status || (props.streaming ? 'pending' : 'unknown'));
-const open = ref(UI.toolsOpen);
-// 出错时自动展开，方便看原因
-watch(
-  status,
-  (s) => {
-    if (s === 'error') open.value = true;
-  },
-  { immediate: true },
-);
+const { local, open, toggle, expand } = useBlockDisplay(() => UI.toolsDisplay);
+// 错误不埋在折叠里；手动收起后，不再被后续流式更新撑开。
+watch(status, (s) => {
+  if (s === 'error' && local.value === null) expand();
+}, { immediate: true });
 
 const args = computed(() => {
   const a = props.call.arguments;
@@ -28,16 +24,10 @@ const summary = computed(() => {
   return props.call._raw ? props.call._raw.slice(-120) : '';
 });
 const path = computed(() => toolPath(args.value));
-
 const result = computed(() => props.exec?.result || props.exec?.partial || null);
 const resultText = computed(() => stripAnsi(textOf(result.value?.content)).replace(/\r\n/g, '\n').replace(/\s+$/, ''));
 const resultImages = computed(() => imagesOf(result.value?.content));
-const preview = computed(() => {
-  if (status.value !== 'running' || !resultText.value) return '';
-  return resultText.value.trimEnd().split('\n').slice(-6).join('\n');
-});
 
-// edit 工具：画个简单的 diff
 const edits = computed(() => {
   const a = args.value;
   if (Array.isArray(a.edits)) return a.edits.filter((e) => e && (e.oldText != null || e.newText != null));
@@ -55,78 +45,68 @@ const showArgs = computed(() => {
   return JSON.stringify(args.value, null, 2);
 });
 const lines = (t) => (t ?? '').replace(/\r\n/g, '\n').split('\n');
-
-const LIMIT = 400;
-const showAll = ref(false);
-const shownResult = computed(() => {
-  const ls = resultText.value.split('\n');
-  if (showAll.value || ls.length <= LIMIT) return resultText.value;
-  return ls.slice(0, LIMIT).join('\n');
-});
-const hiddenLines = computed(() => Math.max(0, resultText.value.split('\n').length - LIMIT));
-
-function openPath() {
-  const p = path.value;
-  if (p) openFile(isAbsPath(p) ? p : joinPath(S.cwd, p, S.info.sep));
-}
+const diffLines = computed(() => (edits.value || []).flatMap((e, i) => [
+  ...(i ? [{ kind: 'hunk-sep', text: '' }] : []),
+  ...lines(e.oldText).map((l) => ({ kind: 'del', text: '- ' + l })),
+  ...lines(e.newText).map((l) => ({ kind: 'add', text: '+ ' + l })),
+]));
+const argText = computed(() => writeContent.value ?? showArgs.value ?? '');
+// 和原来的控件一样：运行中收起时显示最新几行，完成后只留头部摘要。
+const preview = computed(() => status.value === 'running' ? resultText.value.split('\n').slice(-6).join('\n') : '');
+const hasBody = computed(() => !!(diffLines.value.length || argText.value || resultText.value || resultImages.value.length));
+const statusLabel = computed(() => ({ pending: '等待中', running: '执行中', success: '完成', error: '失败', unknown: '' })[status.value] || '');
 const dur = computed(() => {
   const ms = props.exec?.durationMs;
   if (ms == null) return '';
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 });
+function openPath() {
+  const p = path.value;
+  if (p) openFile(isAbsPath(p) ? p : joinPath(S.cwd, p, S.info.sep));
+}
 </script>
 
 <template>
-  <div class="blk" :class="[status, { open }]">
-    <div class="blk-head" @click="open = !open">
+  <div class="blk tool-execution" :class="[status, { open }]">
+    <div class="blk-head" role="button" tabindex="0" :aria-expanded="open" @click="toggle" @keydown.enter.self.prevent="toggle" @keydown.space.self.prevent="toggle">
       <span class="blk-chip">{{ call.name }}</span>
       <span class="ellipsis grow blk-sum" :title="summary">
         <a v-if="path" href="#" @click.prevent.stop="openPath">{{ summary }}</a>
         <template v-else>{{ summary }}</template>
       </span>
+      <span v-if="status === 'running' || status === 'pending'" class="spin" />
+      <span class="blk-meta" :class="{ err: status === 'error' }">{{ statusLabel }}</span>
       <span v-if="dur" class="blk-meta">{{ dur }}</span>
       <svg class="blk-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
     </div>
     <pre v-if="!open && preview" class="blk-body out preview">{{ preview }}</pre>
-    <div v-if="open" class="body">
+    <div v-if="open && hasBody" class="body">
       <div v-if="edits" class="blk-body diff">
-        <template v-for="(e, i) in edits" :key="i">
-          <div v-if="i" class="hunk-sep" />
-          <div v-for="(l, j) in lines(e.oldText)" :key="'o' + j" class="del">- {{ l }}</div>
-          <div v-for="(l, j) in lines(e.newText)" :key="'n' + j" class="add">+ {{ l }}</div>
-        </template>
+        <div v-for="(line, i) in diffLines" :key="i" :class="line.kind">{{ line.text }}</div>
       </div>
-      <pre v-else-if="writeContent != null" class="blk-body out args">{{ writeContent }}</pre>
-      <pre v-else-if="showArgs" class="blk-body out args">{{ showArgs }}</pre>
-      <template v-if="result">
-        <pre v-if="resultText" class="blk-body out" :class="{ errout: status === 'error' }">{{ shownResult }}</pre>
-        <div v-if="hiddenLines && !showAll" class="more">
-          <button class="btn sm flat" @click="showAll = true">还有 {{ hiddenLines }} 行，全部显示</button>
-        </div>
-        <div v-if="resultImages.length" class="imgs">
-          <img v-for="(im, i) in resultImages" :key="i" :src="`data:${im.mimeType};base64,${im.data}`" />
-        </div>
-      </template>
+      <pre v-else-if="argText" class="blk-body out args">{{ argText }}</pre>
+      <pre v-if="resultText" class="blk-body out" :class="{ errout: status === 'error' }">{{ resultText }}</pre>
+      <div v-if="resultImages.length" class="imgs">
+        <img v-for="(im, i) in resultImages" :key="i" :src="`data:${im.mimeType};base64,${im.data}`" alt="工具返回的图片" />
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 卡片框、头部、展开箭头的样式在 style.css 的 .blk-* 里，这里只管工具特有的部分 */
-/* 出错：已经没有卡片边框可以染红了，把工具名和输出的头一行标红 */
 .error .blk-chip { color: var(--err); }
 .blk-sum a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
 .blk-sum a:hover { color: var(--accent-text); text-decoration-color: currentColor; }
-.out.preview { max-height: none; color: var(--text-3); }
 .out.args { background: var(--panel-2); }
 .errout { color: var(--err); }
-.diff { padding: 6px 0; max-height: 440px; }
-.diff > div { white-space: pre-wrap; word-break: break-all; padding: 0 var(--pad-x); }
+.body { max-height: min(440px, 50vh); overflow: auto; overscroll-behavior: contain; }
+.blk-body { max-height: none; }
+.out.preview { color: var(--text-3); }
+.diff { padding: 6px 0; }
+.diff > div { white-space: pre-wrap; word-break: break-word; padding: 0 var(--pad-x); }
 .hunk-sep { height: 1px; background: var(--line); margin: 6px 0; padding: 0 !important; }
 .del { background: var(--del-bg); color: var(--del-fg); }
 .add { background: var(--add-bg); color: var(--add-fg); }
-.more { padding: 4px 10px; }
-/* 工具结果里的图片（比如 read 了一张图）：高度封顶、跟正文的图用同一档圆角，点了能全屏看 */
 .imgs { padding: var(--sp2) var(--pad-x); }
 .imgs img { max-width: 100%; max-height: min(320px, 40vh); width: auto; height: auto; object-fit: contain; border-radius: var(--r-md); cursor: zoom-in; }
 </style>

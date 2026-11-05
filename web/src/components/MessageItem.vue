@@ -6,6 +6,7 @@ import { rawUrl } from '../api.js';
 import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText, delMsgText, splitAttachments } from '../util.js';
 import { vMarkdownHtml } from '../markdown-html.js';
 import ToolCard from './ToolCard.vue';
+import ThinkingBlock from './ThinkingBlock.vue';
 import AttTooltip from './AttTooltip.vue';
 import Icon from './Icon.vue';
 import UserMessageEditor from './UserMessageEditor.vue';
@@ -64,8 +65,6 @@ const aiText = computed(() =>
     .map((b) => b.text)
     .join('\n\n'),
 );
-// 折叠时的单行预览：把思考里的换行都抹平，只留一段（太长就交给 CSS 截断）
-const thinkPrev = (b) => (b.thinking || '').trim().replace(/\s+/g, ' ').slice(0, 200);
 const customText = computed(() => (typeof props.m.content === 'string' ? props.m.content : textOf(props.m.content)));
 const copyText = computed(() => (role.value === 'user' ? userText.value : aiText.value));
 // 右键菜单统一在 App 层弹，所以只能把文本先存下来，菜单里按 DOM 上的 key 回来取
@@ -128,17 +127,8 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
     <div class="col">
       <template v-for="(b, i) in blocks" :key="i">
         <!-- 思考过程：和工具调用用同一套 .blk 卡片样式 -->
-        <details v-if="showThinking(b)" class="blk prose" :open="UI.thinkingOpen || (streaming && i === blocks.length - 1)">
-          <summary class="blk-head">
-            <span class="blk-chip">Thinking{{ b.redacted ? ' (hidden)' : '' }}</span>
-            <!-- 折叠时像工具调用那样在后面跟一行灰字预览；展开了由 CSS 藏起来，免得和下面的内容重复 -->
-            <span v-if="thinkPrev(b)" class="ellipsis grow blk-sum think-prev" :title="thinkPrev(b)">{{ thinkPrev(b) }}</span>
-            <span v-if="streaming && i === blocks.length - 1" class="spin" />
-            <svg class="blk-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
-          </summary>
-          <div class="blk-body prose dim">{{ (b.thinking || '').trim() }}</div>
-        </details>
-        <div v-else-if="b.type === 'text' && b.text" class="bubble ai-bubble md" :class="{ boxed: UI.hoverBox }" v-markdown-html="md(b, i)" />
+        <ThinkingBlock v-if="showThinking(b)" :block="b" :streaming="streaming && i === blocks.length - 1" />
+        <div v-else-if="b.type === 'text' && b.text" class="bubble ai-bubble md" v-markdown-html="md(b, i)" />
         <ToolCard v-else-if="b.type === 'toolCall'" :call="b" :exec="S.tools[b.id]" :streaming="streaming" />
       </template>
       <div v-if="m.stopReason === 'error'" class="errbox">出错：{{ stripAnsi(m.errorMessage || '未知错误') }}</div>
@@ -202,8 +192,6 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 /* 正文上下都多留些空间，和前后的思考/工具块拉开距离；工具块之间仍保持紧凑 */
 /* align-self: stretch：正文铺满整栏，里面的代码块、图、表格才能真正两边填满（否则这块会缩到最长那行文字那么宽） */
 .ai-bubble { align-self: stretch; min-width: 0; background: none; border: 0; box-shadow: none; padding: 0 var(--pad-x); margin-block: var(--sp3); }
-/* 正文一直带个框，和思考/工具卡片一个样子，一眼能看出这块属于哪条回复。设置里能关 */
-.ai-bubble.boxed { padding: calc(var(--sp2) - 1px) var(--pad-x); border: 1px solid color-mix(in srgb, var(--text-3) 45%, var(--line)); border-radius: var(--r-md); }
 .user-actions { display: flex; align-items: center; gap: 3px; min-height: 24px; color: var(--text-3); font-size: var(--fs-xs); opacity: 0; }
 .me:hover .user-actions, .me:focus-within .user-actions, .user-actions.versions { opacity: 1; }
 .hover-actions { display: inline-flex; opacity: 0; }
@@ -236,8 +224,6 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 .note-sm { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); }
 /* 打开后才显示的模型/用量 */
 .meta { padding: 0 var(--pad-x); font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
-/* 思考折叠时那一行预览：字体跟工具调用一样是等宽（.blk-sum），展开后藏起来免得和下面的内容重复 */
-.blk[open] .think-prev { display: none; }
 
 /* 卡片类：shell、系统消息 */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }

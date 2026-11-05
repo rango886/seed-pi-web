@@ -19,6 +19,14 @@ export const GITHUB_MONO = `ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Cons
 /** 代码 / 等宽字体统一用 Consolas（GitHub 那套的默认就是它） */
 export const GITHUB_CODE = "'Consolas'";
 
+// 与 Pi export-html/template.css 的原版字体栈一致。
+export const PI_FONT = "ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace";
+export const PI_SETTINGS = {
+  accent: '#7459b4', mdStyle: 'pi', font: PI_FONT, codeFont: PI_FONT,
+  radius: 4, chatWidth: 800, spacing: 1, fontSize: 12, codeFontSize: 12,
+  lineHeight: 1.5, letterSpacing: 0, paraGap: 1.5,
+};
+
 /** GitHub 那一套（现在是默认的整体样式）：配色 + 苹方 + Consolas + GitHub 的 Markdown 排版，紧凑方正 */
 const GITHUB_SETTINGS = {
   accent: '#0969da',
@@ -36,17 +44,16 @@ const GITHUB_SETTINGS = {
 };
 
 export const DEFAULTS = {
-  // 整体样式：GitHub（默认）| 现代 | 微信。选一次会把主题色、Markdown 排版、字体、字号行高这些一起换掉（见 STYLES）
+  // 整体样式：GitHub（默认）| 现代 | pi。选一次会把主题色、Markdown 排版、字体、字号行高这些一起换掉（见 STYLES）
   uiStyle: 'github',
-  // 深浅色：每个样式都自带一套浅色和一套纯黑的深色
+  // 深浅色：每个样式都自带浅色和深色；pi 使用导出页原版配色
   theme: 'light', // light | dark | auto
   // 配色 / 字体 / 字号行高这些就是 GitHub 那一套，想改默认效果改上面的 GITHUB_SETTINGS 就行
   ...GITHUB_SETTINGS,
-  hoverBox: false, // 回复正文外面那圈边框：默认关（想要带框的正文就打开）
   // 行为
   sendKey: 'enter', // enter | ctrlEnter
-  thinkingOpen: false,
-  toolsOpen: false,
+  thinkingDisplay: 'collapsed', // collapsed | expanded
+  toolsDisplay: 'collapsed',
   showMeta: false, // 默认不显示每条消息的时间/模型/用量（右键消息或菜单里打开）
   showUsage: true, // 输入框上面的花费/token/上下文信息：默认展开（右键菜单 / 顶栏“⋯”里可以收起来）
   // 附件
@@ -56,7 +63,7 @@ export const DEFAULTS = {
 };
 
 /** 整体样式：每个样式就是一整套设置（配色名、Markdown 排版、字体、字号行高、圆角…）。
- *  深浅色不在这里：一个样式既有浅色也有纯黑的深色，在“深浅色”里单独切 */
+ *  深浅色不在这里，在“深浅色”里单独切；切样式不改变过程块的展开习惯 */
 export const STYLES = [
   {
     value: 'modern',
@@ -77,22 +84,9 @@ export const STYLES = [
     },
   },
   {
-    value: 'wechat',
-    label: '微信',
-    settings: {
-      accent: '#07c160',
-      mdStyle: 'default',
-      font: SYSTEM_FONT,
-      codeFont: GITHUB_CODE,
-      radius: 8,
-      chatWidth: 880,
-      spacing: 1,
-      fontSize: 15,
-      codeFontSize: 13,
-      lineHeight: 1.75,
-      letterSpacing: 0.2,
-      paraGap: 0.7,
-    },
+    value: 'pi',
+    label: 'pi',
+    settings: { ...PI_SETTINGS },
   },
   {
     value: 'github',
@@ -107,13 +101,14 @@ export function useStyle(v) {
   Object.assign(UI, s.settings, { uiStyle: s.value });
 }
 
-export const ACCENTS = ['#0969da', '#07c160', '#3b82f6', '#12b7f5', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#64748b'];
+export const ACCENTS = ['#7459b4', '#0969da', '#07c160', '#3b82f6', '#12b7f5', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#64748b'];
 /** 主题色色块的名字（没写的就直接显示颜色值） */
-export const ACCENT_NAMES = { '#0969da': 'GitHub 蓝（默认）', '#07c160': '微信绿', '#3b82f6': '蓝色' };
+export const ACCENT_NAMES = { '#7459b4': 'pi 紫', '#0969da': 'GitHub 蓝（默认）', '#07c160': '绿色', '#3b82f6': '蓝色' };
 
 /** 字体下拉框：一个选项就是一款字体，不往里塞一串（缺字、缺等宽的兜底交给 apply() 统一补） */
 export const FONT_PRESETS = [
   { label: '系统默认', value: SYSTEM_FONT },
+  { label: 'pi 等宽（原版）', value: PI_FONT },
   { label: '霞鹜文楷屏幕阅读版 LXGW WenKai Screen', value: WENKAI_SCREEN },
   { label: '霞鹜文楷 LXGW WenKai', value: "'LXGW WenKai'" },
   { label: '苹方 PingFang SC', value: "'PingFang SC'" },
@@ -127,6 +122,7 @@ export const FONT_PRESETS = [
 /** 等宽字体：同样一款一个。只有“系统默认等宽”那项得靠 ui-monospace 这类关键字，拆不开 */
 export const MONO_PRESETS = [
   { label: '系统默认等宽', value: GITHUB_MONO },
+  { label: 'pi 等宽（原版）', value: PI_FONT },
   { label: '霞鹜文楷等宽屏幕阅读版 LXGW WenKai Mono Screen', value: WENKAI_MONO_SCREEN },
   { label: '霞鹜文楷等宽 LXGW WenKai Mono', value: "'LXGW WenKai Mono'" },
   { label: 'Cascadia Mono', value: "'Cascadia Mono'" },
@@ -138,7 +134,8 @@ export const MONO_PRESETS = [
 ];
 
 const KEY = 'seed-pi-web-settings';
-export const VER = 13; // 设置结构版本：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版；<12 默认整体样式换成 GitHub（苹方 + Consolas），等宽字体统一 Consolas；<13 输入框上面的状态信息改成默认显示
+export const VER = 15; // v14：pi 样式；v15：思考和工具恢复展开／折叠，旧半折叠迁移为折叠。
+// 设置结构历史：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版；<12 默认整体样式换成 GitHub（苹方 + Consolas），等宽字体统一 Consolas；<13 输入框上面的状态信息改成默认显示
 let saved = {};
 try {
   saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -149,7 +146,6 @@ if ((saved.__v || 1) < 2) {
 }
 if ((saved.__v || 1) < 3) delete saved.avatars; // 头像去掉了，这个开关也没了
 if ((saved.__v || 1) < 4) delete saved.radius; // 旧值是“气泡圆角”，含义变了，回到新默认值
-if ((saved.__v || 1) < 5) delete saved.hoverBox; // 正文改成默认不带边框了，旧设置里的 true 作废
 if ((saved.__v || 1) < 6) delete saved.userBubble; // 气泡色现在固定跟着主题色
 if ((saved.__v || 1) < 7) {
   // 老版本的“系统默认字体”字符串，存下来就等于没改过，删掉好让新的字体栈生效
@@ -191,6 +187,16 @@ if ((saved.__v || 1) < 13) {
   // 状态信息改成默认显示：存档里的 false 就是旧默认（当时根本没地方单独打开），删掉让新默认生效
   delete saved.showUsage;
 }
+// 同样处理导入的旧设置，即使导入文件的版本号已是当前版本。
+if (saved.uiStyle === 'wechat') Object.assign(saved, PI_SETTINGS, { uiStyle: 'pi' });
+if (saved.mdStyle === 'github-compact') saved.mdStyle = 'github';
+for (const [key, oldKey] of [['thinkingDisplay', 'thinkingOpen'], ['toolsDisplay', 'toolsOpen']]) {
+  if (!['collapsed', 'expanded'].includes(saved[key])) {
+    saved[key] = saved[key] === undefined && saved[oldKey] === true ? 'expanded' : 'collapsed';
+  }
+  delete saved[oldKey];
+}
+delete saved.hoverBox;
 delete saved.__v;
 
 export const UI = reactive({ ...DEFAULTS, ...saved });
@@ -270,7 +276,9 @@ function apply() {
   r.dataset.ui = UI.uiStyle;
   r.dataset.md = UI.mdStyle;
   const set = (k, v) => r.style.setProperty(k, v);
-  set('--accent', UI.accent);
+  // 原版 pi 在深色下用更亮的紫色；用户自选的主题色仍照常保留。
+  const accent = UI.uiStyle === 'pi' && UI.accent === PI_SETTINGS.accent && dark ? '#a798d7' : UI.accent;
+  set('--accent', accent);
   set('--font', `${UI.font || SYSTEM_FONT}, ${FALLBACK}`);
   set('--font-code', `${UI.codeFont || UI.font || SYSTEM_FONT}, ${MONO_FALLBACK}`);
   set('--fs', UI.fontSize + 'px');
@@ -286,15 +294,15 @@ function apply() {
     lastFontKey = fontKey;
     resetDiagramCache();
   }
-  setFavicon();
+  setFavicon(accent);
 }
 
 /** 标签页图标：和左上角的 π 方块保持一致，跟着主题色和全局圆角变。
  *  logo 用的是 --r-sm 这一档（现代风 = 全局圆角 × 0.7，GitHub 风 = 全局圆角），
  *  logo 是 28px、图标画布是 32，再按 32 / 28 换算一下，两者看起来就一样圆 */
-function setFavicon() {
-  const rx = Math.min(16, (UI.radius * (UI.uiStyle === 'github' ? 1 : 0.7) * 32) / 28).toFixed(1);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="${rx}" fill="${UI.accent}"/><text x="16" y="24.5" font-size="22" font-weight="700" text-anchor="middle" fill="#fff" font-family="system-ui, 'Segoe UI', 'Helvetica Neue', sans-serif">π</text></svg>`;
+function setFavicon(accent) {
+  const rx = Math.min(16, (UI.radius * (UI.uiStyle === 'github' ? 1 : UI.uiStyle === 'pi' ? 0.75 : 0.7) * 32) / 28).toFixed(1);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="${rx}" fill="${accent}"/><text x="16" y="24.5" font-size="22" font-weight="700" text-anchor="middle" fill="#fff" font-family="system-ui, 'Segoe UI', 'Helvetica Neue', sans-serif">π</text></svg>`;
   let link = document.querySelector('link[rel="icon"]');
   if (!link) {
     link = document.createElement('link');

@@ -5,7 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import 'temml/dist/Temml-Local.css';
 import './style.css';
 import './github.css';
-import './wechat.css';
+import './pi.css';
 import App from './App.vue';
 import { start } from './store.js';
 import { startDiagramBinder } from './diagram.js';

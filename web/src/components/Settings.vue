@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import { UI, DEFAULTS, VER, STYLES, useStyle, ACCENTS, ACCENT_NAMES, FONT_PRESETS, MONO_PRESETS, view, resetSettings } from '../settings.js';
 import { toast } from '../store.js';
+import { DISPLAY_MODES } from '../block-display.js';
 
 const close = () => (view.settingsOpen = false);
 const fileInput = ref(null); // 导入用的隐藏文件框
@@ -110,7 +111,7 @@ const textSliders = [
   ['codeFontSize', '代码字号', 11, 18, 1, (v) => `${v}px`],
   ['lineHeight', '行高', 1.3, 2.1, 0.05, (v) => v.toFixed(2)],
   ['letterSpacing', '字间距', 0, 1.5, 0.1, (v) => `${v.toFixed(1)}px`],
-  ['paraGap', '段落间距', 0.2, 1.4, 0.1, (v) => `${v.toFixed(1)}em`],
+  ['paraGap', '段落间距', 0.2, 2, 0.1, (v) => `${v.toFixed(1)}em`],
 ];
 const layoutSliders = [
   ['spacing', '整体间距', 0.7, 1.5, 0.05, (v) => `${Math.round(v * 100)}%`],
@@ -166,7 +167,7 @@ const layoutSliders = [
             <h3>主题色</h3>
             <div class="card">
               <div class="item col">
-                <span class="label">主题色<span class="dim small-tip">（自己的气泡颜色跟着它走）</span></span>
+                <span class="label">主题色<span class="dim small-tip">（pi 样式的消息底色使用原版配色）</span></span>
                 <div class="swatches">
                   <button
                     v-for="c in ACCENTS"
@@ -191,15 +192,11 @@ const layoutSliders = [
             <h3>Markdown 排版</h3>
             <div class="card">
               <div class="item">
-                <span class="label">回复正文的 Markdown</span>
+                <span class="label">Markdown</span>
                 <div class="seg">
-                  <button v-for="[v, l] in [['default', '经典'], ['github', 'GitHub'], ['github-compact', 'GitHub 紧凑']]" :key="v" :class="{ on: UI.mdStyle === v }" @click="UI.mdStyle = v">{{ l }}</button>
+                  <button v-for="[v, l] in [['default', '经典'], ['github', 'GitHub'], ['pi', 'pi']]" :key="v" :class="{ on: UI.mdStyle === v }" @click="UI.mdStyle = v">{{ l }}</button>
                 </div>
               </div>
-              <label class="item">
-                <span class="label">回复正文加边框（默认关）</span>
-                <input v-model="UI.hoverBox" type="checkbox" class="switch" />
-              </label>
             </div>
           </section>
 
@@ -259,14 +256,13 @@ const layoutSliders = [
                   <button :class="{ on: UI.sendKey === 'ctrlEnter' }" @click="UI.sendKey = 'ctrlEnter'">Ctrl + Enter</button>
                 </div>
               </div>
-              <label class="item">
-                <span class="label">思考过程默认展开</span>
-                <input v-model="UI.thinkingOpen" type="checkbox" class="switch" />
-              </label>
-              <label class="item">
-                <span class="label">工具调用默认展开</span>
-                <input v-model="UI.toolsOpen" type="checkbox" class="switch" />
-              </label>
+              <div v-for="[key, label] in [['thinkingDisplay', '思考过程'], ['toolsDisplay', '工具调用']]" :key="key" class="item col">
+                <span class="label">{{ label }}</span>
+                <div class="seg" :aria-label="label">
+                  <button v-for="mode in DISPLAY_MODES" :key="mode.value" :class="{ on: UI[key] === mode.value }" :aria-pressed="UI[key] === mode.value" @click="UI[key] = mode.value">{{ mode.label }}</button>
+                </div>
+                <span class="dim small-tip">默认{{ UI[key] === 'expanded' ? '展开' : '折叠' }}；点击块标题切换，展开后内容可滚动，单块操作不改变默认设置。</span>
+              </div>
               <label class="item">
                 <span class="label">显示时间、模型与用量（默认关；也可以右键消息打开）</span>
                 <input v-model="UI.showMeta" type="checkbox" class="switch" />

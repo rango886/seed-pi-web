@@ -1,5 +1,5 @@
 /* GitHub 风格：两部分互相独立，可以分别开关
-   1. [data-md='github' | 'github-compact']：只管回复正文的 Markdown（仿 github-markdown-css）
+   1. [data-md='github']：只管回复正文的 Markdown（仿 github-markdown-css）
    2. [data-ui='github']：整体界面配色和控件外观（仿 GitHub Primer）
    选择器都以 :root 开头，是为了比组件里的 scoped 样式（.x[data-v-xxx]）多一级优先级，稳稳盖过去 */
 
@@ -90,35 +90,6 @@
 
 :root[data-md^='github'] .md hr { height: 0.25em; padding: 0; margin: calc(var(--fs) * 1.5) 0; background: var(--gh-border); border: 0; }
 :root[data-md^='github'] .md img { border-radius: var(--r-md); background: transparent; }
-
-/* ---- 紧凑 GitHub：同一套外观，把行高和各种间距都压一压，一屏能多看不少 ---- */
-:root[data-md='github-compact'] .md { line-height: calc(var(--lh) * 0.88); }
-:root[data-md='github-compact'] .md p,
-:root[data-md='github-compact'] .md ul,
-:root[data-md='github-compact'] .md ol,
-:root[data-md='github-compact'] .md blockquote,
-:root[data-md='github-compact'] .md table,
-:root[data-md='github-compact'] .md pre.code { margin: calc(var(--para) * 0.7) 0; }
-:root[data-md='github-compact'] .md h1,
-:root[data-md='github-compact'] .md h2,
-:root[data-md='github-compact'] .md h3,
-:root[data-md='github-compact'] .md h4,
-:root[data-md='github-compact'] .md h5,
-:root[data-md='github-compact'] .md h6 { margin: calc(var(--fs) * 0.9) 0 calc(var(--fs) * 0.4); }
-:root[data-md='github-compact'] .md h1 { font-size: 1.5em; padding-bottom: 0.2em; }
-:root[data-md='github-compact'] .md h2 { font-size: 1.3em; padding-bottom: 0.2em; }
-:root[data-md='github-compact'] .md h3 { font-size: 1.15em; }
-:root[data-md='github-compact'] .md ul,
-:root[data-md='github-compact'] .md ol { padding-left: 1.6em; }
-:root[data-md='github-compact'] .md li + li { margin-top: 0.1em; }
-:root[data-md='github-compact'] .md li > p { margin-top: 0.25em; }
-:root[data-md='github-compact'] .md pre.code code { padding: 8px 12px; line-height: 1.4; }
-:root[data-md='github-compact'] .md .code-bar { top: 4px; right: 4px; }
-:root[data-md='github-compact'] .md .copy-btn { padding: 2px 6px; }
-:root[data-md='github-compact'] .md blockquote { padding: 0 0.8em; }
-:root[data-md='github-compact'] .md th,
-:root[data-md='github-compact'] .md td { padding: 3px 10px; }
-:root[data-md='github-compact'] .md hr { height: 2px; margin: calc(var(--fs) * 0.75) 0; }
 
 /* ================= 2. 整体界面 ================= */
 :root[data-ui='github'] {

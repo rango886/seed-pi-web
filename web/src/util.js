@@ -235,6 +235,11 @@ const fileLink = (info, inner) =>
 // ---------- Markdown ----------
 marked.setOptions({ gfm: true, breaks: true });
 const renderer = new marked.Renderer();
+// 表格保留原生 table 布局；外层负责横向滚动，pi 的整行表格不会在窄屏撑破对话。
+const renderTable = renderer.table;
+renderer.table = function (token) {
+  return `<div class="md-table">${renderTable.call(this, token)}</div>`;
+};
 let linkDepth = 0; // 正在渲染链接文字：里面的路径不能再套一层链接
 
 // 图表示例（mermaid）：先只吐一个占位元素，源码就当文本放里面（不用 data 属性：

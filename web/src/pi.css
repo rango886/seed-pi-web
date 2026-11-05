@@ -1,0 +1,253 @@
+/* Pi 1.5.0 export-html：使用内置 light/dark 主题解析后的原始颜色。
+   布局沿用 Web UI；正文、工具、面板和控件共用导出页的视觉语言。
+   data-ui 与 data-md 独立，单独选择 pi Markdown 也有完整的原版字体与配色。 */
+:root:is([data-ui='pi'], [data-md='pi']) {
+  --pi-font: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+  --pi-page: #efeeee;
+  --pi-card: #f7f6f6;
+  --pi-info: #ede3dd;
+  --pi-text: #3b3f41;
+  --pi-muted: #677176;
+  --pi-dim: #879095;
+  --pi-accent: #7459b4;
+  --pi-border: #3d8eb3;
+  --pi-border-accent: #8a72cb;
+  --pi-selected: #dfe7ec;
+  --pi-user: #dfe7ec;
+  --pi-custom: #e6e4ee;
+  --pi-thinking: #7c868c;
+  --pi-pending: #e4e5e6;
+  --pi-success: #dee9e1;
+  --pi-error: #eee2e1;
+  --pi-green: #337e58;
+  --pi-red: #c8253d;
+  --pi-yellow: #8f6802;
+  --pi-link: #2f7899;
+  --pi-variable: #287a81;
+  --pi-string: #a45417;
+  --pi-line: 18px;
+  --pi-paragraph: 18px;
+}
+:root:is([data-ui='pi'], [data-md='pi'])[data-theme='dark'] {
+  --pi-page: #21252c;
+  --pi-card: #282c34;
+  --pi-info: #4e2f1b;
+  --pi-text: #dee0e1;
+  --pi-muted: #9da5a9;
+  --pi-dim: #7e888e;
+  --pi-accent: #a798d7;
+  --pi-border: #5fa8cc;
+  --pi-border-accent: #a08ed5;
+  --pi-selected: #213b49;
+  --pi-user: #213b49;
+  --pi-custom: #3a3055;
+  --pi-thinking: #96a0a4;
+  --pi-pending: #34383a;
+  --pi-success: #254131;
+  --pi-error: #5b282a;
+  --pi-green: #68b78d;
+  --pi-red: #ea7f81;
+  --pi-yellow: #cd9a22;
+  --pi-link: #69add0;
+  --pi-variable: #5db3ba;
+  --pi-string: #de8d5a;
+}
+
+/* 整体界面：原版 12/11/10px 字号层级、4px 卡片与 3px 控件圆角，无阴影。 */
+:root[data-ui='pi'] {
+  --bg: var(--pi-page);
+  --chat-bg: var(--pi-page);
+  --panel: var(--pi-card);
+  --panel-2: var(--pi-card);
+  --elev: var(--pi-card);
+  --text: var(--pi-text);
+  --text-2: var(--pi-muted);
+  --text-3: var(--pi-dim);
+  --line: var(--pi-dim);
+  --line-2: color-mix(in srgb, var(--pi-dim) 35%, transparent);
+  --hover: var(--pi-selected);
+  --active: var(--pi-selected);
+  --accent-text: var(--accent);
+  --bubble-me: var(--pi-user);
+  --bubble-me-text: var(--pi-text);
+  --bubble-me-border: transparent;
+  --bubble-ai: transparent;
+  --code-bg: transparent;
+  --inline-code: rgba(128, 128, 128, 0.2);
+  --ok: var(--pi-green);
+  --err: var(--pi-red);
+  --warn: var(--pi-yellow);
+  --err-bg: var(--pi-error);
+  --add-bg: transparent;
+  --del-bg: transparent;
+  --add-fg: var(--pi-green);
+  --del-fg: var(--pi-red);
+  --scroll: var(--pi-dim);
+  --term-bg: var(--pi-page);
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: none;
+  --r-xs: calc(var(--r) * 0.75);
+  --r-sm: calc(var(--r) * 0.75);
+  --r-md: var(--r);
+  --r-lg: var(--r);
+  --r-xl: var(--r);
+  --r-pill: calc(var(--r) * 0.75);
+  --r-bubble: var(--r);
+  --fs-sm: calc(var(--fs) - 1px);
+  --fs-xs: calc(var(--fs) - 2px);
+  --pi-line: calc(var(--fs) * var(--lh));
+  --pi-paragraph: var(--para);
+  --pi-md-size: var(--fs);
+  --pad-x: var(--pi-line);
+  --hl-comment: var(--pi-muted);
+  --hl-keyword: var(--pi-link);
+  --hl-string: var(--pi-string);
+  --hl-number: var(--pi-green);
+  --hl-title: var(--pi-yellow);
+  --hl-var: var(--pi-variable);
+  --hl-meta: var(--pi-link);
+}
+:root[data-ui='pi'] body { line-height: var(--lh); }
+:root[data-ui='pi'] .side,
+:root[data-ui='pi'] .top,
+:root[data-ui='pi'] .panel-head,
+:root[data-ui='pi'] .settings-drawer,
+:root[data-ui='pi'] .settings-drawer .head { background: var(--pi-card); }
+:root[data-ui='pi'] .side .search,
+:root[data-ui='pi'] .input,
+:root[data-ui='pi'] .mm .search { background: var(--pi-page); }
+:root[data-ui='pi'] .side .search { font-size: var(--fs-sm); }
+:root[data-ui='pi'] .name,
+:root[data-ui='pi'] .settings-drawer .title,
+:root[data-ui='pi'] .modal-title,
+:root[data-ui='pi'] .wtitle { font-size: var(--fs); font-weight: bold; color: var(--pi-border-accent); }
+:root[data-ui='pi'] .sess { font-size: var(--fs-sm); }
+:root[data-ui='pi'] .sess.active,
+:root[data-ui='pi'] .sel.active { background: var(--pi-selected); box-shadow: none; }
+:root[data-ui='pi'] .sess.active .stitle { color: var(--text); font-weight: bold; }
+:root[data-ui='pi'] .btn,
+:root[data-ui='pi'] .chip,
+:root[data-ui='pi'] .ibtn,
+:root[data-ui='pi'] .directory-trigger { background: transparent; color: var(--pi-muted); border-color: var(--pi-dim); box-shadow: none; }
+:root[data-ui='pi'] .btn:hover,
+:root[data-ui='pi'] .chip:hover,
+:root[data-ui='pi'] .ibtn:hover,
+:root[data-ui='pi'] .directory-trigger:hover { color: var(--text); border-color: var(--text); background: var(--pi-selected); }
+:root[data-ui='pi'] .btn.flat { border-color: transparent; }
+:root[data-ui='pi'] .btn.primary,
+:root[data-ui='pi'] .send { color: var(--pi-page); background: var(--accent); border-color: var(--accent); }
+:root[data-ui='pi'] .btn.danger { color: var(--err); }
+:root[data-ui='pi'] .send:disabled { background: var(--pi-pending); color: var(--pi-dim); }
+:root[data-ui='pi'] .round,
+:root[data-ui='pi'] .tobottom { border-radius: var(--r-sm); }
+:root[data-ui='pi'] .box { background: var(--pi-card); box-shadow: none; }
+:root[data-ui='pi'] .box.focused,
+:root[data-ui='pi'] .input:focus { border-color: var(--accent); box-shadow: none; }
+:root[data-ui='pi'] .usage { font-size: var(--fs-sm); color: var(--pi-dim); }
+:root[data-ui='pi'] .u { background: transparent; border-color: transparent; box-shadow: none; }
+:root[data-ui='pi'] .pop,
+:root[data-ui='pi'] .modal,
+:root[data-ui='pi'] .ctxmenu,
+:root[data-ui='pi'] .floating-panel,
+:root[data-ui='pi'] .select-menu,
+:root[data-ui='pi'] .directory-menu,
+:root[data-ui='pi'] .att-tip,
+:root[data-ui='pi'] .settings-drawer { background: var(--pi-card); border: 1px solid var(--pi-dim); box-shadow: none; }
+:root[data-ui='pi'] .modal-mask { background: rgba(0, 0, 0, 0.5); backdrop-filter: none; }
+:root[data-ui='pi'] .settings-mask { background: rgba(0, 0, 0, 0.3); }
+:root[data-ui='pi'] .seg button.on { color: var(--accent); background: var(--pi-selected); box-shadow: none; }
+:root[data-ui='pi'] .style.on { border-color: var(--accent); background: var(--pi-selected); }
+:root[data-ui='pi'] .widget,
+:root[data-ui='pi'] .composer .viewer { background: var(--pi-info); }
+:root[data-ui='pi'] .tab.active { background: var(--pi-card); }
+
+/* 对话记录：用户整行底色，助手无气泡；正文与过程块均使用原版内边距。 */
+:root[data-ui='pi'] .chat { --gut: calc(var(--pi-line) * 2); }
+:root[data-ui='pi'] .chat .inner { padding-top: var(--pi-line); }
+:root[data-ui='pi'] .msg { margin-bottom: var(--pi-line); }
+:root[data-ui='pi'] .msg .col { gap: 0; align-items: stretch; }
+:root[data-ui='pi'] .msg .me-bubble { max-width: 100%; width: 100%; border: 0; border-radius: var(--r); padding: var(--pi-line); font-size: var(--fs); line-height: var(--lh); }
+:root[data-ui='pi'] .me-bubble ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+:root[data-ui='pi'] .msg .ai-bubble { padding: var(--pi-line); padding-bottom: 0; margin: 0; }
+:root[data-ui='pi'] .user-actions { align-self: flex-end; }
+:root[data-ui='pi'] .ai .meta { font-size: var(--fs-xs); padding: 0 var(--pi-line); }
+:root[data-ui='pi'] .sys-card,
+:root[data-ui='pi'] .sys-pill { background: var(--pi-custom); border: 0; color: var(--pi-muted); }
+:root[data-ui='pi'] .blk { margin: 0; font-size: var(--fs); line-height: var(--lh); }
+:root[data-ui='pi'] .tool-execution { padding: var(--pi-line); border-radius: var(--r); background: var(--pi-pending); }
+:root[data-ui='pi'] .tool-execution.success { background: var(--pi-success); }
+:root[data-ui='pi'] .tool-execution.error { background: var(--pi-error); }
+:root[data-ui='pi'] .tool-execution + .tool-execution,
+:root[data-ui='pi'] .ai-bubble + .tool-execution,
+:root[data-ui='pi'] .thinking-block + .tool-execution { margin-top: var(--pi-line); }
+:root[data-ui='pi'] .blk-head { padding: 0; align-items: baseline; }
+:root[data-ui='pi'] .blk-head:hover { background: transparent; }
+:root[data-ui='pi'] .blk-chip { font-size: inherit; color: var(--text); font-weight: bold; }
+:root[data-ui='pi'] .blk-sum { font-size: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--accent); }
+:root[data-ui='pi'] .blk-sum a { color: var(--accent); text-decoration: none; }
+:root[data-ui='pi'] .blk-sum a:hover { text-decoration: underline; }
+:root[data-ui='pi'] .blk-body { padding: 0; margin: var(--pi-line) 0 0; background: transparent; border-radius: 0; font-size: inherit; line-height: var(--lh); color: var(--pi-muted); max-height: none; }
+:root[data-ui='pi'] .tool-execution .blk-body.args { color: var(--text); }
+:root[data-ui='pi'] .tool-execution .diff > div { padding: 0; }
+:root[data-ui='pi'] .tool-execution .del { color: var(--pi-red); background: none; }
+:root[data-ui='pi'] .tool-execution .add { color: var(--pi-green); background: none; }
+:root[data-ui='pi'] .tool-execution .errout { color: var(--pi-red); }
+:root[data-ui='pi'] .tool-execution .imgs { padding: 0; margin-top: var(--pi-line); }
+:root[data-ui='pi'] .thinking-block { padding: var(--pi-line); color: var(--pi-thinking); font-style: italic; }
+:root[data-ui='pi'] .thinking-block .blk-chip { color: var(--pi-thinking); font-weight: normal; }
+:root[data-ui='pi'] .thinking-block .blk-body { margin: 0; color: var(--pi-thinking); max-height: min(380px, 50vh); overflow: auto; }
+:root[data-ui='pi'] .thinking-block .think-prev { color: var(--pi-thinking); }
+:root[data-ui='pi'] .thinking-block + .ai-bubble { padding-top: 0; }
+:root[data-ui='pi'] .tool-execution .body { min-width: 0; }
+
+/* Markdown：标题全部 1em，18px 段距，无代码卡片底色，原版表格和引用。 */
+:root[data-md='pi'] .md { font-family: var(--pi-font); font-size: var(--pi-md-size, 12px); line-height: var(--pi-line); letter-spacing: 0; color: var(--pi-text); }
+:root[data-md='pi'] .md :is(h1, h2, h3, h4, h5, h6) { color: var(--pi-yellow); margin: var(--pi-line) 0 0; padding: 0; border: 0; font-size: 1em; font-weight: bold; line-height: inherit; }
+:root[data-md='pi'] .md strong { font-weight: bold; }
+:root[data-md='pi'] .md p { margin: 0; }
+:root[data-md='pi'] .md p + p { margin-top: var(--pi-paragraph); }
+:root[data-md='pi'] .md a { color: var(--pi-link); text-decoration: underline; }
+:root[data-md='pi'] .md code { background: rgba(128, 128, 128, 0.2); color: var(--pi-accent); padding: 0 4px; border-radius: 3px; font: inherit; }
+:root[data-md='pi'] .md pre.code { position: relative; background: transparent; margin: var(--pi-line) 0; border: 0; border-radius: 0; overflow: visible; }
+:root[data-md='pi'] .md pre.code code { display: block; background: none; color: var(--pi-text); padding: 0 4px; border-radius: 3px; font: inherit; overflow-x: auto; white-space: pre; }
+/* 唯一的增强：复制按钮悬停浮现，不占原版代码块的版面。触屏和键盘也能用。 */
+:root[data-md='pi'] .md .code-bar { position: absolute; right: 0; top: 0; z-index: 1; height: auto; padding: 0; border: 0; background: transparent; opacity: 0; }
+:root[data-md='pi'] .md .code-bar span { display: none; }
+:root[data-md='pi'] .md pre.code:hover .code-bar,
+:root[data-md='pi'] .md pre.code:focus-within .code-bar { opacity: 1; }
+:root[data-md='pi'] .md .copy-btn { font: inherit; font-size: 10px; padding: 2px 8px; background: var(--pi-card); border: 1px solid var(--pi-dim); border-radius: 3px; color: var(--pi-muted); }
+:root[data-md='pi'] .md blockquote { border-left: 3px solid var(--pi-muted); padding: 0 0 0 var(--pi-line); margin: var(--pi-line) 0; color: var(--pi-muted); font-style: italic; background: none; border-radius: 0; }
+:root[data-md='pi'] .md ul,
+:root[data-md='pi'] .md ol { margin: var(--pi-line) 0; padding-left: calc(var(--pi-line) * 2); }
+:root[data-md='pi'] .md li { margin: 0; }
+:root[data-md='pi'] .md li::marker { color: var(--pi-accent); }
+:root[data-md='pi'] .md hr { border: 0; border-top: 1px solid var(--pi-muted); margin: var(--pi-line) 0; height: 0; background: none; }
+:root[data-md='pi'] .md .md-table { max-width: 100%; overflow-x: auto; }
+:root[data-md='pi'] .md table { display: table; border-collapse: collapse; border-spacing: 0; margin: 0.5em 0; width: 100%; border: 0; border-radius: 0; }
+:root[data-md='pi'] .md th,
+:root[data-md='pi'] .md td { border: 1px solid var(--pi-muted); padding: 6px 10px; text-align: left; }
+:root[data-md='pi'] .md th { background: rgba(128, 128, 128, 0.1); font-weight: bold; }
+:root[data-md='pi'] .md img { max-width: 100%; max-height: none; border-radius: 4px; margin: 0; }
+:root[data-md='pi'] .md .md-diagram { margin: var(--pi-line) 0; }
+:root[data-md='pi'] .md .md-diagram .dgm-code { margin: 0; }
+:root[data-md='pi'] .md .md-diagram:not(.err) .dgm-code .code-bar { padding-right: 0; }
+:root[data-md='pi'] .md .md-math.block { margin: var(--pi-line) 0; }
+:root[data-md='pi'] .md a.file-link > code { color: var(--pi-link); }
+
+/* 与导出模板相同的 highlight.js token 映射，覆盖 Web UI 的通用高亮。 */
+:root:is([data-ui='pi'], [data-md='pi']) .hljs { color: var(--pi-text); background: transparent; }
+:root:is([data-ui='pi'], [data-md='pi']) :is(.hljs-comment, .hljs-quote, .hljs-operator, .hljs-punctuation) { color: var(--pi-muted); }
+:root:is([data-ui='pi'], [data-md='pi']) :is(.hljs-keyword, .hljs-selector-tag, .hljs-meta, .hljs-meta .hljs-keyword, .hljs-meta .hljs-string) { color: var(--pi-link); }
+:root:is([data-ui='pi'], [data-md='pi']) :is(.hljs-number, .hljs-literal) { color: var(--pi-green); }
+:root:is([data-ui='pi'], [data-md='pi']) :is(.hljs-string, .hljs-doctag) { color: var(--pi-string); }
+:root:is([data-ui='pi'], [data-md='pi']) :is(.hljs-function, .hljs-title, .hljs-title.function_, .hljs-section, .hljs-name) { color: var(--pi-yellow); }
+:root:is([data-ui='pi'], [data-md='pi']) :is(.hljs-type, .hljs-class, .hljs-title.class_, .hljs-built_in) { color: var(--pi-accent); }
+:root:is([data-ui='pi'], [data-md='pi']) :is(.hljs-attr, .hljs-variable, .hljs-variable.language_, .hljs-params, .hljs-property) { color: var(--pi-variable); }
+:root:is([data-ui='pi'], [data-md='pi']) .hljs-subst { color: var(--pi-text); }
+@media (hover: none) {
+  :root[data-md='pi'] .md .code-bar { opacity: 1; }
+}
+@media (max-width: 768px) {
+  :root[data-ui='pi'] .chat { --gut: 16px; }
+}
