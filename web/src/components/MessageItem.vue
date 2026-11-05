@@ -108,8 +108,8 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
       </div>
       <div v-if="m._entryId && !editing && !S.detached" class="user-actions" :class="{ versions: node?.versions.length > 1 }" aria-label="用户消息操作">
         <span class="hover-actions">
-          <button type="button" :disabled="branchDisabled" title="修改并在当前会话创建新分支" @click="beginEdit(m)">修改</button>
-          <button type="button" :disabled="branchDisabled" title="从此处分叉为新会话" @click="forkMessage(m)">分叉</button>
+          <button type="button" :disabled="branchDisabled" title="修改并在当前会话创建新分支" aria-label="修改消息" @click="beginEdit(m)"><Icon name="edit" :size="15" /></button>
+          <button type="button" :disabled="branchDisabled" title="从此处分叉为新会话" aria-label="分叉为新会话" @click="forkMessage(m)"><Icon name="fork" :size="15" /></button>
         </span>
         <template v-if="node?.versions.length > 1">
           <button type="button" :disabled="branchDisabled || versionIndex <= 0" aria-label="上一个提问版本" @click="switchVersion(m, -1)">‹</button>
@@ -196,7 +196,7 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
 .me:hover .user-actions, .me:focus-within .user-actions, .user-actions.versions { opacity: 1; }
 .hover-actions { display: inline-flex; opacity: 0; }
 .me:hover .hover-actions, .me:focus-within .hover-actions { opacity: 1; }
-.user-actions button { border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; padding: 3px 7px; cursor: pointer; font: inherit; }
+.user-actions button { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; padding: 4px; cursor: pointer; font: inherit; }
 .user-actions button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
 .user-actions button:disabled { opacity: 0.4; cursor: default; }
 .version-count { font-variant-numeric: tabular-nums; }

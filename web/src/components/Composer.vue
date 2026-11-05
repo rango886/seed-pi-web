@@ -556,7 +556,7 @@ async function onTakeOver() {
         <div class="grow" />
         <span v-if="S.starting" class="dim small starting" title="这个会话之前没有 pi 进程，正在启动">启动 pi…</span>
 
-        <button type="button" class="chip new-session" title="在当前目录开始新会话" @click="newSession">新会话</button>
+        <button type="button" class="ibtn new-session" title="在当前目录开始新会话" aria-label="新会话" @click="newSession"><Icon name="newchat" :size="18" /></button>
         <DirectoryMenu />
 
         <button ref="modelChip" class="chip" :class="{ on: menu === 'model' }" title="切换模型 (Ctrl+L)" :disabled="disabled" @click="toggleMenu('model')">
