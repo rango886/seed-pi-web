@@ -16,6 +16,7 @@ const dockH = ref(0); // 悬浮输入区的真实高度：对话内容底部要�
 const sbw = ref(0); // 滚动条占的宽度：输入框那栏也要让出同样宽度，两边才对得齐
 let stick = true;
 const away = ref(false); // 离底部比较远时显示回到底部按钮
+const shortcutsOpen = ref(false);
 let ro, roDock;
 
 /** 离底部还剩多少像素 */
@@ -40,7 +41,7 @@ const jumpBottom = () => {
 const toBottom = () => {
   const el = scroller.value;
   // nextTick 排队后用户可能已经手动滚走了，执行时再检查，不能用排队时的 stick。
-  if (el && stick) el.scrollTop = el.scrollHeight;
+  if (el && stick && !(shortcutsOpen.value && !S.messages.length)) el.scrollTop = el.scrollHeight;
 };
 const onOutlineJump = () => (stick = false); // 从大纲跳走了，内容再变高也别拽回底部
 // Home / End：消息始终按真实高度布局，一次跳转即可，不在后续帧覆盖手动滚动。
@@ -156,11 +157,63 @@ const qText = (t) => {
 };
 const queued = computed(() => [...S.queue.steering.map((t) => ['插话', qText(t)]), ...S.queue.followUp.map((t) => ['排队', qText(t)])]);
 const model = computed(() => S.state?.model);
+
+// 与实际按键处理一致；发送 / 换行提示随设置切换，局部快捷键标明使用场景。
+const shortcutGroups = computed(() => [
+  { title: '输入与发送', rows: [
+    [UI.sendKey === 'ctrlEnter' ? 'Ctrl+Enter' : 'Enter', '发送 / 运行中插话'],
+    [UI.sendKey === 'ctrlEnter' ? 'Enter' : 'Shift+Enter', '换行'],
+    ['Alt+Enter', '排队发送'],
+    ['/', '命令菜单'],
+    ['!', '执行 shell'],
+    ['!!', '执行 shell（不进上下文）'],
+    ['@', '引用文件'],
+    ['Ctrl+V', '粘贴文件'],
+    ['↑ / ↓', '历史输入（输入框为空时）'],
+  ] },
+  { title: '会话与界面', rows: [
+    ['Alt+N', '新会话'],
+    ['Alt+Shift+N', '选目录新建'],
+    ['Ctrl+P', '切换会话'],
+    ['Ctrl+L', '切换模型'],
+    ['Ctrl+B', '显示 / 隐藏会话侧栏'],
+    ['Ctrl+E', '显示 / 隐藏文件侧栏'],
+    ['Ctrl+`', '终端 / 对话'],
+    ['Ctrl+,', '界面设置'],
+    ['Esc', '关闭浮层 / 停止运行'],
+  ] },
+  { title: '对话与消息编辑', rows: [
+    ['Home / End', '对话首尾（输入框为空时）'],
+    ['Ctrl+Home / Ctrl+End', '对话首尾（输入文字时）'],
+    ['Ctrl+Enter', '发送编辑后的消息'],
+    ['Esc', '取消消息编辑'],
+  ] },
+  { title: '菜单与目录窗口', rows: [
+    ['↑ / ↓', '选择菜单项'],
+    ['Enter', '确认选择'],
+    ['Tab', '补全命令 / 进入引用目录'],
+    ['Esc', '关闭菜单'],
+    ['Enter', '进入路径 / 创建目录'],
+    ['Tab / →', '接受路径补全'],
+    ['Home / End', '快捷菜单首项 / 末项'],
+  ] },
+  { title: '调整高度（先聚焦分隔条）', rows: [
+    ['↑ / ↓', '调整输入框 / 文件面板高度'],
+    ['Home / End', '最小 / 最大高度'],
+  ] },
+  { title: '图片查看', rows: [
+    ['← / →', '上一张 / 下一张'],
+    ['+ / =', '放大'],
+    ['−', '缩小'],
+    ['0', '还原缩放'],
+    ['Esc', '关闭图片'],
+  ] },
+]);
 </script>
 
 <template>
   <div class="chat">
-    <div ref="scroller" class="scroll" tabindex="-1" @scroll="onScroll" @click="onClick">
+    <div ref="scroller" class="scroll" :class="{ welcoming: !S.messages.length && !S.agentExited }" tabindex="-1" @scroll="onScroll" @click="onClick">
       <div ref="inner" class="inner" :style="{ paddingBottom: dockH ? dockH + 8 + 'px' : null }">
         <div v-if="S.detached" class="banner detach">
           <div class="row">
@@ -183,16 +236,15 @@ const model = computed(() => S.state?.model);
         </div>
 
         <div v-if="!S.messages.length && !S.agentExited" class="welcome">
-          <div class="big">π</div>
-          <div class="wtitle">有什么可以帮你？</div>
-          <div class="dim wcwd">{{ S.cwd }}</div>
-          <div class="tips">
-            <div class="tip"><kbd>/</kbd><span>命令菜单</span></div>
-            <div class="tip"><kbd>!</kbd><span>执行 shell</span></div>
-            <div class="tip"><kbd>@</kbd><span>侧栏文件点 @ 引用</span></div>
-            <div class="tip"><kbd>Ctrl V</kbd><span>粘贴图片</span></div>
-            <div class="tip"><kbd>Esc</kbd><span>停止</span></div>
-            <div class="tip"><kbd>Ctrl P</kbd><span>切换会话</span></div>
+          <button type="button" class="big" :aria-expanded="shortcutsOpen" aria-controls="welcome-shortcuts" :aria-label="shortcutsOpen ? '收起快捷键' : '显示快捷键'" :title="shortcutsOpen ? '收起快捷键' : '显示快捷键'" @click="shortcutsOpen = !shortcutsOpen"><Icon name="pi" :size="34" /></button>
+          <div class="wtitle">有什么可以帮你</div>
+          <div v-if="shortcutsOpen" id="welcome-shortcuts" class="tips">
+            <section v-for="group in shortcutGroups" :key="group.title" class="tip-group">
+              <h3>{{ group.title }}</h3>
+              <div v-for="[key, label] in group.rows" :key="key + label" class="tip">
+                <span>{{ label }}</span><kbd>{{ key }}</kbd>
+              </div>
+            </section>
           </div>
         </div>
 
@@ -245,13 +297,17 @@ const model = computed(() => S.state?.model);
 /* 对话铺满整个区域，输入区悬在它上面：对话能从输入框底下滚过去 */
 .scroll { position: absolute; inset: 0; overflow-y: auto; outline: none; scrollbar-gutter: stable both-edges; }
 .inner { padding: var(--sp5) var(--gut) var(--sp4); max-width: calc(var(--chat-w) + 2 * var(--gut)); margin: 0 auto; }
-.welcome { text-align: center; padding: 12vh 0 20px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.welcome .big { width: 64px; height: 64px; border-radius: var(--r-xl); background: var(--accent); color: #fff; font-size: 34px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px var(--accent-soft); margin-bottom: 10px; }
+.scroll.welcoming { display: flex; flex-direction: column; }
+.welcoming .inner { width: 100%; flex: 1 0 auto; display: flex; flex-direction: column; }
+.welcome { flex: 1; text-align: center; padding: 32px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.welcome .big { border: 0; padding: 0; cursor: pointer; width: 64px; height: 64px; border-radius: var(--r-xl); background: var(--accent); color: #fff; font-size: 34px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px var(--accent-soft); margin-bottom: 10px; }
 .wtitle { font-size: calc(var(--fs) + 6px); font-weight: 600; }
-.wcwd { font-size: var(--fs-sm); }
-.tips { margin-top: 28px; display: grid; grid-template-columns: repeat(3, auto); gap: 10px 26px; font-size: var(--fs-sm); color: var(--text-2); }
-.tip { display: flex; align-items: center; gap: 8px; }
-kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: var(--r-xs); padding: 1px 7px; color: var(--text); min-width: 24px; text-align: center; }
+.welcome .big:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.tips { width: 100%; max-width: 780px; margin-top: 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; font-size: var(--fs-sm); color: var(--text-2); text-align: left; }
+.tip-group { min-width: 0; }
+.tip-group h3 { margin: 0 0 10px; color: var(--text-3); font-size: var(--fs-xs); font-weight: 500; }
+.tip { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: baseline; gap: 12px; padding: 4px 0; }
+kbd { font-family: var(--font-code); font-size: var(--fs-xs); color: var(--text-3); text-align: right; white-space: nowrap; }
 /* “工作中 + 跳动的点”：不要气泡底（GitHub 主题里气泡色和正文底一个色，只衬出一块阴影框，很脏），
    就是一行灰字配一个会动的省略号；左内边距跟正文一样，两边的字能对齐 */
 .working { display: flex; align-items: center; gap: 6px; padding: 6px var(--pad-x); color: var(--text-2); font-size: var(--fs-sm); }
@@ -289,7 +345,6 @@ kbd { font-family: var(--font-code); font-size: var(--fs-xs); background: var(--
   .scroll { scrollbar-gutter: auto; }
   .chat .inner { padding: 14px var(--gut) 12px; max-width: none; }
   .chat .dock { padding: 0 calc(var(--gut) - 6px) max(8px, env(safe-area-inset-bottom)); max-width: none; }
-  .chat .welcome { padding-top: 8vh; }
-  .chat .tips { grid-template-columns: repeat(2, auto); gap: 10px 18px; }
+  .chat .tips { grid-template-columns: minmax(0, 1fr); gap: 20px; }
 }
 </style>

@@ -12,7 +12,7 @@ async function setup(t, file, { props = {}, imports = {}, document = {}, storage
   const noop = () => {};
   const context = vm.createContext({ console, document, setTimeout, clearTimeout,
     window: { innerWidth: 1000, innerHeight: 800, addEventListener: noop, removeEventListener: noop },
-    localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) },
+    localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) },
     ResizeObserver: class { constructor(cb) { this.cb = cb; } observe(el) { this.cb([{ contentRect: { height: el.clientHeight } }]); } disconnect() {} },
   });
   const mod = new vm.SourceTextModule(code, { context });
@@ -32,20 +32,29 @@ async function setup(t, file, { props = {}, imports = {}, document = {}, storage
   return { state, events };
 }
 
-test('composer context ring stays visible without stats and updates when usage arrives', async (t) => {
+test('composer context ring stays visible without numbers and its popup dismisses quickly', async (t) => {
   const source = await fs.readFile(new URL('../web/src/components/Composer.vue', import.meta.url), 'utf8');
   const { descriptor } = parse(source);
   const findRing = (nodes, ancestors = []) => {
     for (const node of nodes) {
-      if (node.props?.some(p => p.name === 'ref' && p.value?.content === 'ringChip')) return [...ancestors, node];
+      if (node.props?.some(p => p.name === 'ref' && p.value?.content === 'contextChip')) return [...ancestors, node];
       const found = findRing(node.children || [], [...ancestors, node]);
       if (found) return found;
     }
   };
   const path = findRing(descriptor.template.ast.children);
-  assert.ok(path, 'context ring exists');
+  assert.ok(path, 'context chip exists');
+  const chip = path.at(-1);
+  const svg = chip.children.find(node => node.tag === 'svg');
+  assert.ok(svg, 'context uses the original ring');
+  assert.ok(!chip.children.some(node => node.tag === 'span'), 'no number next to the ring');
+  assert.ok(!svg.children.some(node => node.tag === 'text'), 'no number inside the ring');
+  assert.match(source, /<svg width="16" height="16" viewBox="0 0 16 16"/);
+  assert.match(source, /class="track" cx="8" cy="8" r="6\.5"/);
+  assert.match(source, /\.context circle \{ fill: none; stroke-width: 2\.2; \}/);
+  assert.match(source, /placeholder="输入消息"/);
   for (const node of path) {
-    assert.ok(!node.props?.some(p => p.type === 7 && ['if', 'else-if', 'else', 'show'].includes(p.name)), 'ring must not depend on stats or session state');
+    assert.ok(!node.props?.some(p => p.type === 7 && ['if', 'else-if', 'else', 'show'].includes(p.name)), 'context chip must not depend on stats or session state');
   }
 
   const S = vue.reactive({ composer: { text: '', attachments: [], images: [] }, stats: null, statusItems: {}, starting: false });
@@ -60,6 +69,21 @@ test('composer context ring stays visible without stats and updates when usage a
   assert.equal(s.usageRows.value[0].text, '暂无可用用量数据');
   s.usageClick();
   assert.equal(s.menu.value, 'usage', 'usage popup still opens before stats arrive');
+  s.usageLeave();
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(s.menu.value, 'usage', 'click-pinned popup does not dismiss on mouse leave');
+  s.usageClick();
+  s.usageEnter();
+  s.usageLeave();
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(s.menu.value, null, 'hover popup closes within 80ms instead of the old 200ms delay');
+  s.usageEnter();
+  s.usageLeave();
+  s.usageEnter();
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(s.menu.value, 'usage', 'moving onto the popup cancels dismissal');
+  s.usageClick();
+  s.usageClick();
   S.stats = { tokens: { input: 10, output: 5 } };
   assert.equal(s.usageRows.value[0].text, '暂无可用用量数据', 'totals alone do not establish current context');
   S.stats.contextUsage = { tokens: 0, contextWindow: 1000, percent: 0 };
@@ -77,6 +101,137 @@ test('composer context ring stays visible without stats and updates when usage a
   S.stats = null;
   assert.equal(s.ctxPct.value, null, 'switching to a session without stats clears old usage');
   assert.equal(s.usageRows.value[0].text, '暂无可用用量数据');
+});
+
+test('composer top edge resizes upward, clamps and resets without persisting height', async (t) => {
+  const document = { body: { style: { cursor: 'auto', userSelect: '' } } };
+  const storage = new Map([['seed-pi-web-composer-height', '220']]);
+  const S = vue.reactive({ composer: { text: '', attachments: [], images: [] }, stats: null, statusItems: {} });
+  const actions = Object.fromEntries('submit stop allCommands toast setThinking setDefaultThinking compact showSessionInfo takeOver openFile attachPaths uploadFiles pasteFiles removeAttachment clearAttachments moveAttachment'.split(' ').map(name => [name, () => {}]));
+  const { state: s } = await setup(t, 'Composer.vue', { document, storage, imports: {
+    '../store.js': { ...actions, S, BUILTINS: [], ORIGIN_LABEL: {}, hasStatus: vue.ref(false), contextUsage: vue.ref(null), otherAgents: vue.ref(0), viewer: vue.ref(false) },
+    '../settings.js': { UI: {}, view: vue.reactive({ menu: null }), openMenu() {} },
+    '../api.js': { http: {}, rawUrl() {} },
+    '../util.js': { fmtTokens: String, levelName: String, joinPath() {}, fmtSize: String },
+  } });
+  const ta = { style: {}, scrollHeight: 80, offsetHeight: 220, getBoundingClientRect: () => ({ height: parseFloat(ta.style.height) || 220 }) };
+  s.ta.value = ta;
+  s.boxEl.value = { offsetHeight: 280 };
+  s.autosize();
+  assert.equal(s.manualHeight.value, 0, 'ignore previously saved height');
+  assert.equal(ta.style.height, '80px', 'start with automatic height');
+  let captured = false, focused = false;
+  const el = { focus() { focused = true; }, setPointerCapture() { captured = true; }, hasPointerCapture() { return captured; }, releasePointerCapture() { captured = false; } };
+  s.startComposerResize({ button: 0, currentTarget: el, pointerId: 1, clientY: 500 });
+  assert.equal(focused, true);
+  assert.equal(document.body.style.cursor, 'ns-resize');
+  s.moveComposerResize({ pointerId: 2, clientY: 0 });
+  assert.equal(s.manualHeight.value, 0, 'ignore other pointers');
+  s.moveComposerResize({ pointerId: 1, clientY: 400 });
+  assert.equal(s.manualHeight.value, 180, 'drag up to grow');
+  assert.equal(ta.style.height, '180px');
+  s.moveComposerResize({ pointerId: 1, clientY: -10000 });
+  assert.equal(s.manualHeight.value, s.heightBounds().max);
+  s.moveComposerResize({ pointerId: 1, clientY: 10000 });
+  assert.equal(s.manualHeight.value, s.heightBounds().min);
+  assert.equal(ta.style.overflowY, 'auto', 'small manual heights scroll long input');
+  s.finishComposerResize();
+  assert.equal(captured, false);
+  assert.equal(s.resizing.value, false);
+  assert.equal(document.body.style.cursor, 'auto');
+  assert.equal(document.body.style.userSelect, '');
+  assert.equal(storage.get('seed-pi-web-composer-height'), '220', 'dragging does not write height to storage');
+  s.composerResizeKey({ key: 'End', preventDefault() {} });
+  assert.equal(s.manualHeight.value, s.heightBounds().max);
+  s.resetComposerHeight();
+  assert.equal(s.manualHeight.value, 0);
+  assert.equal(storage.get('seed-pi-web-composer-height'), '220', 'keyboard resizing and reset do not modify storage');
+  assert.equal(ta.style.height, '80px', 'double click returns to content-driven height');
+  ta.scrollHeight = 1000;
+  s.autosize();
+  assert.equal(ta.style.height, '320px', 'automatic height remains bounded');
+  const source = await fs.readFile(new URL('../web/src/components/Composer.vue', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /class="expand"|toggleBig|composer-big|seed-pi-web-composer-height/);
+  for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) assert.ok(source.includes(`@${event}="finishComposerResize"`));
+});
+
+test('welcome uses the sidebar logo, aligned label-first shortcuts and current send-key setting', async (t) => {
+  const source = await fs.readFile(new URL('../web/src/components/ChatView.vue', import.meta.url), 'utf8');
+  const sidebar = await fs.readFile(new URL('../web/src/components/SidePanel.vue', import.meta.url), 'utf8');
+  const welcome = source.slice(source.indexOf('class="welcome"'), source.indexOf('v-for="(m, i)'));
+  assert.match(welcome, /<Icon name="pi"/);
+  assert.match(sidebar, /class="logo"[^>]*><Icon name="pi"/);
+  assert.doesNotMatch(welcome, /S\.cwd|wcwd|π|粘贴图片|侧栏文件点/);
+  assert.match(welcome, /<span>\{\{ label \}\}<\/span><kbd>\{\{ key \}\}<\/kbd>/);
+  assert.match(source, /\.tip \{[^}]*grid-template-columns: minmax\(0, 1fr\) max-content/);
+  const kbd = source.match(/kbd \{([^}]+)\}/)[1];
+  assert.doesNotMatch(kbd, /border|background|padding/);
+  const UI = vue.reactive({ sendKey: 'enter' });
+  const { state: s } = await setup(t, 'ChatView.vue', { imports: {
+    '../store.js': { S: vue.reactive({ messages: [], tick: 0 }), openDirPicker() {}, restartExited() {}, viewer: vue.ref(false) },
+    '../settings.js': { UI, view: {}, openLightbox() {} },
+    '../util.js': { splitAttachments() {} },
+  } });
+  const rows = () => s.shortcutGroups.value.flatMap(group => group.rows);
+  const keys = rows().map(([key]) => key);
+  for (const key of ['Enter', 'Shift+Enter', 'Alt+Enter', 'Alt+N', 'Alt+Shift+N', '/', '!', '!!', '@', 'Ctrl+V', 'Ctrl+P', 'Ctrl+L', 'Ctrl+B', 'Ctrl+E', 'Ctrl+`', 'Ctrl+,', 'Esc', 'Home / End', 'Ctrl+Home / Ctrl+End', 'Tab / →', '0']) {
+    assert.ok(keys.includes(key), 'documented shortcut: ' + key);
+  }
+  UI.sendKey = 'ctrlEnter';
+  assert.equal(rows()[0][0], 'Ctrl+Enter');
+  assert.equal(rows()[1][0], 'Enter');
+  assert.equal(rows()[1][1], '换行');
+  assert.equal(s.shortcutsOpen.value, false, 'shortcuts are collapsed by default');
+  assert.match(welcome, /<button[^>]*class="big"[^>]*:aria-expanded="shortcutsOpen"[^>]*@click="shortcutsOpen = !shortcutsOpen"><Icon name="pi"/);
+  assert.doesNotMatch(source, /shortcuts-toggle/);
+  assert.match(welcome, /<div v-if="shortcutsOpen" id="welcome-shortcuts" class="tips">/);
+  assert.match(source, /\.welcome \{[^}]*padding: 32px 0;[^}]*justify-content: center/);
+  assert.match(source, /\.welcome \.big \{[^}]*border: 0;[^}]*cursor: pointer/);
+});
+
+test('sidebar directory trigger opens the full picker directly, while the icon keeps its quick menu', async (t) => {
+  const calls = [];
+  const props = vue.reactive({ variant: 'side', mode: 'new' });
+  let requests = 0;
+  const { state: s, events } = await setup(t, 'DirectoryMenu.vue', { props, imports: {
+    '../store.js': { S: vue.reactive({ cwd: '/repo', favorites: [] }), newSessionIn() {}, chooseDirectory() {}, openDirPicker: mode => calls.push(mode) },
+    '../api.js': { http: { get: async () => { requests++; return []; } } },
+    '../util.js': { baseName: String, normPath: String },
+  } });
+  s.toggle();
+  assert.deepEqual(calls, ['new']);
+  assert.deepEqual(events, [['select']], 'close the sidebar drawer when the picker opens');
+  assert.equal(s.opened.value, false, 'do not flash the quick menu');
+  assert.equal(requests, 0, 'the picker loads its own recent directories');
+  props.variant = 'icon';
+  await s.open();
+  assert.equal(s.opened.value, true, 'top bar keeps the quick menu');
+  assert.equal(requests, 1);
+});
+
+test('directory picker has folder icons and ordered actions next to the path input', async () => {
+  const source = await fs.readFile(new URL('../web/src/components/DirPicker.vue', import.meta.url), 'utf8');
+  const { descriptor } = parse(source);
+  const walk = function* (node) {
+    yield node;
+    for (const child of node.children || []) yield* walk(child);
+  };
+  const nodes = [...walk(descriptor.template.ast)];
+  const hasClass = (node, name) => node.props?.some(p => p.name === 'class' && p.value?.content.split(' ').includes(name));
+  const top = nodes.find(node => hasClass(node, 'top'));
+  const buttons = top.children.filter(node => node.tag === 'button');
+  assert.deepEqual(buttons.map(node => node.children[0].content), ['创建', '新标签']);
+  assert.deepEqual(buttons.map(node => node.props.find(p => p.name === 'on' && p.arg.content === 'click').exp.content), ['openCurrent', 'newTab']);
+  assert.ok(top.children.some(node => hasClass(node, 'pathbox')));
+  assert.ok(!nodes.some(node => hasClass(node, 'modal-foot')), 'no duplicate footer actions');
+  const rows = nodes.filter(node => hasClass(node, 'item'));
+  assert.equal(rows.length, 2);
+  for (const row of rows) {
+    const children = row.children.filter(node => node.type === 1);
+    assert.equal(children[0].tag, 'Icon');
+    assert.ok(children[0].props.some(p => p.name === 'name' && p.value?.content === 'folder'));
+    assert.ok(hasClass(children[1], 'path'), 'folder icon sits immediately before each path');
+  }
 });
 
 test('empty composer send button matches toolbar borders and surfaces in every theme', async () => {

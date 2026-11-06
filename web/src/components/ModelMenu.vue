@@ -107,22 +107,20 @@ const ctxLabel = (m) => (m.contextWindow ? (m.contextWindow >= 1e6 ? `${(m.conte
         </div>
       </template>
     </div>
-    <div class="foot">↑↓ 选择 · Enter 确认 · Esc 关闭 · 右键可设为默认</div>
   </div>
 </template>
 
 <style scoped>
-.mm { bottom: 0; left: 0; right: auto; width: 400px; max-width: calc(100vw - 32px); padding: 0; display: flex; flex-direction: column; overflow: hidden; }
-.search { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--text-3); }
-.search input { flex: 1; border: 0; outline: none; background: transparent; height: 42px; color: var(--text); }
-.list { max-height: 360px; overflow-y: auto; padding: 4px 6px 6px; }
-.gname { font-size: var(--fs-xs); color: var(--text-3); padding: 8px 8px 4px; }
-.mi { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 6px; height: 34px; border-radius: var(--r-sm); cursor: pointer; }
+.mm { bottom: 0; left: 0; right: auto; width: 340px; max-width: calc(100vw - 32px); font-size: var(--fs-sm); padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.search { display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--line); color: var(--text-3); }
+.search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; height: 34px; color: var(--text); }
+.list { max-height: 300px; overflow-y: auto; padding: 2px 4px 4px; }
+.gname { font-size: inherit; color: var(--text-3); padding: 6px 6px 2px; }
+.mi { display: flex; align-items: center; gap: 6px; padding: 0 6px 0 4px; height: 28px; border-radius: var(--r-sm); cursor: pointer; }
 .mi.active { background: var(--hover); }
 .mi.cur { color: var(--accent-text); font-weight: 600; }
 .check { width: 16px; text-align: center; flex: none; }
-.prov { color: var(--text-3); font-size: var(--fs-xs); margin-left: 8px; font-weight: normal; }
-.tag { font-size: 11px; color: var(--text-3); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 0 5px; line-height: 18px; flex: none; font-weight: normal; }
+.prov { color: var(--text-3); font-size: inherit; margin-left: 8px; font-weight: normal; }
+.tag { font-size: inherit; color: var(--text-3); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 0 4px; line-height: 16px; flex: none; font-weight: normal; }
 .empty { padding: 24px; text-align: center; color: var(--text-3); }
-.foot { font-size: var(--fs-xs); color: var(--text-3); padding: 6px 12px; border-top: 1px solid var(--line); background: var(--panel-2); }
 </style>

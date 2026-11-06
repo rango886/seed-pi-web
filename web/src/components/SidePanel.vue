@@ -334,7 +334,7 @@ function sessionMenu(e, s) {
 .tree { padding: 2px 6px 12px; }
 .gname { font-size: var(--fs-xs); color: var(--text-3); padding: 12px var(--side-inset) 4px; display: flex; align-items: center; gap: 6px; }
 .gname:first-child { padding-top: 4px; }
-.dirhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; margin: 10px 0 2px; }
+.dirhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; margin: 2px 0; }
 .dirhead:first-child { margin-top: 0; }
 .dirhead:hover { background: var(--active); }
 .dirhead .arrow { width: 12px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); transform: rotate(90deg); transition: transform 0.15s; }

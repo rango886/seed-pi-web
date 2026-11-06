@@ -284,23 +284,75 @@ function openAtt(a) {
   if (a.status === 'ready' && a.path && a.kind !== 'dir') openFile(a.path);
 }
 
-// 自动长高
-// big：把输入框变高（右上角按钮切），适合写长提示词
-const big = ref(localStorage.getItem('seed-pi-web-composer-big') === '1');
-function toggleBig() {
-  big.value = !big.value;
-  localStorage.setItem('seed-pi-web-composer-big', big.value ? '1' : '0');
-  nextTick(autosize);
+// 默认随内容长高；拖动后的高度只在当前页面生效，不持久保存，双击恢复自动。
+const manualHeight = ref(0);
+const resizing = ref(false);
+let resizeDrag = null;
+function heightBounds() {
+  const min = parseFloat(ta.value && window.getComputedStyle?.(ta.value).minHeight) || 36;
+  const extra = Math.max(0, (boxEl.value?.offsetHeight || 0) - (ta.value?.offsetHeight || 0));
+  return { min, max: Math.max(min, Math.min(window.innerHeight * 0.72, window.innerHeight - extra - 140)) };
 }
 function autosize() {
   const el = ta.value;
   if (!el) return;
+  const { min, max } = heightBounds();
   el.style.height = 'auto';
-  const max = window.innerHeight * (big.value ? 0.72 : 0.4);
-  el.style.height = Math.min(el.scrollHeight, max) + 'px';
-  el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+  const height = manualHeight.value
+    ? Math.max(min, Math.min(manualHeight.value, max))
+    : Math.max(min, Math.min(el.scrollHeight, max, window.innerHeight * 0.4));
+  el.style.height = height + 'px';
+  el.style.overflowY = el.scrollHeight > height ? 'auto' : 'hidden';
 }
-watch(() => [S.composer.text, UI.font, UI.chatFont, UI.userFontSize, UI.lineHeight, UI.letterSpacing, big.value], () => nextTick(autosize));
+function setComposerHeight(height) {
+  const { min, max } = heightBounds();
+  manualHeight.value = Math.max(min, Math.min(height, max));
+  autosize();
+}
+function startComposerResize(e) {
+  if (e.button !== 0 || !ta.value) return;
+  finishComposerResize();
+  resizeDrag = { el: e.currentTarget, id: e.pointerId, y: e.clientY, height: ta.value.getBoundingClientRect().height,
+    cursor: document.body.style.cursor, userSelect: document.body.style.userSelect };
+  resizing.value = true;
+  document.body.style.cursor = 'ns-resize';
+  document.body.style.userSelect = 'none';
+  e.currentTarget.focus();
+  e.currentTarget.setPointerCapture(e.pointerId);
+}
+function moveComposerResize(e) {
+  if (!resizeDrag || e.pointerId !== resizeDrag.id) return;
+  setComposerHeight(resizeDrag.height + resizeDrag.y - e.clientY);
+}
+function finishComposerResize() {
+  if (!resizeDrag) return;
+  const drag = resizeDrag;
+  resizeDrag = null;
+  resizing.value = false;
+  document.body.style.cursor = drag.cursor;
+  document.body.style.userSelect = drag.userSelect;
+  if (drag.el.hasPointerCapture(drag.id)) drag.el.releasePointerCapture(drag.id);
+}
+function resetComposerHeight() {
+  manualHeight.value = 0;
+  autosize();
+}
+function composerResizeKey(e) {
+  if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const { min, max } = heightBounds();
+  const height = ta.value?.getBoundingClientRect().height || min;
+  setComposerHeight(e.key === 'Home' ? min : e.key === 'End' ? max : height + (e.key === 'ArrowUp' ? 20 : -20));
+}
+onMounted(() => {
+  autosize();
+  window.addEventListener('blur', finishComposerResize);
+});
+onUnmounted(() => {
+  finishComposerResize();
+  window.removeEventListener('blur', finishComposerResize);
+});
+watch(() => [S.composer.text, UI.font, UI.chatFont, UI.userFontSize, UI.lineHeight, UI.letterSpacing, manualHeight.value], () => nextTick(autosize));
 watch(
   () => S.activeTab,
   (t) => t === 'chat' && nextTick(() => ta.value?.focus()),
@@ -366,10 +418,10 @@ const composerEl = ref(null);
 const boxEl = ref(null);
 const modelChip = ref(null);
 const thinkChip = ref(null);
-const ringChip = ref(null);
+const contextChip = ref(null);
 
-// ---- 底栏的上下文圆环：始终显示，暂无数据时显示「—」，悬停 / 点击弹出明细 ----
-const RING_C = 2 * Math.PI * 6.5; // 圆环周长（半径 6.5）
+// ---- 底栏仅显示上下文圆环，悬停 / 点击查看百分比及用量明细 ----
+const RING_C = 2 * Math.PI * 6.5;
 const ringDash = computed(() => `${((ctxPct.value ?? 0) / 100) * RING_C} ${RING_C}`);
 // 超过 70% 变黄、超过 90% 变红：提醒该压缩或者开新会话了
 const ctxLevel = computed(() => (ctxPct.value == null ? '' : ctxPct.value >= 90 ? 'danger' : ctxPct.value >= 70 ? 'warn' : ''));
@@ -404,7 +456,7 @@ function usageLeave() {
   clearTimeout(usageTimer);
   usageTimer = setTimeout(() => {
     if (menu.value === 'usage' && !usagePinned) menu.value = null;
-  }, 200);
+  }, 40);
 }
 function usageClick() {
   clearTimeout(usageTimer);
@@ -432,11 +484,11 @@ watch(
   { immediate: true },
 );
 onUnmounted(() => clearTimeout(startingTimer));
-const POP_W = { model: 400, thinking: 220, usage: 270 }; // 和各自 CSS 里的 width 对齐
+const POP_W = { model: 340, thinking: 180, usage: 270 }; // 和各自 CSS 里的 width 对齐
 const POP_GAP = 6; // 弹窗底边到 chip 上边的距离
 function alignPop() {
   const name = menu.value;
-  const chip = name === 'model' ? modelChip.value : name === 'thinking' ? thinkChip.value : name === 'usage' ? ringChip.value : null;
+  const chip = name === 'model' ? modelChip.value : name === 'thinking' ? thinkChip.value : name === 'usage' ? contextChip.value : null;
   const box = boxEl.value?.getBoundingClientRect();
   const root = composerEl.value?.getBoundingClientRect();
   if (!chip || !box || !root) return;
@@ -469,7 +521,10 @@ function closeMenus(e) {
 onMounted(() => window.addEventListener('mousedown', closeMenus));
 onUnmounted(() => window.removeEventListener('mousedown', closeMenus));
 // 窗口大小变了（或者菜单是从 Ctrl+L 直接打开的，没经过 chip 的点击）：重新量一次位置
-const onResize = () => menu.value && alignPop();
+const onResize = () => {
+  autosize();
+  if (menu.value) alignPop();
+};
 onMounted(() => window.addEventListener('resize', onResize));
 onUnmounted(() => window.removeEventListener('resize', onResize));
 watch(menu, (v) => (v ? nextTick(alignPop) : nextTick(() => ta.value?.focus())));
@@ -525,7 +580,6 @@ async function onTakeOver() {
 
     <ModelMenu v-if="menu === 'model'" :pos="popPos" @close="menu = null" />
     <div v-if="menu === 'thinking'" class="pop think-pop" :style="{ left: popPos.left + 'px', bottom: popPos.bottom + 'px' }">
-      <div class="pop-title">思考强度 · 右键可设为默认</div>
       <div v-for="l in S.thinkingLevels" :key="l" class="lv" :class="{ cur: l === thinking }" @click="chooseThinking(l)" @contextmenu.prevent.stop="thinkMenu($event, l)">
         <span class="check">{{ l === thinking ? '✓' : '' }}</span>
         <span class="grow">{{ levelName(l) }}</span>
@@ -533,7 +587,7 @@ async function onTakeOver() {
       </div>
     </div>
 
-    <!-- 上下文圆环的明细：常看的用量都在这，外加压缩 / 会话详情两个动作 -->
+    <!-- 上下文用量明细，外加压缩 / 会话详情两个动作 -->
     <div v-if="menu === 'usage'" class="pop usage-pop" :style="{ left: popPos.left + 'px', bottom: popPos.bottom + 'px' }" @mouseenter="usageEnter" @mouseleave="usageLeave">
       <div v-for="(r, i) in usageRows" :key="i" class="ur" :class="{ divide: r.sep && i }">
         <span class="ul ellipsis">{{ r.label }}</span>
@@ -565,10 +619,12 @@ async function onTakeOver() {
       <button class="btn sm primary" title="把操作权拿到这个窗口，另一个窗口变成只能看" @click="onTakeOver">接管</button>
     </div>
 
-    <div ref="boxEl" class="box" :class="{ focused, dragging, disabled, big }">
-      <button class="expand" :class="{ on: big }" :title="big ? '还原输入框高度' : '放大输入框（写长消息用）'" @click="toggleBig">
-        <Icon :name="big ? 'collapse' : 'expand'" :size="14" />
-      </button>
+    <div ref="boxEl" class="box" :class="{ focused, dragging, disabled, resizing }">
+      <div class="composer-resizer" role="separator" tabindex="0" aria-label="调整输入框高度" aria-orientation="horizontal"
+        :aria-valuemin="Math.round(heightBounds().min)" :aria-valuemax="Math.round(heightBounds().max)" :aria-valuenow="manualHeight ? Math.round(manualHeight) : undefined"
+        title="上下拖动调整高度，双击恢复自动" @pointerdown.prevent="startComposerResize" @pointermove="moveComposerResize"
+        @pointerup="finishComposerResize" @pointercancel="finishComposerResize" @lostpointercapture="finishComposerResize"
+        @keydown="composerResizeKey" @dblclick="resetComposerHeight" />
       <!-- 附件：顺序就是发送时的编号（在悬停浮层里看），可以拖动调整 -->
       <div v-if="atts.length" class="atts">
         <div
@@ -611,6 +667,7 @@ async function onTakeOver() {
         ref="ta"
         v-model="S.composer.text"
         class="ta"
+        placeholder="输入消息"
         rows="1"
         :disabled="disabled"
         autofocus
@@ -632,8 +689,8 @@ async function onTakeOver() {
         <!-- 左边放不会变的：附件、上下文、模型、思考强度；右边放会变的：发送 / 插话 / 排队 / 停止。
              右边的按钮出现、消失只占中间的空白，左边一排位置始终不动 -->
         <button
-          ref="ringChip"
-          class="chip ring"
+          ref="contextChip"
+          class="chip context"
           :class="[ctxLevel, { on: menu === 'usage' }]"
           :aria-label="ctxPct != null ? `当前上下文 ${pctText}，点击查看用量` : `${ctxEmpty}，点击查看用量`"
           @mouseenter="usageEnter"
@@ -644,7 +701,6 @@ async function onTakeOver() {
             <circle class="track" cx="8" cy="8" r="6.5" />
             <circle v-if="ctxPct" class="arc" cx="8" cy="8" r="6.5" :stroke-dasharray="ringDash" transform="rotate(-90 8 8)" />
           </svg>
-          <span>{{ pctText }}</span>
         </button>
         <button ref="modelChip" class="chip" :class="{ on: menu === 'model' }" title="切换模型 (Ctrl+L)" :disabled="disabled" @click="toggleMenu('model')">
           <span class="ellipsis">{{ modelLabel }}</span>
@@ -678,12 +734,10 @@ async function onTakeOver() {
 /* 输入框整个悬在对话上面，只有卡片本身（和弹出的菜单）接鼠标事件，中间空白处让滚轮穿透给下面的对话 */
 .box, .usage, .pop { pointer-events: auto; }
 .box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow); padding: var(--sp2) var(--sp3); transition: border-color 0.15s, box-shadow 0.15s; }
-/* 放大按钮：垂直居中对准输入框第一行文字（.ta 的 6px 上内边距 + 半行高）；
-   右边距也跟上下一致（= 卡片内边距 12），四个方向的留白看着一样 */
-.expand { position: absolute; top: calc(var(--sp2) + 6px + (var(--lh) * 1em - 26px) / 2); right: var(--sp3); width: 26px; height: 26px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-sm); color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; z-index: 2; opacity: 0; box-shadow: var(--shadow-sm); transition: opacity 0.15s, color 0.15s, background 0.15s, border-color 0.15s; }
-.box:hover .expand, .box.focused .expand, .expand.on { opacity: 1; }
-.expand:hover { color: var(--text); border-color: var(--text-3); }
-.expand.on { color: var(--accent-text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+/* 顶边留一条容易抓住的热区；悬停 / 拖动时才显示细线，不占输入空间。 */
+.composer-resizer { position: absolute; z-index: 3; top: -5px; left: 12px; right: 12px; height: 10px; cursor: ns-resize; touch-action: none; outline: none; }
+.composer-resizer::after { content: ''; position: absolute; top: 4px; left: calc(50% - 22px); width: 44px; height: 2px; border-radius: 1px; background: var(--accent); opacity: 0; transition: opacity 0.15s; }
+.composer-resizer:hover::after, .composer-resizer:focus-visible::after, .box.resizing .composer-resizer::after { opacity: 1; }
 .box.focused { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: var(--shadow), 0 0 0 4px var(--accent-softer); }
 .box.dragging { border-style: dashed; border-color: var(--accent); background: var(--accent-softer); }
 .box.disabled { opacity: 0.6; }
@@ -692,8 +746,9 @@ async function onTakeOver() {
 /* 上下留白都按同一个数来：卡片 8px + 输入框 6px，再加上行高自带的半行空隙，文字上下一样宽。
    min-height 也只留一行的量（内容 + 上下 padding），不然单行时下面会多出一截空的，看着上紧下松。
    下边再留 8px：让输入框跟下面那排按钮（+ / 模型 / 发送）拉开一点，不贴着 */
-.ta { font-family: var(--font-chat); font-size: var(--fs-user); display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 6px 34px 6px 2px; margin-bottom: 8px; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 12px); max-height: 40vh; overflow-y: hidden; }
-.box.big .ta { min-height: 32vh; max-height: 72vh; }
+.ta { font-family: var(--font-chat); font-size: var(--fs-user); display: block; width: 100%; resize: none; border: 0; background: transparent; outline: none; padding: 6px 2px; margin-bottom: 8px; line-height: var(--lh); min-height: calc(var(--lh) * 1em + 12px); max-height: 72vh; overflow-y: hidden; }
+
+.ta::placeholder { color: var(--text-3); opacity: 1; }
 
 .bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .bar > * { flex-shrink: 0; }
@@ -732,7 +787,7 @@ async function onTakeOver() {
 .stop { background: var(--text); color: var(--panel); }
 .stop:hover { background: var(--err); color: #fff; }
 
-.atts { display: flex; gap: 8px; padding: 8px 36px 8px 0; flex-wrap: wrap; align-items: flex-start; }
+.atts { display: flex; gap: 8px; padding: 8px 0; flex-wrap: wrap; align-items: flex-start; }
 /* 附件：全是 72 高的方形磁贴 —— 图片是一张缩略图，文件/文件夹是“图标 + 名字 + 一行小字”，
    高度一样排得整齐，顺序也跟发送编号对得上。overflow 不能藏（右上角的叉号半悬在角上） */
 .att { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 72px; max-width: 260px; padding: 0; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-md); color: var(--text-2); cursor: grab; user-select: none; overflow: visible; transition: border-color 0.15s, background 0.15s; }
@@ -772,15 +827,15 @@ async function onTakeOver() {
 .desc { color: var(--text-2); font-size: var(--fs-sm); }
 .src { font-size: 11px; color: var(--text-3); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 0 6px; line-height: 18px; flex: none; }
 
-/* 上下文圆环：沿用 chip 的外观，里面是一个小进度环 + 百分比 */
-.ring { gap: 5px; padding: 0 9px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.ring circle { fill: none; stroke-width: 2.2; }
-.ring .track { stroke: var(--line); }
-.ring .arc { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 0.3s; }
-.ring.warn { color: var(--warn); }
-.ring.warn .arc { stroke: var(--warn); }
-.ring.danger { color: var(--err); }
-.ring.danger .arc { stroke: var(--err); }
+/* 恢复原来的小圆环，不显示数字。 */
+.context { gap: 5px; padding: 0 9px; flex-shrink: 0; }
+.context circle { fill: none; stroke-width: 2.2; }
+.context .track { stroke: var(--line); }
+.context .arc { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 0.3s; }
+.context.warn { color: var(--warn); }
+.context.warn .arc { stroke: var(--warn); }
+.context.danger { color: var(--err); }
+.context.danger .arc { stroke: var(--err); }
 .usage-pop { right: auto; width: 270px; padding: 8px 6px; }
 .ur { display: flex; align-items: center; gap: 12px; height: 26px; padding: 0 8px; font-size: var(--fs-sm); }
 .ur.divide { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line-2); height: 30px; }
@@ -788,21 +843,21 @@ async function onTakeOver() {
 .uv { flex: 1; min-width: 0; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
 .uact { display: flex; gap: 6px; margin-top: 6px; padding: 8px 8px 0; border-top: 1px solid var(--line-2); }
 .uact .btn { flex: 1; }
-.think-pop { bottom: 0; left: 0; right: auto; width: 220px; }
+.think-pop { bottom: 0; left: 0; right: auto; width: 180px; padding: 4px; font-size: var(--fs-sm); }
 .pop-title { font-size: var(--fs-xs); color: var(--text-3); padding: 4px 8px 6px; }
-.lv { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 6px; border-radius: var(--r-sm); cursor: pointer; }
+.lv { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 4px; border-radius: var(--r-sm); cursor: pointer; }
 .lv:hover { background: var(--hover); }
 .lv.cur { color: var(--accent-text); font-weight: 600; }
 .check { width: 16px; text-align: center; flex: none; }
-.small { font-size: var(--fs-xs); font-weight: normal; }
+.small { font-size: inherit; font-weight: normal; }
 @media (max-width: 768px) {
   .bar { gap: 4px; }
   .chip { max-width: none; min-width: 0; flex-shrink: 1; padding: 0 9px; }
   .box { border-radius: var(--r-xl); padding: 10px 10px 6px; }
 }
-/* 触屏没有悬停，放大按钮、附件的删除按钮得一直看得到 */
+/* 触屏没有悬停，附件删除按钮和高度拖动提示一直可见。 */
 @media (hover: none) {
-  .expand { opacity: 1; }
+  .composer-resizer::after { opacity: 0.4; }
   .att .x { display: inline-flex; }
 }
 </style>

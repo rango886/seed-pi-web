@@ -52,6 +52,7 @@ function toggle() {
   else open();
 }
 async function open() {
+  if (props.variant === 'side') return browse();
   if (opened.value) {
     panel.value?.querySelector('button')?.focus();
     return;

@@ -89,6 +89,15 @@ test('long replies follow the bottom, but resizing does not override manual read
   assert.equal(s.away.value, false);
 });
 
+test('expanding welcome shortcuts does not jump to the end of the list', async (t) => {
+  const { state: s, el, resize } = await chat(t);
+  el.scrollTop = 0;
+  s.shortcutsOpen.value = true;
+  el.scrollHeight += 1000;
+  resize();
+  assert.equal(el.scrollTop, 0);
+});
+
 test('queued streaming autoscroll rechecks whether the user has scrolled away', async (t) => {
   const { state: s, S, el } = await chat(t);
   S.tick++;

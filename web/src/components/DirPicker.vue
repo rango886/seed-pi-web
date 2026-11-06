@@ -184,7 +184,6 @@ function onFavDrop(e) {
 function close() {
   S.dirPicker = false;
 }
-const verb = computed(() => (mode.value === 'switch' ? '打开目录' : '使用此目录'));
 
 /** 主操作：当前选中的目录在当前标签页打开 / 开新会话；按住 Ctrl 就丢新标签页 */
 function openCurrent(e) {
@@ -255,6 +254,7 @@ function onKey(e) {
               @drop="onFavDrop"
               @dragend="endFavDrag"
             >
+              <Icon name="folder" :size="15" />
               <span class="grow path">{{ p }}</span>
               <button class="favdel" title="取消收藏" draggable="false" @click.stop="toggleFavorite(p)"><Icon name="close" :size="12" /></button>
             </div>
@@ -262,6 +262,7 @@ function onKey(e) {
 
             <div class="grp">最近使用</div>
             <div v-for="r in recent" :key="r.cwd" class="item" :class="{ active: rowAt === rowRecent(r.cwd) }" :title="r.cwd" @click="reveal(r.cwd, rowRecent(r.cwd))" @dblclick="openNow(r.cwd)">
+              <Icon name="folder" :size="15" />
               <span class="grow path">{{ r.cwd }}</span>
               <span class="tiny dim">{{ relTime(r.modified) }}</span>
             </div>
@@ -274,6 +275,8 @@ function onKey(e) {
                 <input ref="inputEl" v-model="pathInput" class="input path-input mono" placeholder="输入路径回车进入；不存在的会直接建出来" @keydown="onPathKey" @scroll="syncGhostScroll" />
                 <div v-if="ghost" ref="ghostEl" class="ghost" aria-hidden="true"><span class="ghost-typed">{{ pathInput }}</span><span class="ghost-rest">{{ ghost }}</span></div>
               </div>
+              <button class="btn primary" :disabled="!current" :title="mode === 'switch' ? '在当前标签打开所选目录' : '在所选目录创建会话'" @click="openCurrent">创建</button>
+              <button class="btn" :disabled="!current" title="在新标签中使用所选目录" @click="newTab">新标签</button>
             </div>
             <div v-if="error" class="err small">{{ error }}</div>
 
@@ -296,12 +299,6 @@ function onKey(e) {
         </div>
       </div>
 
-      <div class="modal-foot foot">
-        <span class="ellipsis mono tiny dim pick" :title="current">{{ current || '还没选目录' }}</span>
-        <div class="grow" />
-        <button class="btn" @click="newTab">在新标签页{{ verb }}</button>
-        <button class="btn primary" @click="openCurrent">{{ verb }}</button>
-      </div>
     </div>
   </div>
 </template>
@@ -338,6 +335,7 @@ function onKey(e) {
 
 .right { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); overflow: hidden; }
 .top { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
+.top > .btn { flex: none; }
 .pathbox { position: relative; flex: 1; min-width: 0; }
 .path-input { width: 100%; }
 /* 灰色补全：和输入框同样的字体和内边距叠在它上面（1px 边框也算上），已经打出来的部分留空，剩下的灰字就接在光标后面 */
@@ -345,9 +343,6 @@ function onKey(e) {
 .ghost-typed { visibility: hidden; }
 .err { padding: 0 8px 6px; color: var(--err); }
 .tree { flex: 1; min-height: 0; overflow: auto; padding: 6px; }
-
-.foot { align-items: center; gap: 8px; flex-wrap: wrap; }
-.pick { max-width: 100%; min-width: 0; flex: 0 1 auto; }
 
 @media (max-width: 768px) {
   .dirs { width: 96vw; height: 86vh; }
