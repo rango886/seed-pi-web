@@ -37,7 +37,7 @@ export async function waitUntil(fn, timeout = 10000) {
   throw new Error('fixture wait timed out');
 }
 
-export async function startConversationServer({ seed = false } = {}) {
+export async function startConversationServer({ seed = false, modelDelay = 80 } = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'seed-web-conversation-'));
   const piHome = path.join(dir, 'pi');
   const requests = [];
@@ -52,7 +52,7 @@ export async function startConversationServer({ seed = false } = {}) {
     const chunk = data => res.write('data: ' + JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: 'local', ...data }) + '\n\n');
     chunk({ choices: [{ index: 0, delta: { role: 'assistant', content: `测试回复：${text}` }, finish_reason: null }] });
     // Slow enough to exercise multi-window ordering, fast enough for test suites.
-    await new Promise(r => setTimeout(r, 80));
+    await new Promise(r => setTimeout(r, modelDelay));
     chunk({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 } });
     res.end('data: [DONE]\n\n');
   });

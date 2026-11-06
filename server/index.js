@@ -159,6 +159,7 @@ function onMoved(a, from) {
 async function createAgent({ cwd, sessionFile }) {
   const st = await fsp.stat(cwd).catch(() => null);
   if (!st?.isDirectory()) throw new Error(`目录不存在：${cwd}`);
+  assertNotDeleting(sessionFile);
   const a = new PiAgent({ cwd, sessionFile });
   a.lastUsed = Date.now();
   agents.set(a.id, a);
@@ -209,9 +210,14 @@ async function lazyView(cwd, file) {
 // 正在启动的进程：同一个会话同时被要求启动两次（两个窗口、连点）只起一个
 const starting = new Map(); // 会话文件（规范化）-> Promise<PiAgent>
 const fileKey = (f) => (process.platform === 'linux' ? path.resolve(f) : path.resolve(f).toLowerCase());
+const deleting = new Set();
+function assertNotDeleting(file) {
+  if (file && deleting.has(fileKey(file))) throw new Error('会话正在删除中');
+}
 
 /** 要真正用这个会话了：有进程就用，没有就起一个。file 为空就是开一个新会话 */
 async function ensureAgent(cwd, file) {
+  assertNotDeleting(file);
   if (file && !fs.existsSync(file)) file = null; // 新会话还没写盘进程就被回收了：当成新会话重新开
   if (!file) {
     await mustBeDir(cwd);
@@ -232,6 +238,7 @@ async function ensureAgent(cwd, file) {
 
 /** 打开某个会话文件：已经有进程就连上，没有就只读文件，先不起进程 */
 async function openSession(file) {
+  assertNotDeleting(file);
   const found = findBySession(file);
   if (found) return found;
   const cwd = await readHeaderCwd(file);
@@ -246,11 +253,12 @@ async function openSession(file) {
 async function openDir(cwd, sessionFile) {
   await mustBeDir(cwd);
   if (sessionFile) {
+    assertNotDeleting(sessionFile);
     const a = findBySession(sessionFile);
     if (a && samePath(a.cwd, cwd)) return a;
     if (!a && samePath((await readHeaderCwd(sessionFile)) || '', cwd)) return lazyView(cwd, sessionFile);
   }
-  const live = [...agents.values()].filter((a) => a.alive && samePath(a.cwd, cwd)).sort((x, y) => y.lastUsed - x.lastUsed);
+  const live = [...agents.values()].filter((a) => a.alive && (!a.sessionFile || !deleting.has(fileKey(a.sessionFile))) && samePath(a.cwd, cwd)).sort((x, y) => y.lastUsed - x.lastUsed);
   return live[0] || lazyView(cwd, null);
 }
 
@@ -268,6 +276,7 @@ async function createSession(cwd, ws) {
  * 快照那一刻就开始转发，打开的回复发出去之前来的事件先攒着（ctx.after 里补发）
  */
 async function attachWs(ws, a, ctx) {
+  assertNotDeleting(a.sessionFile);
   if (ws.agentId && ws.agentId !== a.id) leave(ws);
   else ws.agentId = null; // 重新连同一个进程：快照之前先别转发，免得重复
   claim(a, ws);
@@ -357,10 +366,27 @@ app.delete(
   wrap(async (req, res) => {
     const file = String(req.query.file || '');
     if (!isInside(file, await liveRoots()) || !file.endsWith('.jsonl')) throw new Error('不允许删除这个文件');
-    if ([...agents.values()].some((a) => a.sessionFile && samePath(a.sessionFile, file))) throw new Error('会话正在使用中');
-    await fsp.unlink(file);
-    await sessionArchive.set(file, false);
-    res.json({ ok: true });
+    const key = fileKey(file);
+    assertNotDeleting(file);
+    deleting.add(key);
+    try {
+      // 启动中也先等它完成；锁住这个文件，避免关闭期间又起一个进程。
+      await starting.get(key)?.catch(() => {});
+      const active = [...agents.values()].filter((a) => a.sessionFile && samePath(a.sessionFile, file));
+      await Promise.all(active.map((a) => {
+        a.quiet = true;
+        return a.stop();
+      }));
+      await fsp.unlink(file);
+      await sessionArchive.set(file, false);
+      for (const c of clients) {
+        if (active.some((a) => a.id === c.agentId)) c.agentId = null;
+        send(c, { t: 'session_deleted', file });
+      }
+      res.json({ ok: true });
+    } finally {
+      deleting.delete(key);
+    }
   }),
 );
 

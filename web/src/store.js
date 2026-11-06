@@ -201,6 +201,9 @@ function onServerMsg(msg) {
         loadStats();
       }
       break;
+    case 'session_deleted':
+      sessionDeleted(msg.file);
+      break;
     case 'session_archive':
       for (const s of S.sessions) if (normPath(s.file) === normPath(msg.file)) s.archived = msg.archived;
       loadSessionsSoon();
@@ -1933,11 +1936,33 @@ export const setSessionArchived = guard(async (s, archived) => {
   }
 });
 
-export const deleteSession = guard(async (s) => {
-  const r = await ask({ method: 'confirm', title: '删除会话', message: `确定删除「${s.title}」？文件会被永久删除。` });
-  if (!r.confirmed) return;
-  await http.del('/api/sessions', { file: s.file });
-  loadSessions();
+function sessionDeleted(file) {
+  const key = normPath(file);
+  S.sessions = S.sessions.filter((s) => normPath(s.file) !== key);
+  if (normPath(localStorage.getItem('seed-pi-web-session')) === key) localStorage.setItem('seed-pi-web-session', '');
+  const last = readJson(LAST_KEY, {});
+  for (const cwd of Object.keys(last)) if (normPath(last[cwd]) === key) delete last[cwd];
+  localStorage.setItem(LAST_KEY, JSON.stringify(last));
+  if ([S.agent?.sessionFile, S.lazy?.file, S.detached?.file].some((f) => f && normPath(f) === key)) {
+    openLazy({ cwd: S.cwd, file: null, messages: [] });
+  } else loadSessions();
+}
+
+const deletingSessions = new Set();
+export const deleteSession = guard(async (s, event) => {
+  const key = normPath(s.file);
+  if (deletingSessions.has(key)) return;
+  deletingSessions.add(key);
+  try {
+    if (!event?.ctrlKey) {
+      const r = await ask({ method: 'confirm', title: '删除会话', message: `确定删除「${s.title}」，文件会被永久删除。` });
+      if (!r.confirmed) return;
+    }
+    await http.del('/api/sessions', { file: s.file });
+    sessionDeleted(s.file);
+  } finally {
+    deletingSessions.delete(key);
+  }
 });
 
 // ---------------- 终端 ----------------

@@ -501,7 +501,7 @@ test('branches share the panel styling but sit directly above the same-width com
   }
   const app = parse(await source('App.vue')).descriptor.template.content;
   assert.doesNotMatch(app, /<ConversationBranches/);
-  assert.match(app, /class="ib panel-btn"[^>]*title="对话分支/);
+  assert.match(app, /class="ib panel-btn"[^>]*title="对话分支[^>]*><Icon name="branching" :size="16" \/><\/button>/);
   const chat = parse(await source('components/ChatView.vue')).descriptor.template.content;
   assert.match(chat, /<div ref="dockEl"[\s\S]*<ConversationBranches @jump="jumpEntry" \/>\s*<Composer \/>/);
   const branches = parse(await source('components/ConversationBranches.vue')).descriptor.template.content;

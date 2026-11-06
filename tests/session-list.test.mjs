@@ -98,7 +98,7 @@ test('sidebar switches independent settings and intersects mode, archive and sea
   let menu;
   const actions = [];
   const { state: s } = await setup(t, 'SidePanel.vue', { storage, imports: {
-    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived: (...args) => actions.push(args), renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: (cwd) => S.favorites.includes(cwd) },
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession: (...args) => actions.push(args), setSessionArchived: (...args) => actions.push(args), renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: (cwd) => S.favorites.includes(cwd) },
     '../settings.js': { view: vue.reactive({}), toggleSide() {}, closeDrawer() {}, openMenu(x, y, items) { menu = items; } },
   } });
   const files = () => s.groups.value.flatMap((g) => g.items.map((row) => row.file));
@@ -154,6 +154,10 @@ test('sidebar switches independent settings and intersects mode, archive and sea
   s.sessionMenu({ clientX: 0, clientY: 0 }, S.sessions[0]);
   menu.find((it) => it.label === '取消归档').run();
   assert.equal(actions[0][1], false);
+  const click = { ctrlKey: true };
+  menu.find((it) => it.label === '删除').run(click);
+  assert.equal(actions[1][0], S.sessions[0]);
+  assert.equal(actions[1][1], click, 'delete uses modifiers from the menu click, not the original right click');
   assert.ok(!menu.some((it) => it.label === '显示模式'), 'current directory has no layout menu');
   assert.equal(preferences.readSessionView(storage, 'all').showCount, false);
   assert.equal(preferences.readSessionView(storage, 'fav').archive, 'archived');
@@ -311,6 +315,11 @@ test('display dropdown hides directory-only options, emits patches, stays open a
   assert.equal(s.position.value.maxWidth, '200.5px', 'a narrow sidebar shrinks the menu instead of shifting its right edge');
   const source = await fs.readFile(new URL('../web/src/components/SessionDisplayMenu.vue', import.meta.url), 'utf8');
   const triggerTemplate = parse(source).descriptor.template.content.split('<Teleport')[0];
-  assert.ok(!triggerTemplate.includes('<Icon'), 'the display trigger is text only');
-  assert.match(triggerTemplate, />\s*显示\s*<\/button>/, 'the trigger always says 显示, regardless of scope or archive filter');
+  assert.doesNotMatch(triggerTemplate, /<Icon/, 'display trigger is text only');
+  assert.match(triggerTemplate, />\s*显示\s*<\/button>/);
+  assert.match(triggerTemplate, /aria-label="会话筛选和显示设置"/);
+  const sidebar = await fs.readFile(new URL('../web/src/components/SidePanel.vue', import.meta.url), 'utf8');
+  assert.match(sidebar, /@click="toggleSort">\{\{ sortLabel \}\}<\/button>/, 'sort trigger is text only');
+  assert.match(sidebar, /:aria-label="`当前按\$\{sortLabel\}排序，点击切换`"/);
+  assert.match(sidebar, /:title="`当前模式按\$\{sortLabel\}排序，点击切换`"/);
 });

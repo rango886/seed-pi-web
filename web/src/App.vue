@@ -206,7 +206,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
           <button class="ib panel-btn" :class="{ on: view.panel === 'files' }" title="文件 (Ctrl+E)" @click="togglePanel('files')"><Icon name="folder" /></button>
           <button v-if="S.info.terminal" class="ib" :class="{ on: inTerm }" title="终端 (Ctrl+`)" @click="toggleTerminal"><Icon name="terminal" /></button>
         </template>
-        <button class="ib panel-btn" :class="{ on: S.branchesOpen }" title="对话分支 (/tree)" @click="S.branchesOpen ? S.branchesOpen = false : openBranches()"><Icon name="branch" /></button>
+        <button class="ib panel-btn" :class="{ on: S.branchesOpen }" title="对话分支 (/tree)" @click="S.branchesOpen ? S.branchesOpen = false : openBranches()"><Icon name="branching" :size="16" /></button>
         <button class="ib" title="更多（也可以在页面上点右键）" @click.stop="moreMenu"><Icon name="more" /></button>
       </header>
 

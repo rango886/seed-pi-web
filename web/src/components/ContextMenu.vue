@@ -29,14 +29,14 @@ watch(
 );
 
 const close = () => (view.ctx = null);
-function run(it, i) {
+function run(it, i, event) {
   if (it.disabled) return;
   if (it.children) {
     sub.value = sub.value === i ? -1 : i;
     return;
   }
   close();
-  it.run?.();
+  it.run?.(event);
 }
 const onDown = (e) => view.ctx && !e.target.closest('.ctxmenu') && close();
 const onKey = (e) => view.ctx && e.key === 'Escape' && (e.stopPropagation(), close());
@@ -65,7 +65,7 @@ onUnmounted(() => {
         class="mi"
         :class="{ dis: it.disabled, danger: it.danger, open: sub === i, cur: it.check }"
         @mouseenter="!view.mobile && (sub = it.children ? i : -1)"
-        @click="run(it, i)"
+        @click="run(it, i, $event)"
       >
         <span class="grow ellipsis">{{ it.label }}</span>
         <span v-if="it.hint" class="key">{{ it.hint }}</span>
@@ -75,7 +75,7 @@ onUnmounted(() => {
         <div v-if="it.children && sub === i" class="ctxmenu submenu" :class="{ left: subLeft, inline: view.mobile }" @click.stop>
           <template v-for="(c, j) in it.children" :key="j">
             <div v-if="c === '-'" class="sep" />
-            <div v-else class="mi" :class="{ dis: c.disabled, danger: c.danger, cur: c.check }" @click="run(c, j)">
+            <div v-else class="mi" :class="{ dis: c.disabled, danger: c.danger, cur: c.check }" @click="run(c, j, $event)">
               <span class="grow ellipsis">{{ c.label }}</span>
               <span v-if="c.hint" class="key">{{ c.hint }}</span>
             </div>

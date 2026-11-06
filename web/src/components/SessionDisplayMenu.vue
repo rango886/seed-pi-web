@@ -106,7 +106,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.display-trigger { display: inline-flex; align-items: center; height: 22px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; white-space: nowrap; }
+.display-trigger { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; white-space: nowrap; }
 .display-trigger:hover, .display-trigger.on { border-color: var(--accent); color: var(--accent-text); }
 .display-trigger:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
 .display-menu { position: fixed; z-index: 75; width: 216px; max-width: calc(100vw - 16px); overflow-y: auto; padding: 5px; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); color: var(--text); font-size: var(--fs-sm); }

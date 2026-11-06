@@ -219,7 +219,7 @@ function sessionMenu(e, s) {
     { label: '复制文件路径', run: () => navigator.clipboard.writeText(s.file) },
     ...(s.unsaved ? [] : ['-',
       { label: s.archived ? '取消归档' : '归档', run: () => setSessionArchived(s, !s.archived) },
-      { label: '删除', danger: true, run: () => deleteSession(s) },
+      { label: '删除', danger: true, hint: 'Ctrl 跳过确认', run: (event) => deleteSession(s, event) },
     ]),
     // 全部 / 收藏里列表可能被会话铺满、右键点不到空白处，所以会话的菜单里也留一个显示模式的入口
     ...(S.sessionMode === 'dir' ? [] : ['-', { label: '显示模式', children: layoutItems() }]),
@@ -246,7 +246,7 @@ function sessionMenu(e, s) {
       <div class="search">
         <Icon name="search" :size="15" />
         <input v-model="q" placeholder="搜索会话" @keydown.esc="q = ''" />
-        <button type="button" class="sbtn" :title="`当前模式按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
+        <button type="button" class="sbtn" :title="`当前模式按${sortLabel}排序，点击切换`" :aria-label="`当前按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
         <SessionDisplayMenu :mode="S.sessionMode" :settings="cur" @mode-change="setSessionMode" @change="saveUI" />
       </div>
       <div ref="listElement" class="list" :class="{ scrolling: listScrolling }" :style="{ '--list-scrollbar-width': listScrollbarWidth + 'px' }" @scroll.passive="onListScroll" @contextmenu="listMenu">
@@ -279,7 +279,7 @@ function sessionMenu(e, s) {
               <span v-if="showSessionPath" class="sdir" :title="s.cwd">{{ cur.dirLabel === 'path' ? s.cwd : base(s.cwd) }}</span>
               <span v-if="sessionInfo(s, cur, timeOf)" class="sinfo">{{ sessionInfo(s, cur, timeOf) }}</span>
               <button v-if="!s.unsaved" type="button" class="sess-action arch" :title="s.archived ? '取消归档' : '归档'" :aria-label="s.archived ? '取消归档' : '归档'" @click.stop="setSessionArchived(s, !s.archived)"><Icon :name="s.archived ? 'unarchive' : 'archive'" :size="14" /></button>
-              <button v-if="!s.unsaved" type="button" class="sess-action del" title="删除" aria-label="删除" @click.stop="deleteSession(s)"><Icon name="trash" :size="14" /></button>
+              <button v-if="!s.unsaved" type="button" class="sess-action del" title="删除（Ctrl+点击跳过确认）" aria-label="删除" @click.stop="deleteSession(s, $event)"><Icon name="trash" :size="14" /></button>
             </div>
           </template>
         </template>
@@ -347,7 +347,7 @@ function sessionMenu(e, s) {
 /* 状态点和间隔共占 14px，抵消这部分宽度，避免标题左右跳动。 */
 .sess.child.has-st { padding-left: calc(var(--session-indent) - 14px); }
 .gcount { font-size: var(--fs-xs); min-width: 20px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; padding: 0 5px; border-radius: var(--r-pill); background: var(--active); color: var(--text-3); }
-.sbtn { height: 22px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
+.sbtn { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
 .sbtn:hover { border-color: var(--accent); color: var(--accent-text); }
 .list > .sess, .list > .gname { content-visibility: auto; contain-intrinsic-size: auto 30px; }
 .sess { display: flex; align-items: center; gap: 8px; height: 30px; margin-bottom: 2px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; position: relative; font-size: calc(var(--fs) - 1px); }
