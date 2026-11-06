@@ -16,12 +16,12 @@ test('deleting a busy owned session stops its process, removes the file and arch
   const active = await waitUntil(() => owner.records.findLast(m => m.t === 'agents')?.list.find(a => a.id === agent.id && a.saved && a.running));
   const file = active.sessionFile;
   await observer.call('open_session', { file });
-  const archiveResponse = await fetch(fixture.url + '/api/sessions/archive', {
+  const archiveResponse = await fixture.fetch('/api/sessions/archive', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ file, archived: true }),
   });
   assert.equal(archiveResponse.status, 200);
 
-  const remove = file => fetch(fixture.url + '/api/sessions?file=' + encodeURIComponent(file), { method: 'DELETE' });
+  const remove = file => fixture.fetch('/api/sessions?file=' + encodeURIComponent(file), { method: 'DELETE' });
   assert.equal((await remove(path.join(fixture.dir, 'outside.jsonl'))).status, 400, 'validation still protects files outside session roots');
   const result = await remove(file);
   assert.equal(result.status, 200, await result.text());
@@ -34,7 +34,7 @@ test('deleting a busy owned session stops its process, removes the file and arch
     assert.ok(client.records.indexOf(exit) < client.records.findIndex(m => m.t === 'session_deleted'), 'wait for process exit before reporting deletion');
   }
   await assert.rejects(owner.call('rpc', { agentId: agent.id, cmd: { type: 'get_state' } }));
-  const sessions = await (await fetch(fixture.url + '/api/sessions?all=1')).json();
+  const sessions = await (await fixture.fetch('/api/sessions?all=1')).json();
   assert.ok(!sessions.some(s => s.file === file));
   const archive = JSON.parse(await fs.readFile(path.join(fixture.dir, 'web', 'session-archive.json'), 'utf8'));
   assert.ok(!JSON.stringify(archive).includes(path.basename(file)));

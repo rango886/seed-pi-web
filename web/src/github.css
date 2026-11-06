@@ -1,6 +1,6 @@
 /* GitHub 风格：两部分互相独立，可以分别开关
    1. [data-md='github']：只管回复正文的 Markdown（仿 github-markdown-css）
-   2. [data-ui='github']：整体界面配色和控件外观（仿 GitHub Primer）
+   2. [data-ui^='github']：整体界面配色和控件外观（仿 GitHub Primer，素白共用控件）
    选择器都以 :root 开头，是为了比组件里的 scoped 样式（.x[data-v-xxx]）多一级优先级，稳稳盖过去 */
 
 /* ================= 1. Markdown ================= */
@@ -92,7 +92,7 @@
 :root[data-md^='github'] .md img { border-radius: var(--r-md); background: transparent; }
 
 /* ================= 2. 整体界面 ================= */
-:root[data-ui='github'] {
+:root[data-ui^='github'] {
   --bg: #f6f8fa;
   --panel: #ffffff;
   --panel-2: #f6f8fa;
@@ -137,7 +137,7 @@
   --hl-meta: #59636e;
 }
 /* GitHub 深色也走纯黑底（不要那种蓝灰色），只保留 GitHub 的绿/红/蓝强调色 */
-:root[data-ui='github'][data-theme='dark'] {
+:root[data-ui^='github'][data-theme='dark'] {
   --bg: #000000;
   --panel: #0b0b0b;
   --panel-2: #121212;
@@ -181,38 +181,38 @@
 }
 
 /* 按钮、输入框 */
-:root[data-ui='github'] .btn { background: var(--gh-btn); border-color: var(--line); box-shadow: var(--shadow-sm); font-weight: 500; }
-:root[data-ui='github'] .btn:hover { background: var(--gh-btn-h); border-color: var(--line); }
-:root[data-ui='github'] .btn.flat { background: transparent; border-color: transparent; box-shadow: none; }
-:root[data-ui='github'] .btn.flat:hover { background: var(--hover); }
-:root[data-ui='github'] .btn.primary { background: var(--gh-green); border-color: #1f232826; color: #fff; }
-:root[data-ui='github'] .btn.primary:hover { background: var(--gh-green-h); }
-:root[data-ui='github'] .btn.danger { color: var(--err); }
-:root[data-ui='github'] .btn.danger:hover { background: var(--err); border-color: var(--err); color: #fff; }
-:root[data-ui='github'] .input { background: var(--panel); }
-:root[data-ui='github'] .input:focus { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+:root[data-ui^='github'] .btn { background: var(--gh-btn); border-color: var(--line); box-shadow: var(--shadow-sm); font-weight: 500; }
+:root[data-ui^='github'] .btn:hover { background: var(--gh-btn-h); border-color: var(--line); }
+:root[data-ui^='github'] .btn.flat { background: transparent; border-color: transparent; box-shadow: none; }
+:root[data-ui^='github'] .btn.flat:hover { background: var(--hover); }
+:root[data-ui^='github'] .btn.primary { background: var(--gh-green); border-color: #1f232826; color: #fff; }
+:root[data-ui^='github'] .btn.primary:hover { background: var(--gh-green-h); }
+:root[data-ui^='github'] .btn.danger { color: var(--err); }
+:root[data-ui^='github'] .btn.danger:hover { background: var(--err); border-color: var(--err); color: #fff; }
+:root[data-ui^='github'] .input { background: var(--panel); }
+:root[data-ui^='github'] .input:focus { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 
 /* 标签页：GitHub 仓库页那种底部橙色下划线 */
-:root[data-ui='github'] .tab.active { background: var(--panel); border-color: var(--line); color: var(--text); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+:root[data-ui^='github'] .tab.active { background: var(--panel); border-color: var(--line); color: var(--text); border-radius: var(--r-sm) var(--r-sm) 0 0; }
 
 /* 列表选中：浅灰底 + 左侧一根蓝色竖条（GitHub ActionList 的样子） */
-:root[data-ui='github'] .sel.active { background: var(--active); }
-:root[data-ui='github'] .sess.active { background: var(--active); box-shadow: none; }
-:root[data-ui='github'] .sess.active::before { content: ''; position: absolute; left: -6px; top: 6px; bottom: 6px; width: 4px; border-radius: var(--r-sm); background: var(--accent); }
-:root[data-ui='github'] .sess.active .stitle { color: var(--text); }
+:root[data-ui^='github'] .sel.active { background: var(--active); }
+:root[data-ui^='github'] .sess.active { background: var(--active); box-shadow: none; }
+:root[data-ui^='github'] .sess.active::before { content: ''; position: absolute; left: -6px; top: 6px; bottom: 6px; width: 4px; border-radius: var(--r-sm); background: var(--accent); }
+:root[data-ui^='github'] .sess.active .stitle { color: var(--text); }
 
 /* 输入框：聚焦时一圈主题色描边；发送键用 GitHub 绿 */
-:root[data-ui='github'] .box { box-shadow: var(--shadow); }
-:root[data-ui='github'] .box.focused { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-:root[data-ui='github'] .chip { background: var(--gh-btn); }
-:root[data-ui='github'] .chip:hover,
-:root[data-ui='github'] .chip.on { background: var(--gh-btn-h); border-color: var(--line); color: var(--text); }
-:root[data-ui='github'] .send { background: var(--gh-green); }
-:root[data-ui='github'] .send:hover { background: var(--gh-green-h); }
-:root[data-ui='github'] .send:disabled { background: var(--gh-btn); color: var(--text-2); border-color: var(--line); }
+:root[data-ui^='github'] .box { box-shadow: var(--shadow); }
+:root[data-ui^='github'] .box.focused { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+:root[data-ui^='github'] .chip { background: var(--gh-btn); }
+:root[data-ui^='github'] .chip:hover,
+:root[data-ui^='github'] .chip.on { background: var(--gh-btn-h); border-color: var(--line); color: var(--text); }
+:root[data-ui^='github'] .send { background: var(--gh-green); }
+:root[data-ui^='github'] .send:hover { background: var(--gh-green-h); }
+:root[data-ui^='github'] .send:disabled { background: var(--gh-btn); color: var(--text-2); border-color: var(--line); }
 
 /* 思考 / 工具卡片的小标签：不再描边，跟着上面的 .blk-chip 走；只把悬停底色换成 GitHub 的 */
-:root[data-ui='github'] .blk-head:hover { background: var(--panel-2); }
+:root[data-ui^='github'] .blk-head:hover { background: var(--panel-2); }
 
 /* 弹层 */
-:root[data-ui='github'] .modal-mask { background: #1f232866; backdrop-filter: none; }
+:root[data-ui^='github'] .modal-mask { background: #1f232866; backdrop-filter: none; }

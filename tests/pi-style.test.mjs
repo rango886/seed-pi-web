@@ -63,7 +63,7 @@ async function tool(t, UI, props, file = 'ToolCard.vue') {
 
 test('pi preset restores the export font, 12px/18px typography and 800px column without changing disclosure preferences', async (t) => {
   const s = await settings(t, { __v: 13, toolsOpen: true });
-  assert.deepEqual(Array.from(s.STYLES, (style) => style.value), ['modern', 'pi', 'github']);
+  assert.deepEqual(Array.from(s.STYLES, (style) => style.value), ['github-warm', 'github', 'pi']);
   s.useStyle('pi');
   await vue.nextTick();
   assert.equal(s.UI.font, s.PI_FONT);
@@ -86,6 +86,120 @@ test('pi preset restores the export font, 12px/18px typography and 800px column 
   await vue.nextTick();
   assert.equal(s.root.dataset.ui, 'pi');
   assert.equal(s.root.dataset.md, 'github', 'Markdown remains independent');
+});
+
+test('warm GitHub preset keeps GitHub layout, uses PingFang for UI and chat, and persists independently', async (t) => {
+  const s = await settings(t, { __v: 19, theme: 'dark', toolsDisplay: 'expanded' });
+  const github = s.STYLES.find((style) => style.value === 'github').settings;
+  const warm = s.STYLES.find((style) => style.value === 'github-warm');
+  assert.equal(warm.label, '素白');
+  for (const [key, value] of Object.entries(github)) {
+    if (!['accent', 'font', 'chatFont'].includes(key)) assert.equal(warm.settings[key], value, key);
+  }
+  s.useStyle(warm.value);
+  await vue.nextTick();
+  assert.equal(s.UI.font, "'PingFang SC'");
+  assert.equal(s.UI.chatFont, "'PingFang SC'");
+  assert.ok(s.values.get('--font').startsWith("'PingFang SC',"));
+  assert.equal(s.values.get('--font-chat'), s.values.get('--font'));
+  assert.equal(s.UI.codeFont, s.GITHUB_CODE);
+  assert.equal(s.UI.accent, '#32827b');
+  assert.equal(s.root.dataset.ui, 'github-warm');
+  assert.equal(s.root.dataset.md, 'github');
+  assert.equal(s.root.dataset.theme, 'dark', 'style switching preserves appearance');
+  assert.equal(s.UI.toolsDisplay, 'expanded');
+  const restored = await settings(t, JSON.parse(s.storage.get('seed-pi-web-settings')));
+  assert.equal(restored.root.dataset.ui, 'github-warm');
+  assert.equal(restored.UI.chatFont, "'PingFang SC'");
+  s.UI.mdStyle = 'default';
+  await vue.nextTick();
+  assert.equal(s.root.dataset.ui, 'github-warm');
+  assert.equal(s.root.dataset.md, 'default');
+  s.useStyle('github');
+  await vue.nextTick();
+  assert.equal(s.UI.font, s.GITHUB_FONT);
+  assert.equal(s.UI.chatFont, '');
+  assert.equal(s.UI.accent, '#0969da');
+  assert.equal(s.root.dataset.ui, 'github');
+});
+
+test('warm palette reuses GitHub controls without changing geometry, typography or other Markdown styles', async () => {
+  const read = (path) => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
+  const [warm, github, main] = await Promise.all([read('github-warm.css'), read('github.css'), read('main.js')]);
+  assert.match(main, /import '\.\/github-warm\.css';/);
+  assert.ok(main.indexOf("import './github.css'") < main.indexOf("import './github-warm.css'"));
+  assert.match(github, /:root\[data-ui\^='github'\] \.btn/);
+  assert.match(github, /:root\[data-ui\^='github'\] \.send:disabled/);
+  assert.match(warm, /:root\[data-ui='github-warm'\]\[data-theme='dark'\]/);
+  assert.match(warm, /:root\[data-ui='github-warm'\]\[data-md='github'\]/);
+  assert.match(warm, /--chat-bg: #fffefd/);
+  assert.match(warm, /--gh-link: var\(--warm-link\)/);
+  assert.match(warm, /--gh-green: #27845f/);
+  for (const appearance of ['', "[data-theme='dark']"]) {
+    const block = (css, selector) => css.slice(css.indexOf(selector)).split('{')[1].split('}')[0];
+    const base = block(github, `:root[data-ui^='github']${appearance} {`);
+    const palette = block(warm, `:root[data-ui='github-warm']${appearance} {`);
+    for (const [name] of base.matchAll(/--[\w-]+(?=:)/g)) {
+      assert.ok(palette.includes(name + ':'), appearance + ': missing override ' + name);
+    }
+  }
+  assert.doesNotMatch(warm, /(?:font-family|font-size|padding|margin|border-radius|--r-[\w-]+|--bubble-me(?:-text|-border)?):/);
+});
+
+test('warm style upgrades only its former default accent without resetting user preferences', async (t) => {
+  const s = await settings(t, { __v: 19, uiStyle: 'github-warm', accent: '#82704e', font: "'My Font'", chatFontSize: 18 });
+  assert.equal(s.UI.accent, '#32827b');
+  assert.equal(s.UI.font, "'My Font'");
+  assert.equal(s.UI.chatFontSize, 18);
+  for (const saved of [
+    { __v: 19, uiStyle: 'github-warm', accent: '#123456' },
+    { __v: 19, uiStyle: 'github', accent: '#82704e' },
+    { __v: 20, uiStyle: 'github-warm', accent: '#82704e' },
+  ]) {
+    const custom = await settings(t, saved);
+    assert.equal(custom.UI.accent, saved.accent);
+  }
+});
+
+test('warm surfaces stay nearly white while buttons, links and semantic colors remain distinct', async () => {
+  const css = await fs.readFile(new URL('../web/src/github-warm.css', import.meta.url), 'utf8');
+  const light = css.split('{')[1].split('}')[0];
+  const color = name => {
+    const hex = light.match(new RegExp(`--${name}: #(\\w{6});`))?.[1];
+    assert.ok(hex, name);
+    return hex.match(/../g).map(part => parseInt(part, 16));
+  };
+  for (const name of ['bg', 'panel', 'chat-bg', 'elev']) {
+    const [r, g, b] = color(name);
+    assert.ok(Math.min(r, g, b) >= 250, name + ': nearly white');
+    assert.ok(r >= b && Math.max(r, g, b) - Math.min(r, g, b) <= 3, name + ': only a trace of warmth');
+  }
+  const [r, g, b] = color('gh-green');
+  assert.ok(g > r && g > b, 'primary buttons retain a fresh green');
+  const link = color('warm-link');
+  assert.ok(link[2] > link[1] && link[1] > link[0], 'links retain their blue identity');
+  assert.equal(new Set(['ok', 'err', 'warn', 'gh-tab', 'warm-link'].map(name => color(name).join(','))).size, 5);
+});
+
+test('warm menu highlights are distinct in both themes without strengthening Markdown table stripes', async () => {
+  const read = path => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
+  const css = await read('github-warm.css');
+  for (const appearance of ['', "[data-theme='dark']"]) {
+    const block = css.slice(css.indexOf(`:root[data-ui='github-warm']${appearance} {`)).split('{')[1].split('}')[0];
+    const alpha = name => parseInt(block.match(new RegExp(`--${name}: #[0-9a-f]{6}([0-9a-f]{2});`))[1], 16) / 255;
+    assert.ok(alpha('hover') >= 0.14, appearance + ': hover is clearly visible');
+    assert.ok(alpha('active') >= alpha('hover') + 0.07, appearance + ': active is stronger than hover');
+    assert.ok(alpha('warm-row') < 0.06, appearance + ': table stripes remain subtle');
+    assert.ok(alpha('warm-session-active') >= alpha('hover') + 0.04, appearance + ': current session is stronger than hover');
+    assert.ok(alpha('warm-session-active') <= alpha('active'), appearance + ': current session remains restrained');
+    assert.match(block, /--accent-soft: color-mix\(in srgb, var\(--accent\) (18|24)%, transparent\)/);
+    assert.match(block, /--accent-softer: color-mix\(in srgb, var\(--accent\) (12|16)%, transparent\)/);
+  }
+  assert.match(css, /--gh-row: var\(--warm-row\)/);
+  assert.match(css, /:root\[data-ui='github-warm'\] \.sess\.active \{ background: var\(--warm-session-active\); \}/);
+  for (const file of ['ContextMenu.vue', 'SelectMenu.vue', 'ModelMenu.vue', 'DirectoryMenu.vue', 'SessionDisplayMenu.vue']) {
+    assert.match(await read('components/' + file), /background: var\(--hover\)/, file + ': shares the strengthened highlight');
+  }
 });
 
 test('global radius and favicon corners agree across styles, including zero and maximum radius', async (t) => {
@@ -271,7 +385,7 @@ test('user bubbles use automatic pale accent backgrounds with black text in ever
   assert.doesNotMatch(pi + github, /--bubble-me(?:-text|-border)?:|--pi-user:/);
   assert.match(message, /\.me-bubble \{[^}]*color: var\(--bubble-me-text\)/);
   assert.match(message, /\.me-bubble \.att \{[^}]*--panel: color-mix\(in srgb, var\(--bubble-me\) 55%, white\); --text-2: var\(--bubble-me-text\)/);
-  assert.match(panel, /用户气泡自动使用同色系浅底、黑色文字/);
+  assert.match(panel, /<span class="label">主题色<\/span>/);
 
   const luminance = (rgb) => rgb.map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
     .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
@@ -305,7 +419,7 @@ test('user and assistant message sizes are independent, persist, and share equal
   const saved = JSON.parse(s.storage.get('seed-pi-web-settings'));
   assert.equal(saved.userFontSize, 20);
   assert.equal(saved.chatFontSize, 24);
-  assert.equal(saved.__v, 19);
+  assert.equal(saved.__v, s.VER);
   for (const style of s.STYLES) {
     s.useStyle(style.value);
     await vue.nextTick();
@@ -603,7 +717,7 @@ test('pi styles preserve renderer enhancements and remove only the requested opt
     read('pi.css'), read('components/Settings.vue'), read('components/MessageItem.vue'), read('main.js'), read('github.css'), read('util.js'),
   ]);
   assert.match(settings, /\[\['default', '经典'\], \['github', 'GitHub'\], \['pi', 'pi'\]\]/);
-  assert.match(settings, /<span class="label">Markdown<\/span>/);
+  assert.match(settings, /<span class="label">正文排版<\/span>/);
   assert.doesNotMatch(settings + message, /hoverBox|thinkingOpen|toolsOpen|github-compact/);
   assert.doesNotMatch(github, /github-compact/);
   assert.doesNotMatch(main, /wechat/);

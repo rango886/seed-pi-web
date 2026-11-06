@@ -46,10 +46,10 @@ test('buttons, popups, message bubbles and pi Markdown use adjustable rather tha
   assert.doesNotMatch(composer + directory, /transition: all/, 'radius changes must apply synchronously to all controls');
 });
 
-test('round status indicators keep their geometry while settings explain the global radius behavior', async () => {
+test('round status indicators keep their geometry and the global radius remains adjustable', async () => {
   const [base, side, settings] = await Promise.all([read('style.css'), read('components/SidePanel.vue'), read('components/Settings.vue')]);
   for (const selector of ['.spin', '.dot']) assert.match(rule(base, selector), /border-radius: 50%/);
   assert.match(rule(side, '.st'), /border-radius: 50%/);
-  assert.match(settings, /圆角值统一用于按钮、输入框、菜单、弹窗和气泡/);
-  assert.match(settings, /设为 0 即直角/);
+  assert.match(settings, /\['radius', '全局圆角', 0, 20, 1/);
+  assert.doesNotMatch(settings, /radius-tip/);
 });

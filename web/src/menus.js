@@ -41,8 +41,8 @@ export function mainMenu(extra = []) {
     ...extra,
     ...(extra.length ? ['-'] : []),
     { label: '新会话', run: newSession },
-    { label: '切换会话…', key: 'Ctrl+P', run: pickSession },
-    { label: '切换模型…', key: 'Ctrl+L', run: openModelMenu },
+    { label: '切换会话', key: 'Ctrl+P', run: pickSession },
+    { label: '切换模型', key: 'Ctrl+L', run: openModelMenu },
     S.thinkingLevels.length > 1 && {
       label: '思考强度',
       hint: levelName(cur),
@@ -52,8 +52,8 @@ export function mainMenu(extra = []) {
     {
       label: '当前会话',
       children: [
-        { label: '重命名…', run: () => renameSession() },
-        { label: '对话分支…', run: openBranches },
+        { label: '重命名', run: () => renameSession() },
+        { label: '对话分支', run: openBranches },
         { label: '复制为新会话', run: cloneSession, disabled: !idle },
         { label: '压缩上下文', run: () => compact(), disabled: !idle },
         '-',
@@ -72,7 +72,7 @@ export function mainMenu(extra = []) {
       ],
     },
     '-',
-    { label: '切换工作目录…', run: () => openDirPicker('switch') },
+    { label: '切换工作目录', run: () => openDirPicker('switch') },
     { label: '会话侧栏', key: 'Ctrl+B', check: view.mobile ? view.drawer : view.side, run: () => toggleSide() },
     { label: '文件', key: 'Ctrl+E', check: view.panel === 'files', run: () => togglePanel('files') },
     { label: '进程', check: view.panel === 'agents', run: () => togglePanel('agents') },

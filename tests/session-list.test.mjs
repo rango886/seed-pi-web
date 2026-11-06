@@ -103,7 +103,7 @@ test('sidebar switches independent settings and intersects mode, archive and sea
   } });
   const files = () => s.groups.value.flatMap((g) => g.items.map((row) => row.file));
   assert.deepEqual([...files()], ['a', 'c']);
-  s.toggleSort();
+  s.saveSorting({ sort: 'name' });
   assert.equal(s.showSessionPath.value, true);
   s.saveUI({ archive: 'all', showCount: false, dirLabel: 'path', showPath: false });
   assert.equal(s.showSessionPath.value, false);
@@ -231,7 +231,7 @@ test('sidebar header shares the search and list gutters and uses a font-independ
   const brand = source.match(/\.brand \{([^}]+)\}/)[1];
   const logo = source.match(/\.logo \{([^}]+)\}/)[1];
   const toggle = source.match(/\.brand > \.ib \{([^}]+)\}/)[1];
-  assert.match(brand, /padding: 0 var\(--side-gutter\);/);
+  assert.match(brand, /padding: 6px var\(--side-gutter\);/);
   assert.doesNotMatch(brand, /--side-inset/);
   assert.match(source, /\.search \{[^}]*margin: 0 var\(--side-gutter\) 8px/);
   for (const rule of [logo, toggle]) {
@@ -316,10 +316,174 @@ test('display dropdown hides directory-only options, emits patches, stays open a
   const source = await fs.readFile(new URL('../web/src/components/SessionDisplayMenu.vue', import.meta.url), 'utf8');
   const triggerTemplate = parse(source).descriptor.template.content.split('<Teleport')[0];
   assert.doesNotMatch(triggerTemplate, /<Icon/, 'display trigger is text only');
-  assert.match(triggerTemplate, />\s*显示\s*<\/button>/);
-  assert.match(triggerTemplate, /aria-label="会话筛选和显示设置"/);
+  assert.match(triggerTemplate, /sorting \? '排序' : '显示'/);
+  assert.match(triggerTemplate, /:aria-label="menuLabel"/);
   const sidebar = await fs.readFile(new URL('../web/src/components/SidePanel.vue', import.meta.url), 'utf8');
-  assert.match(sidebar, /@click="toggleSort">\{\{ sortLabel \}\}<\/button>/, 'sort trigger is text only');
-  assert.match(sidebar, /:aria-label="`当前按\$\{sortLabel\}排序，点击切换`"/);
-  assert.match(sidebar, /:title="`当前模式按\$\{sortLabel\}排序，点击切换`"/);
+  assert.match(sidebar, /<SessionDisplayMenu sorting[^>]*@change="saveSorting"/);
+  assert.doesNotMatch(sidebar, /toggleSort|sortLabel/);
+});
+
+test('sort preferences persist independently and reject malformed folder orders', () => {
+  const storage = storageOf();
+  const { readSessionView: read, saveSessionView: save } = preferences;
+  assert.equal(read(storage, 'all').folderSort, 'time');
+  assert.deepEqual(read(storage, 'all').folderOrder, []);
+  for (const sort of ['time', 'time-asc', 'name', 'name-desc']) {
+    save(storage, 'all', { ...read(storage, 'all'), sort, folderSort: 'custom', folderOrder: ['/b', '/a'] });
+    assert.equal(read(storage, 'all').sort, sort);
+    assert.equal(read(storage, 'all').folderSort, 'custom');
+    assert.deepEqual(read(storage, 'all').folderOrder, ['/b', '/a']);
+    assert.equal(read(storage, 'fav').folderSort, 'time');
+    assert.deepEqual(read(storage, 'fav').folderOrder, []);
+  }
+  storage.setItem('seed-pi-web-session-view-all', JSON.stringify({ sort: 'bad', folderSort: 'bad', folderOrder: ['/a', 3, null, '/a', '/b'] }));
+  assert.equal(read(storage, 'all').sort, 'time');
+  assert.equal(read(storage, 'all').folderSort, 'time');
+  assert.deepEqual(read(storage, 'all').folderOrder, ['/a', '/b']);
+});
+
+test('session and folder sort directions are independent; custom order handles new and hidden folders', () => {
+  const sessions = [
+    { title: 'Zebra', modified: '2026-01-03' },
+    { title: 'Alpha', modified: '2026-01-01' },
+    { title: 'Beta', modified: '2026-01-02' },
+  ];
+  const names = (sort) => [...sessions].sort(preferences.compareSessions(sort)).map((s) => s.title);
+  assert.deepEqual(names('time'), ['Zebra', 'Beta', 'Alpha']);
+  assert.deepEqual(names('time-asc'), ['Alpha', 'Beta', 'Zebra']);
+  assert.deepEqual(names('name'), ['Alpha', 'Beta', 'Zebra']);
+  assert.deepEqual(names('name-desc'), ['Zebra', 'Beta', 'Alpha']);
+  const folders = [{ path: '/Zebra', last: 3 }, { path: '/Alpha', last: 1 }, { path: '/Beta', last: 2 }];
+  const paths = (sort, order) => [...folders].sort(preferences.compareSessionFolders(sort, order)).map((g) => g.path);
+  assert.deepEqual(paths('time'), ['/Zebra', '/Beta', '/Alpha']);
+  assert.deepEqual(paths('time-asc'), ['/Alpha', '/Beta', '/Zebra']);
+  assert.deepEqual(paths('name'), ['/Alpha', '/Beta', '/Zebra']);
+  assert.deepEqual(paths('name-desc'), ['/Zebra', '/Beta', '/Alpha']);
+  assert.deepEqual(paths('custom', ['/beta/', '/ALPHA']), ['/Beta', '/Alpha', '/Zebra']);
+  const move = preferences.moveSessionFolder;
+  assert.deepEqual(move(['/a', '/hidden', '/b'], ['/a', '/b', '/new'], '/new', '/a'), ['/new', '/a', '/hidden', '/b']);
+  assert.deepEqual(move(['/a', '/hidden', '/b'], ['/a', '/b'], '/a', '/b', true), ['/hidden', '/b', '/a']);
+  assert.deepEqual(move(['C:\\Repo\\B', 'C:\\Repo\\A'], ['c:/repo/b', 'c:/repo/a'], 'c:/repo/a', 'c:/repo/b'), ['c:/repo/a', 'c:/repo/b']);
+});
+
+test('sort dropdown separates session and folder settings and hides folder options in current directory', async (t) => {
+  const props = vue.reactive({ sorting: true, mode: 'all', settings: preferences.readSessionView(storageOf(), 'all') });
+  const { state: s, events } = await setup(t, 'SessionDisplayMenu.vue', { props });
+  assert.equal(s.menuLabel.value, '会话和文件夹排序');
+  assert.deepEqual([...s.sections.value.map((section) => section.key)], ['sort', 'folderSort']);
+  assert.equal(s.sections.value[0].options.length, 4);
+  assert.equal(s.sections.value[1].options.length, 5);
+  s.opened.value = true;
+  assert.deepEqual([...s.sections.value[1].options.map((option) => option.label)], ['时间正序', '时间倒序', '名称正序', '名称倒序', '自定义排序']);
+  s.choose(s.sections.value[0], s.sections.value[0].options[0]);
+  assert.equal(events.pop()[1].sort, 'time-asc');
+  s.choose(s.sections.value[1], s.sections.value[1].options[4]);
+  assert.equal(events.pop()[1].folderSort, 'custom');
+  assert.equal(s.opened.value, true);
+  props.mode = 'dir';
+  await vue.nextTick();
+  assert.equal(s.opened.value, false);
+  assert.deepEqual([...s.sections.value.map((section) => section.key)], ['sort']);
+});
+
+test('sidebar drags folders above and below targets, persists custom order and supports keyboard moves', async (t) => {
+  const S = vue.reactive({ sessionMode: 'all', cwd: '/a', agents: [], sessions: [
+    { file: 'a', cwd: '/a', title: 'Zebra', modified: '2026-01-01' },
+    { file: 'a2', cwd: '/a', title: 'Alpha', modified: '2026-01-04' },
+    { file: 'b', cwd: '/b', title: 'Beta', modified: '2026-01-03' },
+    { file: 'c', cwd: '/c', title: 'Other', modified: '2026-01-02' },
+  ] });
+  const storage = storageOf();
+  const { state: s } = await setup(t, 'SidePanel.vue', { storage, imports: {
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
+    '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
+  } });
+  const paths = () => [...s.groups.value.map((g) => g.path)];
+  s.saveUI({ layout: 'group', folderSort: 'name-desc' });
+  assert.deepEqual(paths(), ['/c', '/b', '/a']);
+  s.saveSorting({ sort: 'name', folderSort: 'custom' });
+  await vue.nextTick();
+  assert.deepEqual(paths(), ['/c', '/b', '/a'], 'first custom selection preserves the previous folder order');
+  assert.deepEqual([...s.groups.value[2].items.map((row) => row.file)], ['a2', 'a']);
+  let prevented = 0;
+  const data = {};
+  const event = { target: { closest: () => null }, dataTransfer: { setData: (k, v) => { data[k] = v; } }, preventDefault() { prevented++; }, currentTarget: { getBoundingClientRect: () => ({ top: 10, height: 30 }) }, clientY: 12 };
+  s.startFolderDrag(event, '/a');
+  assert.equal(data['text/plain'], '/a');
+  assert.equal(event.dataTransfer.effectAllowed, 'move');
+  s.overFolder(event, '/c');
+  assert.equal(s.folderDrop.value.after, false);
+  s.dropFolder(event, '/c');
+  assert.deepEqual(paths(), ['/a', '/c', '/b']);
+  assert.equal(s.draggingFolder.value, '');
+  assert.equal(s.folderDrop.value, null);
+  assert.deepEqual(preferences.readSessionView(storage, 'all').folderOrder, paths());
+  s.startFolderDrag(event, '/a');
+  event.clientY = 38;
+  s.overFolder(event, '/b');
+  assert.equal(s.folderDrop.value.after, true);
+  s.dropFolder(event, '/b');
+  assert.deepEqual(paths(), ['/c', '/b', '/a']);
+  s.moveFolderKey({ altKey: true, key: 'ArrowUp', preventDefault() {} }, '/a');
+  assert.deepEqual(paths(), ['/c', '/a', '/b']);
+  s.saveSorting({ folderSort: 'time' });
+  assert.deepEqual(paths(), ['/a', '/b', '/c']);
+  s.saveSorting({ folderSort: 'custom' });
+  assert.deepEqual(paths(), ['/c', '/a', '/b'], 'switching away does not erase custom order');
+  s.q.value = 'Zebra';
+  assert.deepEqual(paths(), ['/a']);
+  assert.deepEqual(preferences.readSessionView(storage, 'all').folderOrder, ['/c', '/a', '/b']);
+  s.q.value = '';
+  S.sessionMode = 'fav';
+  await vue.nextTick();
+  assert.equal(s.cur.value.folderSort, 'time');
+  assert.equal(s.draggingFolder.value, '');
+  S.sessionMode = 'dir';
+  s.saveSorting({ sort: 'time-asc' });
+  assert.deepEqual([...s.groups.value.flatMap((g) => g.items.map((row) => row.file))], ['a', 'a2']);
+  s.saveSorting({ sort: 'name-desc' });
+  assert.deepEqual([...s.groups.value.flatMap((g) => g.items.map((row) => row.file))], ['a', 'a2']);
+  assert.ok(prevented >= 4);
+});
+
+test('session actions respond to hover and keyboard focus, not lingering mouse focus or active state', async () => {
+  const source = await fs.readFile(new URL('../web/src/components/SidePanel.vue', import.meta.url), 'utf8');
+  assert.match(source, /\.sess:is\(:hover, :focus-visible, :has\(:focus-visible\)\) \.sess-action \{ display: inline-flex; \}/);
+  assert.doesNotMatch(source, /\.sess(?::focus-within|\.active) \.sess-action/);
+  assert.match(source, /:draggable="customFolders"/);
+  assert.match(source, /@dragend="endFolderDrag"/);
+});
+
+test('active session also highlights its directory, including collapsed groups and lazy/detached sessions', async (t) => {
+  const now = new Date().toISOString();
+  const S = vue.reactive({ sessionMode: 'all', agents: [], agent: { sessionFile: 'C:\\sessions\\a.jsonl' }, sessions: [
+    { file: 'c:/sessions/a.jsonl', cwd: '/repo', title: 'First', modified: now },
+    { file: 'c:/sessions/b.jsonl', cwd: '/other', title: 'Second', modified: now },
+  ] });
+  const { state: s } = await setup(t, 'SidePanel.vue', { imports: {
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
+    '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
+  } });
+  s.saveUI({ layout: 'group' });
+  const activeGroups = () => [...s.groups.value.filter(s.isActiveGroup).map((g) => g.path)];
+  assert.equal(s.isActiveSession(S.sessions[0]), true, 'session and directory use the same normalized file identity');
+  assert.deepEqual(activeGroups(), ['/repo']);
+  s.toggleDir('/repo');
+  assert.equal(s.isCollapsed('/repo'), true);
+  assert.deepEqual(activeGroups(), ['/repo'], 'collapsing does not remove the active directory highlight');
+  S.agent.sessionFile = 'c:/sessions/b.jsonl';
+  assert.deepEqual(activeGroups(), ['/other']);
+  assert.equal(s.isActiveSession(S.sessions[0]), false);
+  S.agent = null;
+  S.lazy = { file: 'c:/sessions/a.jsonl' };
+  assert.deepEqual(activeGroups(), ['/repo']);
+  S.lazy = null;
+  S.detached = { file: 'c:/sessions/b.jsonl' };
+  assert.deepEqual(activeGroups(), ['/other']);
+  S.detached = null;
+  assert.deepEqual(activeGroups(), []);
+  assert.equal(s.isActiveSession({}), false, 'no session does not highlight a row with a missing file');
+  const source = await fs.readFile(new URL('../web/src/components/SidePanel.vue', import.meta.url), 'utf8');
+  assert.match(source, /active: isActiveGroup\(g\)/);
+  assert.match(source, /active: isActiveSession\(s\)/);
 });

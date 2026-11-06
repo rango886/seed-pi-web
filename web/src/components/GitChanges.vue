@@ -4,6 +4,7 @@ import { S, openDiff, openFile } from '../store.js';
 import { G, changeGroups, repoPath, statusNames } from '../git.js';
 import { openMenu } from '../settings.js';
 import { downloadPath } from '../file-download.js';
+import { iconOf } from '../util.js';
 import Icon from './Icon.vue';
 
 const tree = ref(localStorage.getItem('seed-pi-web-git-tree') === '1');
@@ -56,20 +57,21 @@ function context(e, entry, group) {
     <div v-else-if="G.data?.message" class="git-message">{{ G.data.message }}</div>
     <template v-if="G.data?.available">
       <div class="branch" :title="`仓库：${G.data.root}\n变更列表覆盖整个仓库`">
-        <Icon class="branch-symbol" name="branch" :size="16" /><span class="ellipsis grow">{{ G.data.branch || '未命名分支' }}</span>
+        <Icon class="branch-symbol" name="branching" :size="16" /><span class="ellipsis grow">{{ G.data.branch || '未命名分支' }}</span>
         <span v-if="G.data.ahead || G.data.behind" class="dim">↑{{ G.data.ahead }} ↓{{ G.data.behind }}</span>
         <span class="total">{{ G.data.entries.length }}</span>
-        <button class="layout" :title="tree ? '切换为列表' : '切换为树形'" @click="toggleLayout"><Icon :name="tree ? 'list' : 'folder'" :size="14" /></button>
+        <button class="layout" :title="tree ? '切换为列表' : '切换为树形'" @click="toggleLayout"><Icon :name="tree ? 'list' : 'branching'" :size="16" /></button>
       </div>
       <div v-if="!groups.length" class="clean">工作区干净，没有变更</div>
       <div v-else class="changes-list">
         <section v-for="g in groups" :key="g.key">
-          <button class="group" :aria-expanded="!closed.has(g.key)" @click="toggle(g.key)"><span>{{ closed.has(g.key) ? '▸' : '▾' }}</span><span class="grow">{{ g.title }}</span><span class="total">{{ g.entries.length }}</span></button>
+          <button class="group" :aria-expanded="!closed.has(g.key)" @click="toggle(g.key)"><Icon class="fold-icon" name="chevron" :size="14" :class="{ open: !closed.has(g.key) }" /><span class="grow">{{ g.title }}</span><span class="total">{{ g.entries.length }}</span></button>
           <template v-if="!closed.has(g.key)">
             <template v-for="row in g.rows" :key="row.key">
-              <button v-if="row.dir" class="change directory" :style="{ paddingLeft: 12 + row.depth * 12 + 'px' }" @click="toggle(g.key + ':' + row.key)"><span>{{ closed.has(g.key + ':' + row.key) ? '▸' : '▾' }}</span><Icon name="folder" :size="13" /><span class="ellipsis">{{ row.name }}</span></button>
+              <button v-if="row.dir" class="change directory" :style="{ paddingLeft: 12 + row.depth * 12 + 'px' }" :aria-expanded="!closed.has(g.key + ':' + row.key)" @click="toggle(g.key + ':' + row.key)"><Icon class="fold-icon" name="chevron" :size="14" :class="{ open: !closed.has(g.key + ':' + row.key) }" /><Icon name="folder" :size="16" /><span class="ellipsis">{{ row.name }}</span></button>
               <button v-else class="change" :class="'git-' + row.entry.code" :style="{ paddingLeft: 12 + row.depth * 12 + 'px' }" :title="`${statusNames[row.entry.code] || '已修改'} · ${row.entry.path}${row.entry.oldPath ? '\n原路径：' + row.entry.oldPath : ''}${row.entry.sub?.startsWith('S') ? '\n子模块' : ''}`" @click="open(row.entry, g)" @contextmenu.prevent.stop="context($event, row.entry, g)">
-                <Icon name="file" :size="13" />
+                <span v-if="tree" class="fold-spacer" aria-hidden="true" />
+                <Icon :name="iconOf(row.entry.path)" :size="16" />
                 <span class="ellipsis filename">{{ base(row.entry.path) }}</span>
                 <span v-if="!tree" class="ellipsis parent">{{ parent(row.entry.path) }}</span>
                 <span v-if="row.entry.oldPath" class="rename" :title="row.entry.oldPath + ' → ' + row.entry.path">← {{ base(row.entry.oldPath) }}</span>
@@ -87,7 +89,7 @@ function context(e, entry, group) {
 <style scoped>
 .git-changes { flex: none; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .branch { flex: none; display: flex; align-items: center; gap: 7px; padding: 6px 12px; color: var(--text-2); font-size: var(--fs-sm); }
-.branch-symbol { font-size: 20px; color: var(--accent-text); line-height: 1; }
+.branch-symbol { color: var(--text-2); }
 .total { flex: none; border-radius: var(--r-pill); padding: 0 6px; background: var(--active); font-size: var(--fs-xs); color: var(--text-2); }
 .layout { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: transparent; border: 0; border-radius: var(--r-sm); color: var(--text-3); cursor: pointer; }
 .layout:hover { background: var(--active); }
@@ -96,7 +98,11 @@ function context(e, entry, group) {
 .group { padding: 5px 8px; font-size: var(--fs-xs); font-weight: 600; }
 .change { min-height: 27px; padding: 3px 9px; font-size: var(--fs-sm); }
 .change:hover, .group:hover { background: var(--active); }
-.change svg { flex: none; color: var(--text-3); }
+.change svg { flex: none; color: var(--text-2); }
+.fold-icon { color: var(--text-3); transition: transform 0.15s; }
+.change .fold-icon { color: var(--text-3); }
+.fold-icon.open { transform: rotate(90deg); }
+.fold-spacer { width: 14px; flex: none; }
 .filename { flex-shrink: 0; max-width: 65%; }.parent { font-size: var(--fs-xs); color: var(--text-3); }.rename { font-size: var(--fs-xs); max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; }
 .directory { color: var(--text-2); }
 .clean, .git-message, .git-error { padding: 6px 14px 10px; font-size: var(--fs-xs); color: var(--text-3); }

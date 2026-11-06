@@ -506,8 +506,19 @@ test('branches share the panel styling but sit directly above the same-width com
   assert.match(chat, /<div ref="dockEl"[\s\S]*<ConversationBranches @jump="jumpEntry" \/>\s*<Composer \/>/);
   const branches = parse(await source('components/ConversationBranches.vue')).descriptor.template.content;
   assert.match(branches, /<FloatingPanel[^>]* inline /);
+  assert.match(branches, /title="对话分支" icon="branching"/, 'panel header and top-bar toggle share the same icon');
   assert.doesNotMatch(branches, /:low=/);
   const shell = parse(await source('components/FloatingPanel.vue')).descriptor.styles[0].content;
   assert.match(shell, /\.floating-panel\.inline \{[^}]*position: relative;[^}]*width: 100%;[^}]*max-height:/);
   assert.match(shell, /\.floating-panel\.inline \{[^}]*pointer-events: auto;/);
+});
+
+test('fork action uses a square, straight side-branch arrow with a firmer stroke', async () => {
+  const source = await fs.readFile(new URL('../web/src/components/Icon.vue', import.meta.url), 'utf8');
+  const fork = source.match(/fork: '([^']+)'/)[1];
+  assert.equal(fork, 'M5 4v16M5 12h15M16 8l4 4-4 4');
+  assert.doesNotMatch(fork, /[acqst]/i, 'use only straight segments, without curves or circular nodes');
+  assert.match(source, /name === 'fork' \? 2 : 1\.8/);
+  assert.match(source, /:stroke-linecap="name === 'fork' \? 'square' : 'round'"/);
+  assert.match(source, /:stroke-linejoin="name === 'fork' \? 'miter' : 'round'"/);
 });

@@ -268,7 +268,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 </template>
 
 <style scoped>
-.app { height: 100%; display: flex; min-height: 0; }
+.app { --top-height: 48px; height: 100%; display: flex; min-height: 0; }
 .center { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--chat-bg); position: relative; }
 
 /* 侧栏 */
@@ -286,9 +286,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 .mask.show { opacity: 1; pointer-events: auto; }
 
 /* 顶部标题栏 */
-.top { height: 52px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px 0 8px; border-bottom: 1px solid var(--line); background: var(--chat-bg); }
+.top { min-height: var(--top-height); flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 6px 6px 8px; border-bottom: 1px solid var(--line); background: var(--chat-bg); }
 .ttl { flex: 1; min-width: 0; text-align: center; padding: 0 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
-/* 顶栏和侧栏顶部同高（52px）；两行字都缩小一号，上下留白更松 */
+/* 顶栏和侧栏顶部同高，压缩上下留白，字号较大时仍可自然撑开。 */
 .t1 { font-size: calc(var(--fs) - 1px); font-weight: 600; line-height: 1.25; max-width: 100%; cursor: pointer; }
 /* 路径：小号灰字，居中在标题下面；复制按钮悬停才出来（绝对定位，不挤歪居中） */
 .t2 { position: relative; max-width: calc(100% - 22px); display: flex; align-items: center; font-size: 10.5px; line-height: 1.25; color: var(--text-3); font-family: var(--font-code); }

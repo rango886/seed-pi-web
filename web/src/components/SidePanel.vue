@@ -1,11 +1,11 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import { S, openSession, deleteSession, setSessionArchived, renameSession, sessionStatus, setSessionMode, isFav, newSession, newSessionIn } from '../store.js';
 import { view, toggleSide, closeDrawer, openMenu } from '../settings.js';
 import Icon from './Icon.vue';
 import DirectoryMenu from './DirectoryMenu.vue';
 import SessionDisplayMenu from './SessionDisplayMenu.vue';
-import { readSessionView, saveSessionView, matchesArchive, sessionInfo } from '../session-list.js';
+import { readSessionView, saveSessionView, matchesArchive, sessionInfo, compareSessions, compareSessionFolders, moveSessionFolder } from '../session-list.js';
 
 const q = ref('');
 const listElement = ref(null);
@@ -35,13 +35,17 @@ const base = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
 
 // 排序和显示设置跟随当前模式，各自记忆。
 const sortBy = computed(() => cur.value.sort);
-const sortLabel = computed(() => (sortBy.value === 'time' ? '时间' : '名称'));
-function toggleSort() {
-  saveUI({ sort: sortBy.value === 'time' ? 'name' : 'time' });
+function saveSorting(patch) {
+  // 第一次启用自定义时，沿用眼前的顺序，不让文件夹突然跳位。
+  if (patch.folderSort === 'custom' && !cur.value.folderOrder.length) {
+    patch = { ...patch, folderOrder: groups.value.map((g) => g.path).filter(Boolean) };
+  }
+  saveUI(patch);
 }
-const byTime = (a, b) => new Date(b.modified) - new Date(a.modified);
-const byName = (a, b) => (a.title || '').localeCompare(b.title || '', 'zh');
 const norm = (p) => (p || '').replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+const activeSessionKey = computed(() => norm(S.agent?.sessionFile || S.detached?.file || S.lazy?.file));
+const isActiveSession = (s) => !!activeSessionKey.value && norm(s.file) === activeSessionKey.value;
+const isActiveGroup = (g) => g.items.some(isActiveSession);
 
 // 还没写盘的新会话（pi 要等有了消息才写文件）：磁盘上扫不到，从进程列表里补上
 const unsaved = computed(() => {
@@ -120,6 +124,47 @@ function listMenu(e) {
 const byDir = computed(() => S.sessionMode !== 'dir' && cur.value.layout === 'group');
 const flat = computed(() => S.sessionMode !== 'dir' && cur.value.layout === 'flat');
 const showSessionPath = computed(() => flat.value && cur.value.showPath);
+const draggingFolder = ref('');
+const folderDrop = ref(null);
+const customFolders = computed(() => byDir.value && cur.value.folderSort === 'custom');
+function endFolderDrag() {
+  draggingFolder.value = '';
+  folderDrop.value = null;
+}
+watch(() => [S.sessionMode, cur.value.layout, cur.value.folderSort], endFolderDrag);
+function startFolderDrag(e, path) {
+  if (!customFolders.value || e.target.closest?.('button')) {
+    e.preventDefault();
+    return;
+  }
+  draggingFolder.value = path;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', path);
+}
+function overFolder(e, path) {
+  if (!customFolders.value || !draggingFolder.value || draggingFolder.value === path) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const rect = e.currentTarget.getBoundingClientRect();
+  folderDrop.value = { path, after: e.clientY > rect.top + rect.height / 2 };
+}
+function reorderFolder(source, target, after) {
+  saveUI({ folderOrder: moveSessionFolder(cur.value.folderOrder, groups.value.map((g) => g.path).filter(Boolean), source, target, after) });
+}
+function dropFolder(e, path) {
+  if (folderDrop.value?.path !== path || !draggingFolder.value) return;
+  e.preventDefault();
+  reorderFolder(draggingFolder.value, path, folderDrop.value.after);
+  endFolderDrag();
+}
+function moveFolderKey(e, path) {
+  if (!customFolders.value || !e.altKey || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+  e.preventDefault();
+  const paths = groups.value.map((g) => g.path).filter(Boolean);
+  const down = e.key === 'ArrowDown';
+  const target = paths[paths.indexOf(path) + (down ? 1 : -1)];
+  if (target) reorderFolder(path, target, down);
+}
 // 列表空的时候说人话：搜了关键词就说没搜到，否则说这个看法下为什么没东西
 const emptyText = computed(() => {
   if (q.value.trim()) return '当前筛选下没有匹配的会话';
@@ -134,7 +179,7 @@ const emptyText = computed(() => {
 const groups = computed(() => {
   const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
   const list = [...unsaved.value, ...S.sessions].filter((s) => inMode(s.cwd) && matchesArchive(s, cur.value.archive) && words.every((w) => `${s.title} ${s.cwd || ''}`.toLowerCase().includes(w)));
-  const cmp = sortBy.value === 'name' ? byName : byTime;
+  const cmp = compareSessions(sortBy.value);
 
   if (byDir.value) {
     const by = new Map();
@@ -161,17 +206,17 @@ const groups = computed(() => {
       .map(([cwd, items]) => ({
         name: label(cwd),
         path: cwd,
-        // 目录之间按“最近一次会话”排，和当前用什么方式排序无关
+        // 文件夹按独立设置排序，不受组内会话排序影响。
         last: items.reduce((m, s) => Math.max(m, new Date(s.modified).getTime()), 0),
         items: items.sort(cmp),
       }))
-      .sort((a, b) => b.last - a.last);
+      .sort(compareSessionFolders(cur.value.folderSort, cur.value.folderOrder));
   }
 
   // 平铺显示：不分目录，全部摆一列，按当前排序方式排
   if (flat.value) return list.length ? [{ name: '', items: list.sort(cmp) }] : [];
 
-  if (sortBy.value === 'name') return list.length ? [{ name: '', items: list.sort(byName) }] : [];
+  if (sortBy.value.startsWith('name')) return list.length ? [{ name: '', items: list.sort(cmp) }] : [];
 
   // 当前目录：按时间分桶，今天 / 昨天 / 7 天内 / 30 天内 / 更早
   const d0 = new Date();
@@ -189,7 +234,8 @@ const groups = computed(() => {
     const t = new Date(s.modified).getTime();
     buckets.find((b) => t >= b.from).items.push(s);
   }
-  return buckets.filter((b) => b.items.length).map((b) => ({ ...b, items: b.items.sort(byTime) }));
+  const result = buckets.filter((b) => b.items.length).map((b) => ({ ...b, items: b.items.sort(cmp) }));
+  return sortBy.value === 'time-asc' ? result.reverse() : result;
 });
 // 右边那列时间/日期：今天显示 HH:MM，其余显示 MM/DD。
 // 月日都补成两位（11/1 → 11/01），这样每行的长度一致，右侧那一列才能对齐
@@ -215,7 +261,7 @@ function newIn(cwd) {
 function sessionMenu(e, s) {
   openMenu(e.clientX, e.clientY, [
     { label: '打开', run: () => open(s) },
-    s.file === S.agent?.sessionFile && { label: '重命名…', run: () => renameSession() },
+    s.file === S.agent?.sessionFile && { label: '重命名', run: () => renameSession() },
     { label: '复制文件路径', run: () => navigator.clipboard.writeText(s.file) },
     ...(s.unsaved ? [] : ['-',
       { label: s.archived ? '取消归档' : '归档', run: () => setSessionArchived(s, !s.archived) },
@@ -246,14 +292,21 @@ function sessionMenu(e, s) {
       <div class="search">
         <Icon name="search" :size="15" />
         <input v-model="q" placeholder="搜索会话" @keydown.esc="q = ''" />
-        <button type="button" class="sbtn" :title="`当前模式按${sortLabel}排序，点击切换`" :aria-label="`当前按${sortLabel}排序，点击切换`" @click="toggleSort">{{ sortLabel }}</button>
+        <SessionDisplayMenu sorting :mode="S.sessionMode" :settings="cur" @change="saveSorting" />
         <SessionDisplayMenu :mode="S.sessionMode" :settings="cur" @mode-change="setSessionMode" @change="saveUI" />
       </div>
       <div ref="listElement" class="list" :class="{ scrolling: listScrolling }" :style="{ '--list-scrollbar-width': listScrollbarWidth + 'px' }" @scroll.passive="onListScroll" @contextmenu="listMenu">
         <div v-if="!groups.length" class="empty">{{ emptyText }}</div>
         <template v-for="g in groups" :key="g.path || g.name">
           <!-- 目录：像文件夹一样，点一下折叠/展开；右键可以全部展开折叠、切路径显示 -->
-          <div v-if="g.path" class="dirhead" :class="{ closed: isCollapsed(g.path) }" :title="g.path" @click="toggleDir(g.path)" @contextmenu.prevent.stop="dirMenu($event, g.path)">
+          <div v-if="g.path" class="dirhead"
+            :class="{ active: isActiveGroup(g), closed: isCollapsed(g.path), draggable: customFolders, dragging: draggingFolder === g.path, 'drop-before': folderDrop?.path === g.path && !folderDrop.after, 'drop-after': folderDrop?.path === g.path && folderDrop.after }"
+            :title="customFolders ? `${g.path}\n按住拖动排序，或按 Alt + ↑ / ↓` : g.path"
+            :draggable="customFolders" :tabindex="customFolders ? 0 : undefined"
+            @dragstart="startFolderDrag($event, g.path)" @dragover="overFolder($event, g.path)" @drop="dropFolder($event, g.path)" @dragend="endFolderDrag"
+            @dragleave="folderDrop?.path === g.path && !$event.currentTarget.contains($event.relatedTarget) && (folderDrop = null)"
+            @keydown="moveFolderKey($event, g.path)" @keydown.enter.self.prevent="toggleDir(g.path)" @keydown.space.self.prevent="toggleDir(g.path)"
+            @click="toggleDir(g.path)" @contextmenu.prevent.stop="dirMenu($event, g.path)">
             <span class="arrow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg></span>
             <Icon name="folder" :size="15" />
             <span class="ellipsis grow">{{ g.name }}</span>
@@ -266,7 +319,7 @@ function sessionMenu(e, s) {
               v-for="s in g.items"
               :key="s.file"
               class="sess"
-              :class="{ active: s.file === (S.agent?.sessionFile || S.detached?.file), child: !!g.path, 'has-st': !!g.path && !!stat(s)?.cls, saved: !s.unsaved }"
+              :class="{ active: isActiveSession(s), child: !!g.path, 'has-st': !!g.path && !!stat(s)?.cls, saved: !s.unsaved }"
               :title="s.title"
               tabindex="0"
               @keydown.enter.self.prevent="open(s)"
@@ -291,7 +344,7 @@ function sessionMenu(e, s) {
 <style scoped>
 .side { --side-gutter: 12px; --side-inset: 8px; --session-indent: 47px; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel-2); user-select: none; }
 /* 顶部两端和搜索框 / 会话行的外边缘共用同一条对齐线。 */
-.brand { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 var(--side-gutter); flex: none; }
+.brand { display: flex; align-items: center; gap: 8px; min-height: var(--top-height); padding: 6px var(--side-gutter); flex: none; }
 .logo { background: var(--accent); color: #fff; width: 28px; height: 28px; border-radius: var(--r-sm); display: inline-flex; align-items: center; justify-content: center; flex: none; }
 /* 用固定路径代替文字 π，避免不同字体的基线和字面留白让标记偏下。 */
 .logo :deep(.icon) { stroke-width: 2.6; }
@@ -337,6 +390,11 @@ function sessionMenu(e, s) {
 .dirhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; margin: 2px 0; }
 .dirhead:first-child { margin-top: 0; }
 .dirhead:hover { background: var(--active); }
+.dirhead.draggable { cursor: grab; }
+.dirhead.dragging { opacity: 0.45; cursor: grabbing; }
+.dirhead.drop-before { box-shadow: 0 -2px 0 var(--accent); }
+.dirhead.drop-after { box-shadow: 0 2px 0 var(--accent); }
+.dirhead:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: -2px; }
 .dirhead .arrow { width: 12px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); transform: rotate(90deg); transition: transform 0.15s; }
 /* 折叠的时候箭头朝右（就是 svg 本身的样子），展开的时候转 90° 朝下 */
 .dirhead.closed .arrow { transform: rotate(0deg); }
@@ -347,8 +405,6 @@ function sessionMenu(e, s) {
 /* 状态点和间隔共占 14px，抵消这部分宽度，避免标题左右跳动。 */
 .sess.child.has-st { padding-left: calc(var(--session-indent) - 14px); }
 .gcount { font-size: var(--fs-xs); min-width: 20px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; padding: 0 5px; border-radius: var(--r-pill); background: var(--active); color: var(--text-3); }
-.sbtn { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; flex: none; }
-.sbtn:hover { border-color: var(--accent); color: var(--accent-text); }
 .list > .sess, .list > .gname { content-visibility: auto; contain-intrinsic-size: auto 30px; }
 .sess { display: flex; align-items: center; gap: 8px; height: 30px; margin-bottom: 2px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; position: relative; font-size: calc(var(--fs) - 1px); }
 .sess:hover { background: var(--active); }
@@ -359,8 +415,9 @@ function sessionMenu(e, s) {
 .sdir { font-size: var(--fs-xs); color: var(--text-3); flex: none; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sinfo { font-size: var(--fs-xs); color: var(--text-3); flex: none; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .sess-action { display: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
-.sess:hover .sess-action, .sess:focus-within .sess-action { display: inline-flex; }
-.sess.saved:hover .sinfo, .sess.saved:hover .sdir, .sess.saved:focus-within .sinfo, .sess.saved:focus-within .sdir { display: none; }
+/* 鼠标点击留下的焦点不保留按钮，键盘 Tab 聚焦仍然可操作。 */
+.sess:is(:hover, :focus-visible, :has(:focus-visible)) .sess-action { display: inline-flex; }
+.sess.saved:is(:hover, :focus-visible, :has(:focus-visible)) :is(.sinfo, .sdir) { display: none; }
 .arch:hover { background: var(--accent-soft); color: var(--accent-text); }
 .del:hover { background: var(--err); color: #fff; }
 .archive-mark { color: var(--text-3); }
@@ -378,7 +435,7 @@ function sessionMenu(e, s) {
 @media (hover: none) {
   .dir-new { display: inline-flex; }
   .dirhead .gcount { display: none; }
-  .sess:hover:not(:focus-within) .sess-action { display: none; }
-  .sess.saved:hover:not(:focus-within) .sinfo, .sess.saved:hover:not(:focus-within) .sdir { display: inline; }
+  .sess:hover:not(:focus-visible):not(:has(:focus-visible)) .sess-action { display: none; }
+  .sess.saved:hover:not(:focus-visible):not(:has(:focus-visible)) :is(.sinfo, .sdir) { display: inline; }
 }
 </style>

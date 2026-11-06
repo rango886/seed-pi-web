@@ -102,9 +102,9 @@ onMounted(scrollToMe);
   >
     <span class="arrow" :class="{ open }">
       <span v-if="loading" class="spin" />
-      <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
+      <Icon v-else name="chevron" :size="14" />
     </span>
-    <Icon name="folder" :size="14" />
+    <Icon name="folder" :size="16" />
     <span class="ellipsis grow">{{ entry.name }}</span>
   </div>
   <template v-if="open">

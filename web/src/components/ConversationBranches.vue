@@ -98,7 +98,7 @@ watch(() => S.agent?.sessionFile, () => { preparedId.value = null; folded.value 
 </script>
 
 <template>
-  <FloatingPanel :open="S.branchesOpen" inline title="对话分支" icon="branch" @close="S.branchesOpen = false">
+  <FloatingPanel :open="S.branchesOpen" inline title="对话分支" icon="branching" @close="S.branchesOpen = false">
     <div class="search">
       <Icon name="search" :size="15" />
       <input v-model="query" aria-label="搜索所有分支" placeholder="搜索问题或分支名称…" />

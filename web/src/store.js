@@ -1955,7 +1955,7 @@ export const deleteSession = guard(async (s, event) => {
   deletingSessions.add(key);
   try {
     if (!event?.ctrlKey) {
-      const r = await ask({ method: 'confirm', title: '删除会话', message: `确定删除「${s.title}」，文件会被永久删除。` });
+      const r = await ask({ method: 'confirm', title: '删除会话', message: `确定删除「${s.title}」文件会被永久删除` });
       if (!r.confirmed) return;
     }
     await http.del('/api/sessions', { file: s.file });

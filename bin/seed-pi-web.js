@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
   APP, HOME_DIR, CONFIG_FILE, STATE_FILE, LOG_FILE, KEYS,
-  readFileConfig, writeFileConfig, parseValue, loadConfig, applyToEnv, readState,
+  readFileConfig, writeFileConfig, parseValue, loadConfig, ensureToken, applyToEnv, readState,
 } from '../server/config.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -31,7 +31,7 @@ const HELP = `${APP} ${PKG.version}
   ${APP} token           显示 token
   ${APP} token set <值>  设置 token
   ${APP} token gen       随机生成一个 token
-  ${APP} token clear     去掉 token
+  ${APP} token clear     清除配置，下次启动自动生成
 
   ${APP} config                 看全部配置
   ${APP} config get <键>
@@ -158,12 +158,13 @@ function startOptions(argv) {
 }
 
 async function start(argv) {
-  const { cfg, foreground, open } = startOptions(argv);
+  const { cfg: requestedCfg, foreground, open } = startOptions(argv);
   const running = await probe();
   if (running) {
-    console.log(`已经在运行了（pid ${running.pid}）：${urlOf({ ...cfg, ...running.cfg })}`);
+    console.log(`已经在运行了（pid ${running.pid}）：${urlOf({ ...requestedCfg, ...running.cfg })}`);
     return;
   }
+  const cfg = ensureToken(requestedCfg);
   if (!fs.existsSync(path.join(ROOT, 'dist', 'index.html'))) console.warn('提示：前端还没构建（dist/ 不存在），先在项目里运行 npm run build');
 
   if (foreground) {
@@ -264,7 +265,7 @@ async function token([sub, value]) {
   const file = readFileConfig();
   if (!sub) {
     const cfg = loadConfig();
-    if (!cfg.token) return console.log('没有设置 token（只允许本机访问）');
+    if (!cfg.token) return console.log('尚未设置 token，下次启动时会自动生成');
     console.log(cfg.token);
     if (process.env.SEED_PI_WEB_TOKEN) console.log('（来自环境变量 SEED_PI_WEB_TOKEN）');
     return;
@@ -278,7 +279,7 @@ async function token([sub, value]) {
     delete file.token;
   } else throw new Error(`未知的子命令 token ${sub}`);
   writeFileConfig(file);
-  console.log(file.token ? `token 已设为：${file.token}` : 'token 已去掉');
+  console.log(file.token ? `token 已设为：${file.token}` : 'token 配置已清除，下次启动时会自动生成');
   await hintRestart();
 }
 

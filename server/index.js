@@ -21,13 +21,12 @@ import { isLocalRequest, readClipboardFiles, resolveUploadDir, saveUpload, listP
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 8787);
-const TOKEN = process.env.SEED_PI_WEB_TOKEN || '';
+const TOKEN = process.env.SEED_PI_WEB_TOKEN;
 const IDLE_MINUTES = Number(process.env.SEED_PI_WEB_IDLE_MINUTES || 30);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, '..', 'dist');
 
-// ---------- 安全：token / Host / Origin 校验 ----------
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+// ---------- 安全：token / Origin 校验（启动时保证 token 已初始化） ----------
 function checkRequest(req) {
   const url = new URL(req.url, 'http://x');
   const host = req.headers.host || '';
@@ -39,13 +38,8 @@ function checkRequest(req) {
       return false;
     }
   }
-  if (TOKEN) {
-    const t = req.headers['x-seed-pi-web-token'] || url.searchParams.get('token');
-    return t === TOKEN;
-  }
-  // 没设 token 时只接受本机 Host，防 DNS rebinding
-  const hostname = host.replace(/:\d+$/, '');
-  return LOCAL_HOSTS.has(hostname) || hostname === HOST;
+  const t = req.headers['x-seed-pi-web-token'] || url.searchParams.get('token');
+  return !!TOKEN && t === TOKEN;
 }
 
 // ---------- pi 进程管理：一个会话文件对应一个 pi 进程 ----------
@@ -848,8 +842,8 @@ server.listen(PORT, HOST, () => {
     fs.mkdirSync(HOME_DIR, { recursive: true });
     fs.writeFileSync(STATE_FILE, JSON.stringify({ pid: process.pid, port: PORT, host: HOST, startedAt: STARTED_AT }, null, 2));
   } catch {}
-  console.log(`seed-pi-web 已启动：http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}${TOKEN ? `/?token=${TOKEN}` : ''}`);
-  if (!TOKEN && !LOCAL_HOSTS.has(HOST)) console.warn('警告：监听了非本机地址但没设置 SEED_PI_WEB_TOKEN，非 localhost 访问会被拒绝。');
+  const displayHost = HOST === '0.0.0.0' || HOST === '::' ? 'localhost' : HOST.includes(':') ? `[${HOST}]` : HOST;
+  console.log(`seed-pi-web 已启动：http://${displayHost}:${PORT}/?token=${encodeURIComponent(TOKEN)}`);
 });
 
 let shuttingDown = false;

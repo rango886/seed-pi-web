@@ -25,7 +25,7 @@ const P = {
   keyboard: 'M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8',
   branch: 'M10 3h4a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4 16h4a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1zM16 16h4a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1zM12 8v4M6 16v-4h12v4',
   branching: 'M9 6h11M13 12h7M13 18h7M4 6v12h5M4 12h5',
-  fork: 'M8 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM16 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM8 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM8 8v8M16 8v1a4 4 0 0 1-4 4H8',
+  fork: 'M5 4v16M5 12h15M16 8l4 4-4 4',
   export: 'M12 3v12M7 8l5-5 5 5M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4',
   compress: 'M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7',
   close: 'M6 6l12 12M18 6L6 18',
@@ -61,7 +61,7 @@ const P = {
 </script>
 
 <template>
-  <svg :width="size" :height="size" viewBox="0 0 24 24" fill="none" stroke="currentColor" :stroke-width="name === 'more' ? 3.2 : 1.8" stroke-linecap="round" stroke-linejoin="round" class="icon">
+  <svg :width="size" :height="size" viewBox="0 0 24 24" fill="none" stroke="currentColor" :stroke-width="name === 'more' ? 3.2 : name === 'fork' ? 2 : 1.8" :stroke-linecap="name === 'fork' ? 'square' : 'round'" :stroke-linejoin="name === 'fork' ? 'miter' : 'round'" class="icon">
     <path :d="P[name] || ''" />
   </svg>
 </template>

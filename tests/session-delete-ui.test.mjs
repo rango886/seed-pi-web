@@ -36,11 +36,11 @@ async function store() {
 
 const row = { file: '/sessions/chat.jsonl', title: '测试会话' };
 
-test('normal deletion confirms without a question mark; cancelling and duplicate clicks do not delete', async () => {
+test('normal deletion confirms with title brackets only; cancelling and duplicate clicks do not delete', async () => {
   const h = await store();
   const pending = h.deleteSession(row);
   assert.equal(h.S.dialogs.length, 1);
-  assert.equal(h.S.dialogs[0].message, '确定删除「测试会话」，文件会被永久删除。');
+  assert.equal(h.S.dialogs[0].message, '确定删除「测试会话」文件会被永久删除');
   await h.deleteSession(row, { ctrlKey: true });
   assert.equal(h.deletes.length, 0, 'a pending confirmation blocks duplicate deletion');
   h.S.dialogs.pop()._resolve({ confirmed: false });

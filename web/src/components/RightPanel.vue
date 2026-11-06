@@ -83,8 +83,9 @@ const title = computed(() => (view.panel === 'files' ? '文件' : '进程'));
 // 顶部有标签栏时往下让一点，别挡住标签栏右边的“关闭全部”
 const hasTabs = computed(() => S.tabs.length > 0 || S.terms.length > 0);
 
-// 文件面板顶上那行路径：右键能把当前工作目录收藏起来（树里根节点本身不画，所以给它留个入口）
+// 文件面板空白处右键：保留当前工作目录的收藏、复制和下载入口，不再单独显示路径。
 function cwdMenu(e) {
+  if (!S.cwd) return;
   openMenu(e.clientX, e.clientY, [
     { label: isFav(S.cwd) ? '取消收藏这个目录' : '收藏这个目录', run: () => toggleFavorite(S.cwd) },
     { label: '复制路径', run: () => navigator.clipboard.writeText(S.cwd) },
@@ -102,21 +103,20 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <FloatingPanel :open="!!view.panel" :low="hasTabs" :title="title" :icon="view.panel === 'files' ? 'folder' : 'cpu'" @close="view.panel = null">
+  <FloatingPanel :open="!!view.panel" :low="hasTabs" :title="title" :icon="view.panel === 'files' ? 'branching' : 'cpu'" @close="view.panel = null">
       <template #badge><span v-if="view.panel === 'agents' && S.agents.length" class="cnt">{{ S.agents.length }}</span></template>
       <template #actions>
         <button v-if="view.panel === 'files'" class="ib" title="刷新文件和 Git 状态" @click="S.fsEpoch++"><Icon name="refresh" :size="15" /></button>
       </template>
 
       <!-- 两个面板都用 v-show 挂着：来回切换不用重新读目录 -->
-      <div v-show="view.panel === 'files'" class="pane">
-        <div class="sub ellipsis" :title="`${S.cwd}\n右键可以收藏这个目录`" @contextmenu.prevent.stop="cwdMenu($event)">{{ S.cwd }}</div>
+      <div v-show="view.panel === 'files'" class="pane" @contextmenu.prevent.stop="cwdMenu($event)">
         <div v-if="packing.size" class="sub packing">正在打包 {{ packing.size }} 个目录…</div>
         <div ref="sectionsEl" class="file-sections" :class="{ split: canResize, resizing }" :style="splitStyle">
           <GitChanges class="git-section" :class="{ expanded: hasGit }" />
           <div v-if="canResize" class="files-splitter" role="separator" tabindex="0" aria-label="调整更改和文件树的高度" aria-orientation="horizontal" :aria-valuemin="Math.round(bounds().min * 100)" :aria-valuemax="Math.round(bounds().max * 100)" :aria-valuenow="Math.round(splitRatio * 100)" title="上下拖动调整高度，双击恢复默认" @pointerdown.prevent="startResize" @pointermove="moveResize" @pointerup="finishResize" @pointercancel="finishResize" @lostpointercapture="finishResize" @keydown="resizeKey" @dblclick="setRatio(0.42, true)" />
           <div class="files-section" :class="{ collapsed: hasGit && !filesOpen }">
-            <button v-if="hasGit" class="files-heading" :aria-expanded="filesOpen" @click="filesOpen = !filesOpen">{{ filesOpen ? '▾' : '▸' }} 文件</button>
+            <button v-if="hasGit" class="files-heading" :aria-expanded="filesOpen" @click="filesOpen = !filesOpen"><Icon class="fold-icon" name="chevron" :size="14" :class="{ open: filesOpen }" />文件</button>
             <div v-show="filesOpen || !hasGit" class="list tree">
               <TreeNode v-if="S.cwd" :key="S.cwd" :entry="{ name: base(S.cwd), path: S.cwd, dir: true }" :depth="0" root />
             </div>
@@ -165,7 +165,9 @@ onUnmounted(() => {
 .files-splitter { position: relative; cursor: row-resize; touch-action: none; outline: none; }
 .files-splitter::after { content: ''; position: absolute; inset: 3px 0; background: var(--line); transition: background .12s; }
 .files-splitter:hover::after, .files-splitter:focus-visible::after, .resizing .files-splitter::after { inset: 2px 0; background: var(--accent); }
-.files-heading { flex: none; border: 0; background: transparent; color: var(--text-2); text-align: left; padding: 7px 14px 4px; font-size: var(--fs-xs); font-weight: 600; cursor: pointer; }
+.files-heading { display: flex; align-items: center; gap: 6px; flex: none; border: 0; background: transparent; color: var(--text-2); text-align: left; padding: 7px 14px 4px; font-size: var(--fs-xs); font-weight: 600; cursor: pointer; }
+.fold-icon { color: var(--text-3); transition: transform 0.15s; }
+.fold-icon.open { transform: rotate(90deg); }
 .packing { color: var(--accent-text); }
 .empty { padding: 32px 12px; text-align: center; font-size: var(--fs-sm); color: var(--text-3); }
 

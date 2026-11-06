@@ -43,8 +43,10 @@ const GITHUB_SETTINGS = {
   paraGap: 0.6,
 };
 
+const WARM_SETTINGS = { ...GITHUB_SETTINGS, accent: '#32827b', font: "'PingFang SC'", chatFont: "'PingFang SC'" };
+
 export const DEFAULTS = {
-  // 整体样式：GitHub（默认）| 现代 | pi。选一次会把主题色、Markdown 排版、字体、字号行高这些一起换掉（见 STYLES）
+  // 整体样式：素白 | GitHub（默认）| pi。选一次会把主题色、Markdown 排版、字体、字号行高这些一起换掉（见 STYLES）
   uiStyle: 'github',
   // 深浅色：每个样式都自带浅色和深色；pi 使用导出页原版配色
   theme: 'light', // light | dark | auto
@@ -65,39 +67,9 @@ export const DEFAULTS = {
 /** 整体样式：每个样式就是一整套设置（配色名、Markdown 排版、字体、字号行高、圆角…）。
  *  深浅色不在这里，在“深浅色”里单独切；切样式不改变过程块的展开习惯 */
 export const STYLES = [
-  {
-    value: 'modern',
-    label: '现代',
-    settings: {
-      accent: '#3b82f6',
-      mdStyle: 'default',
-      font: SYSTEM_FONT,
-      chatFont: '',
-      codeFont: GITHUB_CODE,
-      radius: 10,
-      chatWidth: 920,
-      spacing: 1,
-      fontSize: 14,
-      userFontSize: 14,
-      chatFontSize: 14,
-      codeFontSize: 13,
-      toolFontSize: 12,
-      thinkingFontSize: 12,
-      lineHeight: 1.7,
-      letterSpacing: 0.2,
-      paraGap: 0.6,
-    },
-  },
-  {
-    value: 'pi',
-    label: 'pi',
-    settings: { ...PI_SETTINGS },
-  },
-  {
-    value: 'github',
-    label: 'GitHub',
-    settings: { ...GITHUB_SETTINGS },
-  },
+  { value: 'github-warm', label: '素白', settings: { ...WARM_SETTINGS } },
+  { value: 'github', label: 'GitHub', settings: { ...GITHUB_SETTINGS } },
+  { value: 'pi', label: 'pi', settings: { ...PI_SETTINGS } },
 ];
 
 /** 换整体样式：把整套设置一起套上（调色板由 CSS 的 [data-ui] 负责，不用手动改） */
@@ -106,9 +78,9 @@ export function useStyle(v) {
   Object.assign(UI, s.settings, { uiStyle: s.value });
 }
 
-export const ACCENTS = ['#7459b4', '#0969da', '#07c160', '#3b82f6', '#12b7f5', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#64748b'];
+export const ACCENTS = ['#32827b', '#7459b4', '#0969da', '#07c160', '#3b82f6', '#12b7f5', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#64748b'];
 /** 主题色色块的名字（没写的就直接显示颜色值） */
-export const ACCENT_NAMES = { '#7459b4': 'pi 紫', '#0969da': 'GitHub 蓝（默认）', '#07c160': '绿色', '#3b82f6': '蓝色' };
+export const ACCENT_NAMES = { '#32827b': '素白 · 青绿', '#7459b4': 'pi 紫', '#0969da': 'GitHub 蓝（默认）', '#07c160': '绿色', '#3b82f6': '蓝色' };
 
 /** 字体下拉框：一个选项就是一款字体，不往里塞一串（缺字、缺等宽的兜底交给 apply() 统一补） */
 export const FONT_PRESETS = [
@@ -140,7 +112,7 @@ export const MONO_PRESETS = [
 ];
 
 const KEY = 'seed-pi-web-settings';
-export const VER = 19; // v19：输入框上方的状态胶囊改成默认隐藏（常用信息移到底栏的上下文圆环）
+export const VER = 20; // v20：素白去掉黄褐强调色，换成清新的青绿；只迁移旧预设色。
 // 设置结构历史：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版；<12 默认整体样式换成 GitHub（苹方 + Consolas），等宽字体统一 Consolas；<13 输入框上面的状态信息改成默认显示
 let saved = {};
 try {
@@ -181,13 +153,9 @@ if ((saved.__v || 1) < 11) {
   if (saved.codeFont === oldMono) delete saved.codeFont;
 }
 if ((saved.__v || 1) < 12) {
-  // 默认整体样式从“现代”换成 GitHub：字体 / 等宽还是老默认值的就当没改过，直接换成新的
+  // 旧默认字体更新为当前字体栈。
   if (saved.font === GITHUB_FONT_OLD) saved.font = GITHUB_FONT;
   if (saved.codeFont === GITHUB_MONO) saved.codeFont = GITHUB_CODE;
-  // 还整整齐齐停在“现代”那套（一项都没动）的，跟着换到 GitHub
-  const modern = STYLES.find((s) => s.value === 'modern').settings;
-  const untouched = saved.uiStyle === 'modern' && Object.entries(modern).every(([k, v]) => saved[k] === undefined || saved[k] === v);
-  if (untouched) Object.assign(saved, GITHUB_SETTINGS, { uiStyle: 'github' });
 }
 if ((saved.__v || 1) < 13) {
   // 状态信息改成默认显示：存档里的 false 就是旧默认（当时根本没地方单独打开），删掉让新默认生效
@@ -222,6 +190,10 @@ if ((saved.__v || 1) < 18) {
 if ((saved.__v || 1) < 19) {
   // 状态胶囊改成默认隐藏：旧存档里的 true 是旧默认，删掉让新默认生效
   delete saved.showUsage;
+}
+if ((saved.__v || 1) < 20 && saved.uiStyle === 'github-warm' && saved.accent === '#82704e') {
+  // 已经选过素白的用户刷新即可看到新配色；自选颜色、字体和其他偏好保持不变。
+  saved.accent = '#32827b';
 }
 for (const [key, oldKey] of [['thinkingDisplay', 'thinkingOpen'], ['toolsDisplay', 'toolsOpen']]) {
   if (!['collapsed', 'expanded'].includes(saved[key])) {

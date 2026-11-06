@@ -1,0 +1,116 @@
+/* 素白：暖意只留在近白底色里。蓝绿强调、草绿按钮、蓝色链接和珊瑚状态色
+   各自保留辨识度，不再整页染成黄褐色；布局和控件继续复用 GitHub。 */
+:root[data-ui='github-warm'] {
+  --bg: #fcfcfa;
+  --panel: #fffefd;
+  --panel-2: #fafaf8;
+  --chat-bg: #fffefd;
+  --bubble-ai: #fffefd;
+  --elev: #fffefd;
+  --text: #303530;
+  --text-2: #646f69;
+  --text-3: #818a84;
+  --line: #e5e7e2;
+  --line-2: #eef0eb;
+  --hover: #32827b24;
+  --active: #32827b38;
+  --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+  --accent-softer: color-mix(in srgb, var(--accent) 12%, transparent);
+  --warm-row: #32827b09;
+  --warm-session-active: #32827b30;
+  --code-bg: #f7f8f5;
+  --inline-code: #32827b0d;
+  --shadow-sm: 0 1px 0 #30353005;
+  --shadow: 0 1px 2px #30353008;
+  --shadow-lg: 0 0 0 1px #e5e7e280, 0 8px 28px #30353012;
+  --ok: #27845f;
+  --err: #c34d5c;
+  --warn: #a87521;
+  --err-bg: #fff1f2;
+  --add-bg: #edf8ef;
+  --add-fg: #26734e;
+  --del-bg: #fff1f2;
+  --del-fg: #ad4255;
+  --scroll: #6c827533;
+  --term-bg: #fffefd;
+  --gh-btn: #fafaf7;
+  --gh-btn-h: #f2f5ef;
+  /* 保留 GitHub 各处的特色色，而不是全部跟随同一强调色。 */
+  --gh-green: #27845f;
+  --gh-green-h: #217653;
+  --gh-tab: #e39285;
+  --warm-link: #3179b0;
+  --hl-comment: #7a877b;
+  --hl-keyword: #c34d70;
+  --hl-string: #318064;
+  --hl-number: #3179b0;
+  --hl-title: #7a62b0;
+  --hl-var: #a06a35;
+  --hl-meta: #758477;
+}
+
+/* 深色也去掉棕黄滤镜，只保留轻微偏暖的中性层次和清新的彩色点缀。 */
+:root[data-ui='github-warm'][data-theme='dark'] {
+  --bg: #191a18;
+  --panel: #20211e;
+  --panel-2: #272925;
+  --chat-bg: #191a18;
+  --bubble-ai: #20211e;
+  --elev: #292b26;
+  --text: #edeee8;
+  --text-2: #afb8ae;
+  --text-3: #899488;
+  --line: #383d35;
+  --line-2: #2c3029;
+  --hover: #9bd6c729;
+  --active: #9bd6c740;
+  --accent-soft: color-mix(in srgb, var(--accent) 24%, transparent);
+  --accent-softer: color-mix(in srgb, var(--accent) 16%, transparent);
+  --warm-row: #9bd6c70d;
+  --warm-session-active: #9bd6c738;
+  --code-bg: #22241f;
+  --inline-code: #9bd6c714;
+  --shadow-sm: 0 0 transparent;
+  --shadow: 0 0 0 1px #383d35;
+  --shadow-lg: 0 0 0 1px #383d35, 0 8px 24px #00000066;
+  --ok: #83cba5;
+  --err: #ec94a0;
+  --warn: #dcbd7b;
+  --err-bg: #ec94a014;
+  --add-bg: #83cba514;
+  --add-fg: #a2dabb;
+  --del-bg: #ec94a014;
+  --del-fg: #f2afb9;
+  --scroll: #afc3b333;
+  --term-bg: #191a18;
+  --gh-btn: #292d26;
+  --gh-btn-h: #33392f;
+  --gh-green: #27845f;
+  --gh-green-h: #30916b;
+  --gh-tab: #eca394;
+  --warm-link: #8cc4eb;
+  --hl-comment: #96aa96;
+  --hl-keyword: #e99bb8;
+  --hl-string: #96d3b4;
+  --hl-number: #8cc4eb;
+  --hl-title: #c6aff0;
+  --hl-var: #e0bc87;
+  --hl-meta: #a1b39c;
+}
+
+/* 只给 GitHub Markdown 换色；经典 / pi 排版仍保持各自规则。 */
+:root[data-ui='github-warm'][data-md='github'] {
+  --gh-fg-muted: var(--text-2);
+  --gh-border: var(--line);
+  --gh-border-muted: var(--line-2);
+  --gh-neutral-muted: var(--inline-code);
+  --gh-row: var(--warm-row);
+  --gh-link: var(--warm-link);
+  --gh-btn-bg: var(--gh-btn);
+  --gh-btn-hover: var(--gh-btn-h);
+}
+
+/* 当前会话比普通悬停更醒目，仍保留左侧强调色标记。 */
+:root[data-ui='github-warm'] .sess.active { background: var(--warm-session-active); }
+
+:root[data-ui='github-warm'] .modal-mask { background: #30353052; }

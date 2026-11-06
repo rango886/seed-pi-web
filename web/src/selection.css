@@ -1,0 +1,60 @@
+/* 最后加载：选中态跨主题统一使用用户气泡的浅底和深字。
+   不改普通悬停、状态指示灯、Git 标记、色板和危险按钮的语义颜色。 */
+:root {
+  --selection-bg: var(--bubble-me);
+  --selection-text: var(--bubble-me-text);
+}
+
+/* 子菜单不能继承父菜单选中后的深字，否则深色主题下未选中的条目会看不清。 */
+:root[data-ui] .ctxmenu .mi { color: var(--text); }
+:root[data-ui] .ctxmenu .mi.danger { color: var(--err); }
+
+:root[data-ui] :is(
+  .sess.active,
+  .dirhead.active,
+  .sel.active,
+  .tab.active,
+  .ib.on,
+  .chip.on,
+  .select-trigger.on,
+  .display-trigger.on,
+  .directory-trigger.on,
+  .select-option.current,
+  .option.current,
+  .entry.current,
+  .mi.cur,
+  .mi.active,
+  .tree-row.active,
+  .agent.active,
+  .sl.active,
+  .lv.cur,
+  .item.active,
+  .node.active,
+  .seg button.on,
+  .style.on,
+  .outline .item.on,
+  /* 菜单中鼠标悬停 / 键盘聚焦的条目，也沿用同一种高亮。 */
+  .ctxmenu .mi:not(.dis):is(:hover, .open),
+  .select-option:is(:hover, :focus-visible),
+  .display-menu .option:is(:hover, :focus-visible),
+  .directory-menu .entry:is(:hover, :focus-visible),
+  .think-pop .lv:hover
+) {
+  background: var(--selection-bg);
+  color: var(--selection-text);
+
+  /* 只调整条目自己的文字和图标，不把颜色传进弹出的子菜单。 */
+  & > :is(.stitle, .sinfo, .sdir, .archive-mark, .arrow, .icon, .gcount, .key, .path, .dim, .cmd, .args, .desc, .src, .tag, .sty-name, .astate, .caret, .x, .no),
+  & > :is(.sess-action, .dir-new, .kill):not(:hover),
+  & > .grow .prov,
+  & > .entry-text small,
+  & > .amain :is(.aname, .apath),
+  & > .node :is(.node-label, small) {
+    color: var(--selection-text);
+  }
+
+  &.danger { color: var(--err); }
+}
+
+:root[data-ui] .dirhead.active { font-weight: 600; }
+:root[data-ui] .dirhead.active .gcount { background: rgb(0 0 0 / 8%); }

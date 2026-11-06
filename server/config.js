@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { randomBytes } from 'node:crypto';
 
 export const APP = 'seed-pi-web';
 export const HOME_DIR = process.env.SEED_PI_WEB_HOME || path.join(os.homedir(), '.seed-pi-web');
@@ -30,8 +31,8 @@ export function readFileConfig() {
 }
 
 export function writeFileConfig(cfg) {
-  fs.mkdirSync(HOME_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2) + '\n');
+  fs.mkdirSync(HOME_DIR, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2) + '\n', { mode: 0o600 });
 }
 
 export function parseValue(key, v) {
@@ -52,6 +53,14 @@ export function loadConfig(env = process.env) {
     cfg[k] = parseValue(k, v);
   }
   return cfg;
+}
+
+/** 只在启动时初始化：没设置 token 就生成并保存，后续启动和 CLI 查询复用。 */
+export function ensureToken(cfg) {
+  if (cfg.token) return cfg;
+  const token = randomBytes(24).toString('base64url');
+  writeFileConfig({ ...readFileConfig(), token });
+  return { ...cfg, token };
 }
 
 /** 把配置转成环境变量（后端和它起的子进程都从环境变量读） */

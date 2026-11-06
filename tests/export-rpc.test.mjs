@@ -25,7 +25,7 @@ test('real pi HTML exports can be opened over HTTP using the session working dir
       assert.ok((await fs.stat(file)).size > 0);
       const url = new URL('/api/fs/raw', fixture.url);
       url.searchParams.set('path', file);
-      const response = await fetch(url);
+      const response = await fixture.fetch(url);
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type'), /text\/html/);
       assert.match(await response.text(), /<!doctype html/i);

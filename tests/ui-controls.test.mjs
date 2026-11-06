@@ -32,6 +32,31 @@ async function setup(t, file, { props = {}, imports = {}, document = {}, storage
   return { state, events };
 }
 
+test('settings use flat grouped surfaces, no helper notes, collapsible previews and separate footer actions', async () => {
+  const read = path => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
+  const [source, app, side, settings] = await Promise.all([
+    read('components/Settings.vue'), read('App.vue'), read('components/SidePanel.vue'), read('settings.js'),
+  ]);
+  const { descriptor, errors } = parse(source);
+  assert.deepEqual(errors, []);
+  const template = descriptor.template.content;
+  assert.deepEqual([...template.matchAll(/<h3>(.*?)<\/h3>/g)].map(m => m[1]), ['外观', '布局', '文字', '使用习惯', '附件']);
+  assert.doesNotMatch(template, /small-tip|class="dim tip"|（默认|下一轮接着|用户气泡自动/);
+  assert.match(template, /<details class="text-preview">/);
+  assert.doesNotMatch(template, /<details[^>]*\bopen\b/);
+  const head = template.match(/<header[\s\S]*?<\/header>/)[0];
+  assert.doesNotMatch(head, /exportSettings|resetSettings|fileInput.click/);
+  const foot = template.match(/<footer[\s\S]*?<\/footer>/)[0];
+  for (const action of ['exportSettings', 'fileInput.click()', 'resetSettings']) assert.ok(foot.includes(action));
+  assert.match(source, /\.settings-drawer \{[^}]*background: var\(--panel\)/);
+  assert.match(source, /section \+ section \{ border-top: 1px solid var\(--line\)/);
+  assert.doesNotMatch(source.match(/\.card \{([^}]+)\}/)[1], /border|background|shadow/);
+  assert.doesNotMatch(settings, /modern|现代/);
+  assert.match(app, /--top-height: 48px/);
+  assert.match(app, /\.top \{[^}]*min-height: var\(--top-height\)[^}]*padding: 6px 6px 6px 8px/);
+  assert.match(side, /\.brand \{[^}]*min-height: var\(--top-height\)/);
+});
+
 test('composer context ring stays visible without numbers and its popup dismisses quickly', async (t) => {
   const source = await fs.readFile(new URL('../web/src/components/Composer.vue', import.meta.url), 'utf8');
   const { descriptor } = parse(source);
@@ -250,6 +275,53 @@ test('empty composer send button matches toolbar borders and surfaces in every t
   assert.match(piDisabled, /background: transparent/);
   assert.match(piDisabled, /border-color: var\(--pi-dim\)/);
   assert.match(piDisabled, /color: var\(--pi-muted\)/);
+});
+
+test('file panel omits the cwd row while preserving root directory actions on its background', async (t) => {
+  const S = vue.reactive({ cwd: '/repo', tabs: [], terms: [] });
+  const menus = [], favorites = [], downloads = [];
+  const { state: s } = await setup(t, 'RightPanel.vue', { imports: {
+    '../store.js': { S, openSession() {}, sessionStatus() {}, isFav: () => false, toggleFavorite: path => favorites.push(path), killAgent() {} },
+    '../settings.js': { view: vue.reactive({ panel: 'files' }), openMenu: (...args) => menus.push(args) },
+    '../git.js': { G: vue.reactive({ cwd: '/repo', data: { available: true } }) },
+    '../file-download.js': { downloadPath: (...args) => downloads.push(args), packing: new Set() },
+  } });
+  s.cwdMenu({ clientX: 10, clientY: 20 });
+  assert.equal(menus.length, 1);
+  assert.deepEqual(menus[0].slice(0, 2), [10, 20]);
+  const items = menus[0][2];
+  assert.deepEqual(Array.from(items, item => item.label), ['收藏这个目录', '复制路径', '下载整个目录（ZIP）']);
+  items[0].run();
+  items[2].run();
+  assert.deepEqual(favorites, ['/repo']);
+  assert.deepEqual(downloads, [['/repo', true]]);
+  S.cwd = '';
+  s.cwdMenu({ clientX: 10, clientY: 20 });
+  assert.equal(menus.length, 1, 'no directory actions without a cwd');
+  const source = await fs.readFile(new URL('../web/src/components/RightPanel.vue', import.meta.url), 'utf8');
+  const template = parse(source).descriptor.template.content;
+  assert.doesNotMatch(template, /\{\{ S\.cwd \}\}/);
+  assert.match(template, /v-show="view.panel === 'files'" class="pane" @contextmenu.prevent.stop="cwdMenu\(\$event\)"/);
+});
+
+test('file panel and Git tree share the toolbar branch icon and standard line icons and chevrons', async () => {
+  const read = path => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
+  const [app, panel, git, tree, picker] = await Promise.all([
+    read('App.vue'), read('components/RightPanel.vue'), read('components/GitChanges.vue'),
+    read('components/TreeNode.vue'), read('components/DirTreeNode.vue'),
+  ]);
+  assert.match(app, /title="对话分支 \(\/tree\)"[^\n]+<Icon name="branching"/);
+  assert.match(panel, /:icon="view.panel === 'files' \? 'branching' : 'cpu'"/);
+  assert.match(git, /class="branch-symbol" name="branching" :size="16"/);
+  for (const source of [panel, git, tree, picker]) {
+    assert.match(source, /name="chevron" :size="14"/);
+    assert.doesNotMatch(parse(source).descriptor.template.content, /[▸▾]|<svg/);
+    assert.match(source, /\.open \{ transform: rotate\(90deg\); \}/);
+  }
+  assert.match(tree, /:name="iconOf\(entry.name, entry.dir\)" :size="16"/);
+  assert.match(git, /:name="iconOf\(row.entry.path\)" :size="16"/);
+  assert.match(git, /v-if="tree" class="fold-spacer" aria-hidden="true"/);
+  assert.match(picker, /name="folder" :size="16"/);
 });
 
 test('file sidebar splitter drags, clamps, persists, restores cursor and supports keyboard', async (t) => {
