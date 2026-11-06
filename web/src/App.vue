@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, closeTab, closeAllTabs, pickSession, pickModel, stop, renameSession, newSession, sessionTitle, toggleTerminal, openTerminal, termTab, termIdOf, openBranches, openDirPicker, toast } from './store.js';
+import { S, closeTab, closeAllTabs, pickSession, pickModel, stop, newSession, toggleTerminal, openTerminal, termTab, termIdOf, openBranches, openDirPicker, toast } from './store.js';
 import { view, toggleSide, openMenu, togglePanel, UI } from './settings.js';
 import { mainMenu, contextExtras, openModelMenu } from './menus.js';
 import SidePanel from './components/SidePanel.vue';
@@ -8,7 +8,7 @@ import RightPanel from './components/RightPanel.vue';
 import ChatView from './components/ChatView.vue';
 import FileViewer from './components/FileViewer.vue';
 import DiffViewer from './components/DiffViewer.vue';
-import { useGitRefresh, diffNames } from './git.js';
+import { useGitRefresh, diffNames, B } from './git.js';
 import TerminalPanel from './components/TerminalPanel.vue';
 import Dialogs from './components/Dialogs.vue';
 import Lightbox from './components/Lightbox.vue';
@@ -19,6 +19,7 @@ import Settings from './components/Settings.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import Icon from './components/Icon.vue';
 import DirectoryMenu from './components/DirectoryMenu.vue';
+import TopStatus from './components/TopStatus.vue';
 
 useGitRefresh();
 const sideW = ref(Number(localStorage.getItem('seed-pi-web-side-w')) || 272);
@@ -68,9 +69,13 @@ function tabMenu(e, key) {
 }
 
 const sideOpen = computed(() => (view.mobile ? view.drawer : view.side));
-const title = computed(() => sessionTitle());
-
-// 工作目录收进标题的悬浮提示和右键菜单；换目录仍从侧栏新建会话。
+// 顶栏左边显示工作目录：点一下复制，右键弹目录操作；手机上只显示最后一级目录名
+const cwdText = computed(() => {
+  if (!view.mobile || !S.cwd) return S.cwd;
+  return S.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || S.cwd;
+});
+// 跟 pi 一样紧跟在路径后面显示“ (分支名)”；路径太长从左边省略，分支名一直看得见
+const branch = computed(() => (B.name && B.cwd === S.cwd ? B.name : ''));
 function copyCwd() {
   if (!S.cwd) return;
   navigator.clipboard.writeText(S.cwd).then(() => toast('已复制路径', 'success', 1500));
@@ -191,13 +196,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
       <header ref="topEl" class="top">
         <template v-if="!sideOpen || view.mobile">
           <button class="ib" title="侧栏 (Ctrl+B)" @click="toggleSide(true)"><Icon name="sidebar" /></button>
-          <button class="ib" title="新会话 (Alt+N)" @click="newSession"><Icon name="newchat" /></button>
+          <button class="ib" title="新会话 (Alt+N)" @click="newSession"><Icon name="newchat" :size="16" /></button>
           <DirectoryMenu variant="icon" />
         </template>
-        <div class="ttl">
-          <div class="t1 ellipsis" :title="[S.cwd, '点击重命名 · 右键查看目录操作'].filter(Boolean).join('\n')" @click="renameSession()" @contextmenu.prevent.stop="cwdMenu">{{ title }}</div>
-        </div>
-        <!-- 顶栏放文件 / 终端 / 分支 / ⋯；进程、状态信息收在“⋯”菜单里 -->
+        <span v-if="S.cwd" class="cwd ellipsis" :title="S.cwd + (branch ? '\nGit 分支：' + branch : '') + '\n点击复制路径，右键更多操作'" @click="copyCwd" @contextmenu.prevent.stop="cwdMenu"><span dir="ltr">{{ cwdText }}<template v-if="branch"> ({{ branch }})</template></span></span>
+        <span class="grow" />
+        <TopStatus v-if="UI.topStatus" />
+        <!-- 顶栏放文件 / 终端 / 分支 / ⋯；进程等收在“⋯”菜单里 -->
         <template v-if="!compact">
           <button class="ib panel-btn" :class="{ on: view.panel === 'files' }" title="文件 (Ctrl+E)" @click="togglePanel('files')"><Icon name="folder" /></button>
           <button v-if="S.info.terminal" class="ib" :class="{ on: inTerm }" title="终端 (Ctrl+`)" @click="toggleTerminal"><Icon name="terminal" /></button>
@@ -264,7 +269,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 </template>
 
 <style scoped>
-.app { --top-height: 48px; height: 100%; display: flex; min-height: 0; }
+.app { --top-height: 36px; height: 100%; display: flex; min-height: 0; }
 .center { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--chat-bg); position: relative; }
 
 /* 侧栏 */
@@ -282,11 +287,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 .mask.show { opacity: 1; pointer-events: auto; }
 
 /* 顶部标题栏 */
-.top { min-height: var(--top-height); flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 6px 6px 8px; border-bottom: 1px solid var(--line); background: var(--chat-bg); }
-.ttl { flex: 1; min-width: 0; text-align: center; padding: 0 6px; display: flex; align-items: center; justify-content: center; }
-/* 顶栏和侧栏顶部同高，压缩上下留白，字号较大时仍可自然撑开。 */
-.t1 { font-size: calc(var(--fs) - 1px); font-weight: 600; line-height: 1.25; max-width: 100%; cursor: pointer; }
-.ib { width: 30px; height: 30px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+/* 顶栏和侧栏顶部同高；作为 container，让里面的状态项按宽度收起 */
+.top { container: topbar / inline-size; min-height: var(--top-height); flex: none; display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 8px; border-bottom: 1px solid var(--line); background: var(--chat-bg); }
+.top > .grow { flex: 1; min-width: 8px; }
+/* 路径太长时省略开头，保住最后一级目录名 */
+.cwd { min-width: 0; flex: 0 1 auto; direction: rtl; padding: 0 6px; font-family: var(--font-code); font-size: 12px; color: var(--text-3); cursor: pointer; }
+.cwd:hover { color: var(--text); }
+/* 分支名紧跟在路径后面；空间不够时先缩路径，分支名自己最多占 160px */
+.ib { width: 28px; height: 28px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .ib:hover { background: var(--active); color: var(--text); }
 .ib.on { color: var(--accent-text); background: var(--accent-soft); }
 .ib:disabled { opacity: 0.4; pointer-events: none; }

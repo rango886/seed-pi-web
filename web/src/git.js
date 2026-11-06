@@ -5,6 +5,18 @@ import { http } from './api.js';
 import { view } from './settings.js';
 
 export const G = reactive({ cwd: '', data: null, loading: false, error: '' });
+// 顶栏用的分支名：单独一份，文件面板没开也要显示
+export const B = reactive({ cwd: '', name: '' });
+let bSerial = 0;
+export async function refreshBranch() {
+  const cwd = S.cwd;
+  if (!cwd) return;
+  const id = ++bSerial;
+  try {
+    const r = await http.get('/api/git/branch', { cwd });
+    if (id === bSerial && cwd === S.cwd) Object.assign(B, { cwd, name: r.branch || '' });
+  } catch {}
+}
 export const diffNames = { staged: '已暂存', working: '未暂存', head: '全部变更' };
 export const statusNames = { M: '已修改', A: '已新增', U: '未跟踪', D: '已删除', R: '已重命名', C: '已复制', T: '类型变化', '!': '合并冲突', '.': '子模块内部变更' };
 const key = (p) => {
@@ -79,6 +91,9 @@ export async function refreshGit() {
     if (id !== serial || cwd !== S.cwd) return;
     G.data = data;
     G.error = '';
+    // 完整 status 里顺便带了分支名，直接同步给顶栏
+    bSerial++;
+    Object.assign(B, { cwd, name: data.available ? data.branch || '' : '' });
   } catch (e) {
     if (id === serial && cwd === S.cwd) G.error = e.message;
   } finally {
@@ -99,10 +114,16 @@ export function useGitRefresh() {
       G.data = null;
       G.error = '';
       G.loading = false;
+      Object.assign(B, { cwd, name: '' });
     }
+    // 分支名每次都查一下（很便宜）；完整 status 只在用得到时才跑
+    if (!needed()) refreshBranch();
     schedule();
   }, { immediate: true });
+  // pi 跑完一轮可能切了分支（git checkout），停下来时再查一次
+  const stopRun = watch(() => S.running, (r) => !r && !needed() && refreshBranch());
   const focus = () => {
+    if (!document.hidden && !needed()) refreshBranch();
     schedule();
     const active = S.tabs.find((t) => t.id === S.activeTab);
     if (active?.diff && !active.loading && !document.hidden) loadFile(active);
@@ -116,6 +137,7 @@ export function useGitRefresh() {
   });
   onUnmounted(() => {
     stop();
+    stopRun();
     clearTimeout(timer);
     clearInterval(interval);
     window.removeEventListener('focus', focus);

@@ -52,16 +52,19 @@ test('settings use flat grouped surfaces, no helper notes, collapsible previews 
   assert.match(source, /section \+ section \{ border-top: 1px solid var\(--line\)/);
   assert.doesNotMatch(source.match(/\.card \{([^}]+)\}/)[1], /border|background|shadow/);
   assert.doesNotMatch(settings, /modern|现代/);
-  assert.match(app, /--top-height: 48px/);
-  assert.match(app, /\.top \{[^}]*min-height: var\(--top-height\)[^}]*padding: 6px 6px 6px 8px/);
-  assert.match(side, /\.brand \{[^}]*min-height: var\(--top-height\)/);
+  assert.match(app, /--top-height: 36px/);
+  assert.match(app, /\.top \{[^}]*min-height: var\(--top-height\)[^}]*padding: 4px 6px 4px 8px/);
+  assert.match(side, /\.brand \{[^}]*padding: 10px var\(--side-gutter\)/);
 });
 
 test('composer drops the context ring for a pi-style bottom status bar; usage state still behaves', async (t) => {
   const source = await fs.readFile(new URL('../web/src/components/Composer.vue', import.meta.url), 'utf8');
+  const app = await fs.readFile(new URL('../web/src/App.vue', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /ref="contextChip"/, 'context ring removed from the input bar');
   assert.doesNotMatch(source, /class="chip cost"/, 'cost chip removed from the input bar');
-  assert.match(source, /class="cwd ellipsis"/, 'cwd sits in the bottom bar');
+  assert.doesNotMatch(source, /class="usage"|class="cwd ellipsis"/, 'status strip no longer lives in the composer');
+  assert.match(app, /class="cwd ellipsis"/, 'cwd sits in the top bar');
+  assert.match(app, /<TopStatus v-if="UI\.topStatus" \/>/, 'usage status sits in the top bar');
   assert.match(source, /placeholder="输入消息"/);
   const S = vue.reactive({ composer: { text: '', attachments: [], images: [] }, stats: null, statusItems: {}, starting: false });
   const actions = Object.fromEntries('submit stop allCommands toast setThinking setDefaultThinking compact showSessionInfo takeOver openFile attachPaths uploadFiles pasteFiles removeAttachment clearAttachments moveAttachment'.split(' ').map(name => [name, () => {}]));

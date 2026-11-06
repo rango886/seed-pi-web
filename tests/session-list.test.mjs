@@ -261,7 +261,7 @@ test('sidebar header shares the search and list gutters and uses a font-independ
   const brand = source.match(/\.brand \{([^}]+)\}/)[1];
   const logo = source.match(/\.logo \{([^}]+)\}/)[1];
   const toggle = source.match(/\.brand > \.ib \{([^}]+)\}/)[1];
-  assert.match(brand, /padding: 6px var\(--side-gutter\);/);
+  assert.match(brand, /padding: 10px var\(--side-gutter\);/);
   assert.doesNotMatch(brand, /--side-inset/);
   assert.match(source, /\.search \{[^}]*margin: 0 var\(--side-gutter\) 8px/);
   for (const rule of [logo, toggle]) {

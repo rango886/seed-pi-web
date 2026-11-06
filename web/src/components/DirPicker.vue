@@ -14,6 +14,8 @@ import DirTreeNode from './DirTreeNode.vue';
 const mode = computed(() => S.dirPickerMode || 'switch');
 const norm = (p) => (p || '').replace(/[\\/]+$/, '').toLowerCase();
 const same = (a, b) => !!a && !!b && norm(a) === norm(b);
+// 地址栏里的目录末尾自动带上分隔符：接着打新目录名回车就能建，不用自己补 \
+const withSep = (p) => (!p || /[\\/]$/.test(p) ? p : p + (p.includes('\\') ? '\\' : '/'));
 
 const roots = ref([]);
 const current = ref(''); // 选中的目录（完整路径）
@@ -30,7 +32,7 @@ const ver = ref(0);
 
 function select(p, row = '') {
   current.value = p;
-  pathInput.value = p;
+  pathInput.value = withSep(p);
   cmd.value = null; // 手选了新目标：之前“展开所有”的惯性到此为止，别让它继续往新分支上滑
   rowAt.value = row; // 左栏里哪一行是你刚点的（没点左栏就是空，一个都不亮）
 }
@@ -96,9 +98,11 @@ const ghost = computed(() => {
   // 框里的内容和选中的目录正好一样（刚点了最近使用、或者刚同步过去）：不用提示
   if (!v || same(v, current.value)) return '';
   const n = norm(v);
+  // 用原样（只忽略大小写）比前缀：末尾带不带 \ 影响接下来要补的内容，也能避免“code\”匹配到“codex”
+  const low = v.toLowerCase();
   const hit = recent.value
     .map((r) => r.cwd)
-    .filter((p) => p && norm(p) !== n && norm(p).startsWith(n))
+    .filter((p) => p && norm(p) !== n && p.toLowerCase().startsWith(low))
     .sort((a, b) => a.length - b.length)[0];
   return hit ? hit.slice(v.length) : '';
 });
@@ -141,7 +145,7 @@ function favMenu(e, p) {
 const dragFav = ref('');
 const dropOn = ref(null);
 const favCls = (p) => ({
-  active: rowAt === rowFav(p),
+  active: rowAt.value === rowFav(p),
   dragging: dragFav.value === p,
   'drop-before': dropOn.value?.key === norm(p) && !dropOn.value.after,
   'drop-after': dropOn.value?.key === norm(p) && dropOn.value.after,
@@ -178,6 +182,49 @@ function onFavDrop(e) {
   const d = dropOn.value;
   endFavDrag();
   if (d) moveFavorite(from, d.key, d.after);
+}
+
+// ---- 清空最近使用：不删会话，只是以后的列表里不再显示现在这些 ----
+async function clearRecent() {
+  try {
+    await http.del('/api/recent-dirs');
+    recent.value = [];
+    if (rowAt.value.startsWith('recent:')) rowAt.value = '';
+    toast('已清空最近使用', 'success', 1500);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ---- 左栏宽度：拖中间的分隔条调，双击恢复默认 ----
+const LEFT_KEY = 'seed-pi-web-dirpicker-left';
+const LEFT_DEFAULT = 268;
+const leftW = ref(Number(localStorage.getItem(LEFT_KEY)) || LEFT_DEFAULT);
+const mainEl = ref(null);
+const resizing = ref(false);
+function clampLeft(w) {
+  const max = Math.max(200, (mainEl.value?.clientWidth || 900) - 320); // 右边至少留 320px 给目录树
+  return Math.round(Math.max(180, Math.min(max, w)));
+}
+function startLeftResize(e) {
+  const start = e.clientX;
+  const init = leftW.value;
+  resizing.value = true;
+  const move = (ev) => (leftW.value = clampLeft(init + ev.clientX - start));
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    document.body.style.cursor = '';
+    resizing.value = false;
+    localStorage.setItem(LEFT_KEY, leftW.value);
+  };
+  document.body.style.cursor = 'col-resize';
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+function resetLeft() {
+  leftW.value = LEFT_DEFAULT;
+  localStorage.removeItem(LEFT_KEY);
 }
 
 // ---- 打开 / 新建 ----
@@ -235,8 +282,8 @@ function onKey(e) {
       </div>
 
       <div class="modal-body">
-        <div class="main">
-          <aside class="left">
+        <div ref="mainEl" class="main" :class="{ resizing }">
+          <aside class="left" :style="{ width: leftW + 'px' }">
             <div class="grp fav">收藏</div>
             <div
               v-for="p in S.favorites"
@@ -260,7 +307,10 @@ function onKey(e) {
             </div>
             <div v-if="!S.favorites.length" class="dim pad">在右边的树里右键文件夹就能收藏</div>
 
-            <div class="grp">最近使用</div>
+            <div class="grp recent-head">
+              <span class="grow">最近使用</span>
+              <button v-if="recent.length" class="clear" title="清空最近使用（不会删除会话，以后用到的目录会重新出现）" @click="clearRecent">清空</button>
+            </div>
             <div v-for="r in recent" :key="r.cwd" class="item" :class="{ active: rowAt === rowRecent(r.cwd) }" :title="r.cwd" @click="reveal(r.cwd, rowRecent(r.cwd))" @dblclick="openNow(r.cwd)">
               <Icon name="folder" :size="15" />
               <span class="grow path">{{ r.cwd }}</span>
@@ -268,6 +318,7 @@ function onKey(e) {
             </div>
             <div v-if="!recent.length" class="dim pad">无</div>
           </aside>
+          <div class="split" role="separator" aria-orientation="vertical" title="拖动调整宽度，双击恢复" @pointerdown.prevent="startLeftResize" @dblclick="resetLeft" />
 
           <section class="right">
             <div class="top">
@@ -307,9 +358,19 @@ function onKey(e) {
 .dirs { width: min(1080px, 96vw); max-width: none; height: min(720px, 84vh); max-height: 84vh; }
 .dirs .modal-body { overflow: hidden; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-.main { flex: 1; min-height: 0; display: flex; gap: 10px; }
+.main { flex: 1; min-height: 0; display: flex; }
+.main.resizing { user-select: none; }
 .left { width: 268px; flex: none; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); overflow-y: auto; padding: 4px 6px 10px; }
+/* 左右两栏中间的 10px 间隙就是拖动条，悬停 / 拖动时中间亮一条细线 */
+.split { flex: none; width: 10px; cursor: col-resize; position: relative; touch-action: none; }
+.split::after { content: ''; position: absolute; top: 8px; bottom: 8px; left: 4px; width: 2px; border-radius: 1px; background: var(--accent); opacity: 0; transition: opacity 0.15s; }
+.split:hover::after, .resizing .split::after { opacity: 1; }
 .grp { font-size: var(--fs-xs); color: var(--text-3); padding: 10px 8px 4px; }
+.recent-head { display: flex; align-items: center; }
+.clear { border: 0; background: transparent; padding: 2px 8px; border-radius: var(--r-sm); font-size: var(--fs-xs); line-height: 1.5; color: var(--text-3); cursor: pointer; opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s; }
+/* 平时不占眼力，鼠标移到“最近使用”这一行（或键盘聚焦到它）才淡出来；位置一直留着，不会跳 */
+.recent-head:hover .clear, .clear:focus-visible { opacity: 1; }
+.clear:hover { color: var(--err); background: var(--hover); }
 /* “收藏”这个小标题比“最近使用”亮一档，一眼能看出这块是自己整理的 */
 .grp.fav { color: var(--text-2); }
 .item { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer; }
@@ -346,7 +407,8 @@ function onKey(e) {
 
 @media (max-width: 768px) {
   .dirs { width: 96vw; height: 86vh; }
-  .main { flex-direction: column; }
-  .left { width: auto; flex: none; max-height: 30%; }
+  .main { flex-direction: column; gap: 10px; }
+  .left { width: auto !important; flex: none; max-height: 30%; }
+  .split { display: none; }
 }
 </style>

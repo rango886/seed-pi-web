@@ -1,7 +1,7 @@
 <script setup>
 import { ref, toRef, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, contextUsage, otherAgents, viewer, takeOver, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL, openTerminal } from '../store.js';
-import { UI, view, openMenu, togglePanel } from '../settings.js';
+import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, contextUsage, otherAgents, viewer, takeOver, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL } from '../store.js';
+import { UI, view, openMenu } from '../settings.js';
 import { http, rawUrl } from '../api.js';
 import { fmtTokens, levelName, joinPath, fmtSize } from '../util.js';
 import ModelMenu from './ModelMenu.vue';
@@ -383,59 +383,6 @@ const usage = computed(() => {
     outTok: fmtTokens(t.output || 0),
   };
 });
-// 输入框下面右边那一行状态：格式照搬 pi 终端底栏
-// ↑输入 ↓输出 R缓存读 W缓存写 CH命中率 $花费 上下文%/窗口
-// 缓存命中率：直接从当前对话里最后一条带用量的回复算（pi 实时统计里不带这个数）
-const latestCacheHit = computed(() => {
-  for (let i = S.messages?.length - 1; i >= 0; i--) {
-    const u = S.messages[i]?.role === 'assistant' && S.messages[i].usage;
-    if (!u) continue;
-    const prompt = (Number(u.input) || 0) + (Number(u.cacheRead) || 0) + (Number(u.cacheWrite) || 0);
-    if (prompt > 0) return ((Number(u.cacheRead) || 0) / prompt) * 100;
-  }
-  return null;
-});
-const piTok = (n) => (n < 1000 ? String(n) : n < 1e4 ? `${(n / 1000).toFixed(1)}k` : n < 1e6 ? `${Math.round(n / 1000)}k` : n < 1e7 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1e6)}M`);
-const statusItems = computed(() => {
-  const s = S.stats;
-  if (!s) return [];
-  const t = s.tokens || {};
-  const out = [];
-  if (t.input) out.push({ text: `↑${piTok(t.input)}`, title: `累计「没命中缓存」的输入 ${t.input} tokens（整个会话，所有分支）\n命中缓存的那部分算在 R 里，两者加起来才是总输入` });
-  if (t.output) out.push({ text: `↓${piTok(t.output)}`, title: `累计输出 ${t.output} tokens` });
-  if (t.cacheRead) out.push({ text: `R${piTok(t.cacheRead)}`, title: `累计缓存读 ${t.cacheRead} tokens` });
-  if (t.cacheWrite) out.push({ text: `W${piTok(t.cacheWrite)}`, title: `累计缓存写 ${t.cacheWrite} tokens` });
-  const hit = latestCacheHit.value ?? s.latestCacheHitRate;
-  if ((t.cacheRead > 0 || t.cacheWrite > 0) && hit != null) out.push({ text: `CH${hit.toFixed(1)}%`, title: '最近一次请求的缓存命中率：缓存读 ÷ 这次请求的全部输入' });
-  if (s.cost) out.push({ text: `$${s.cost.toFixed(3)}`, title: '整个会话累计花费（所有分支），点击查看会话详情', run: showSessionInfo });
-  const win = ctx.value?.contextWindow ?? S.state?.model?.contextWindow ?? 0;
-  const p = ctx.value?.percent;
-  out.push({ text: `${Number.isFinite(p) ? p.toFixed(1) + '%' : '?'}/${piTok(win)}`, cls: p > 90 ? 'danger' : p > 70 ? 'warn' : '', title: ctx.value?.tokens != null ? `当前上下文 ${ctx.value.tokens} / ${win} tokens，点击压缩` : ctxEmpty.value, run: compact });
-  return out;
-});
-
-// 工作目录：点一下直接复制路径；右键才弹出复制 / 查看 / 开终端
-function copyCwd() {
-  if (!S.cwd) return;
-  navigator.clipboard?.writeText(S.cwd).then(() => toast('已复制路径', 'success', 1500), () => toast('复制失败', 'error'));
-}
-function cwdMenu(e) {
-  if (!S.cwd) return;
-  const r = e.currentTarget.getBoundingClientRect();
-  openMenu(r.left, r.top - 6, [
-    { label: '复制路径', run: () => navigator.clipboard.writeText(S.cwd).then(() => toast('已复制路径', 'success', 1500)) },
-    { label: '在文件面板中查看', run: () => view.panel !== 'files' && togglePanel('files') },
-    S.info.terminal && { label: '在此目录开终端', run: () => openTerminal() },
-  ].filter(Boolean));
-}
-/** 状态栏里的一小段被点了：自己有动作（花费 / 上下文）就干自己的事，并拦住冒泡；
- *  没动作的（输入、输出…）就放它冒上去，让整条框去打开会话详情 */
-function onItemClick(it, e) {
-  if (!it.run) return;
-  e.stopPropagation();
-  it.run();
-}
-
 // 模型 / 思考强度那两个弹窗贴着各自 chip：右边对齐按钮的右边缘，底边就在按钮上方 6px。
 // 注意不能用 CSS 的 bottom:100% —— 那是相对整块输入区（含上面的用量条）算的，框会跑到输入框顶上。
 // 窄屏上横向可能会顶出左边界，就夹一下
@@ -636,17 +583,6 @@ async function onTakeOver() {
         title="上下拖动调整高度，双击恢复自动" @pointerdown.prevent="startComposerResize" @pointermove="moveComposerResize"
         @pointerup="finishComposerResize" @pointercancel="finishComposerResize" @lostpointercapture="finishComposerResize"
         @keydown="composerResizeKey" @dblclick="resetComposerHeight" />
-      <!-- 状态条：和输入框连成一体，左边工作目录，右边 pi 底栏同款状态（点空白处打开会话详情）。
-           放上边还是下边由设置决定，靠 CSS 的 order 换位置，模板只写一份 -->
-      <div v-if="UI.statusBar !== 'hidden' && (S.cwd || hasStatus)" class="usage" :class="{ 'at-bottom': UI.statusBar === 'bottom', 'no-line': !UI.statusDivider }">
-      <div class="u" @click="showSessionInfo()">
-        <span v-if="S.cwd" class="cwd ellipsis" :title="S.cwd + '\n点击复制路径，右键更多操作'" @click.stop="copyCwd" @contextmenu.prevent.stop="cwdMenu"><span dir="ltr">{{ S.cwd }}</span></span>
-        <template v-if="hasStatus">
-          <span class="grow" />
-          <span v-for="(it, i) in statusItems" :key="i" class="it" :class="[it.cls, { click: !!it.run }]" :title="it.title" @click="onItemClick(it, $event)">{{ it.text }}</span>
-        </template>
-      </div>
-      </div>
       <!-- 附件：顺序就是发送时的编号（在悬停浮层里看），可以拖动调整 -->
       <div v-if="atts.length" class="atts">
         <div
@@ -741,15 +677,13 @@ async function onTakeOver() {
 <style scoped>
 .composer { position: relative; flex: none; pointer-events: none; }
 /* 输入框整个悬在对话上面，只有卡片本身（和弹出的菜单）接鼠标事件，中间空白处让滚轮穿透给下面的对话 */
-.box, .usage, .pop { pointer-events: auto; }
+.box, .pop { pointer-events: auto; }
 .box { --box-px: var(--sp3); --box-pt: var(--sp2); --box-pb: var(--sp2); position: relative; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow); padding: var(--box-pt) var(--box-px) var(--box-pb); transition: border-color 0.15s, box-shadow 0.15s; }
 /* 顶边留一条容易抓住的热区；悬停 / 拖动时才显示细线，不占输入空间。 */
 .composer-resizer { position: absolute; z-index: 3; top: -5px; left: 12px; right: 12px; height: 10px; cursor: ns-resize; touch-action: none; outline: none; }
 .composer-resizer::after { content: ''; position: absolute; top: 4px; left: calc(50% - 22px); width: 44px; height: 2px; border-radius: 1px; background: var(--accent); opacity: 0; transition: opacity 0.15s; }
 .composer-resizer:hover::after, .composer-resizer:focus-visible::after, .box.resizing .composer-resizer::after { opacity: 1; }
 .box.focused { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: var(--shadow), 0 0 0 3px var(--accent-softer); }
-.box.focused .usage { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-.box.dragging .usage { border-style: dashed; border-color: var(--accent); }
 .box.dragging { border-style: dashed; border-color: var(--accent); background: var(--accent-softer); }
 .box.disabled { opacity: 0.6; }
 .viewer { pointer-events: auto; display: flex; align-items: center; gap: 8px; margin-bottom: var(--sp2); padding: 6px 6px 6px 12px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border-radius: var(--r-md); font-size: var(--fs-sm); color: var(--text-2); box-shadow: var(--shadow-sm); }
@@ -773,22 +707,7 @@ async function onTakeOver() {
 /* 下拉箭头：用线画的小折线，比 ▾ 这种字体符号更匀称，跟着 chip 颜色走 */
 .chip .caret { flex: none; color: var(--text-3); margin-right: -2px; transition: color 0.15s; }
 .chip:hover .caret, .chip.on .caret { color: var(--accent-text); }
-/* 状态栏是卡片的第一行，上、左、右顶到卡片边框，下面一条和边框同粗、同色的分割线（聚焦时一起变色）。
-   不要给它（或 .u）上背景色：github 主题的聚焦高亮是 inset 内阴影，子元素的背景会把它盖住 */
-.usage { display: flex; align-items: center; gap: var(--sp2); margin: calc(-1 * var(--box-pt)) calc(-1 * var(--box-px)) 4px; border: 0 solid var(--line); border-bottom-width: 1px; transition: border-color 0.15s; font-size: 11.5px; line-height: 16px; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
-/* 放在底部：排到最后，左右下顶到卡片边框，分割线换到上边 */
-.usage.at-bottom { order: 10; margin: 8px calc(-1 * var(--box-px)) calc(-1 * var(--box-pb)); border-bottom-width: 0; border-top-width: 1px; }
-/* 设置里关掉分割线：上下都不要（要压过 .at-bottom 的 border-top-width） */
-.usage.no-line, .usage.at-bottom.no-line { border-width: 0; }
-/* 路径 + 状态连成一整条胶囊：左边路径（太长省略开头），右边 pi 底栏同款状态 */
-.u { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 calc(var(--box-px) + 2px); cursor: pointer; }
-.u:hover .it { color: var(--text); }
-.cwd { min-width: 0; flex: 0 1 auto; direction: rtl; font-family: var(--font-code); font-size: 11px; color: var(--text-3); }
-.cwd:hover { color: var(--text); }
-.u .it { flex: none; }
-.u .it.click:hover { color: var(--text); }
-.u .it.warn { color: var(--warn); }
-.u .it.danger { color: var(--err); }
+
 
 /* “排队 / 插话”：和两边的 chip、图标按钮统一 30px 高度与全局圆角。 */
 .bar .btn { height: 30px; padding: 0 12px; border-radius: var(--r-pill); }

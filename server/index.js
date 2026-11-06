@@ -13,7 +13,7 @@ import { PiAgent } from './pi-agent.js';
 import { modelModules, readModelCatalog } from './models.js';
 import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionSnapshot, agentDir } from './sessions.js';
 import { TerminalManager, terminalAvailable } from './terminal.js';
-import { gitStatus, gitDiff } from './git.js';
+import { gitStatus, gitDiff, gitBranch } from './git.js';
 import { registerDownloads } from './downloads.js';
 import { archiveKey, createSessionArchive, registerSessionArchive, registerSessionStar } from './session-archive.js';
 import { APP, HOME_DIR, STATE_FILE, readState } from './config.js';
@@ -344,6 +344,10 @@ app.get('/api/git/status', wrap(async (req, res) => {
   if (!req.query.cwd) throw new Error('缺少工作目录');
   res.json(await gitStatus(String(req.query.cwd), req.query.fresh === '1'));
 }));
+app.get('/api/git/branch', wrap(async (req, res) => {
+  if (!req.query.cwd) throw new Error('缺少工作目录');
+  res.json(await gitBranch(String(req.query.cwd)));
+}));
 app.get('/api/git/diff', wrap(async (req, res) => {
   if (!req.query.cwd || !req.query.path) throw new Error('缺少工作目录或文件路径');
   res.json(await gitDiff(String(req.query.cwd), String(req.query.path), String(req.query.mode || 'working')));
@@ -391,9 +395,29 @@ app.delete(
   }),
 );
 
+// “清空最近使用”只记一个时间点：最近目录是从会话文件推出来的，不动会话，只把这个时间点以前的藏起来
+const RECENT_FILE = path.join(HOME_DIR, 'recent-dirs.json');
+async function recentClearedAt() {
+  try {
+    return Number(JSON.parse(await fsp.readFile(RECENT_FILE, 'utf8')).clearedAt) || 0;
+  } catch {
+    return 0;
+  }
+}
 app.get(
   '/api/recent-dirs',
-  wrap(async (req, res) => res.json(await recentDirs(await liveRoots()))),
+  wrap(async (req, res) => {
+    const [rows, clearedAt] = await Promise.all([recentDirs(await liveRoots()), recentClearedAt()]);
+    res.json(rows.filter((r) => Date.parse(r.modified) > clearedAt));
+  }),
+);
+app.delete(
+  '/api/recent-dirs',
+  wrap(async (req, res) => {
+    await fsp.mkdir(HOME_DIR, { recursive: true });
+    await fsp.writeFile(RECENT_FILE, JSON.stringify({ clearedAt: Date.now() }));
+    res.json({ ok: true });
+  }),
 );
 
 // ---------- 新会话的默认模型 / 思考强度 ----------

@@ -147,7 +147,7 @@ onUnmounted(() => {
 .directory-trigger.side { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s; }
 .directory-trigger.side:hover, .directory-trigger.side.on { border-color: var(--accent); color: var(--accent-text); }
 /* 顶栏：和顶栏其他图标按钮一样 */
-.directory-trigger.icon { width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.directory-trigger.icon { width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .directory-trigger.icon:hover, .directory-trigger.icon.on { background: var(--active); color: var(--text); }
 .directory-menu { position: fixed; z-index: 75; width: min(340px, calc(100vw - 16px)); overflow-y: auto; padding: 6px; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); color: var(--text); font-size: var(--fs-sm); }
 .section { padding: 9px 8px 4px; color: var(--text-3); font-size: var(--fs-xs); }

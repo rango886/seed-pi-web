@@ -80,6 +80,21 @@ export function gitStatus(cwd, fresh = false) {
   return item.promise;
 }
 
+// 顶栏只要分支名：不跑完整的 status，两条很便宜的命令就够。不是仓库 / 没装 Git 都返回空
+export async function gitBranch(cwd) {
+  cwd = path.resolve(cwd);
+  try {
+    // symbolic-ref 在还没提交过的新仓库里也能拿到分支名
+    return { branch: text(await git(cwd, ['symbolic-ref', '--short', '-q', 'HEAD'])).trim() };
+  } catch {}
+  try {
+    const oid = text(await git(cwd, ['rev-parse', '--short', 'HEAD'])).trim();
+    return { branch: oid ? `分离 HEAD · ${oid}` : '', detached: true };
+  } catch {
+    return { branch: '' };
+  }
+}
+
 async function blob(root, spec, missing = false) {
   let size;
   try {
