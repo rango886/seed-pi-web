@@ -203,7 +203,9 @@
 
 /* 输入框：聚焦时一圈主题色描边；发送键用 GitHub 绿 */
 :root[data-ui^='github'] .box { box-shadow: var(--shadow); }
-:root[data-ui^='github'] .box.focused { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+:root[data-ui^='github'] .box.focused { border-color: var(--accent); box-shadow: inset 0 0 0 0.5px var(--accent); }
+/* 状态栏的分割线：聚焦时只变主题色，保持 1px，比加粗的边框细一点 */
+:root[data-ui^='github'] .box.focused .usage { border-color: var(--accent); }
 :root[data-ui^='github'] .chip { background: var(--gh-btn); }
 :root[data-ui^='github'] .chip:hover,
 :root[data-ui^='github'] .chip.on { background: var(--gh-btn-h); border-color: var(--line); color: var(--text); }

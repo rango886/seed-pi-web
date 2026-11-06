@@ -80,7 +80,16 @@ export function mainMenu(extra = []) {
     S.info.terminal && { label: '终端', key: 'Ctrl+`', check: !!termIdOf(S.activeTab), run: toggleTerminal },
     (S.tabs.length || S.terms.length) && { label: '关闭全部标签页', run: () => closeAllTabs() },
     '-',
-    { label: '输入框上方显示完整状态条', check: UI.showUsage, run: () => (UI.showUsage = !UI.showUsage) },
+    {
+      label: '状态栏',
+      children: [
+        { label: '放在输入框顶部', check: UI.statusBar === 'top', run: () => (UI.statusBar = 'top') },
+        { label: '放在输入框底部', check: UI.statusBar === 'bottom', run: () => (UI.statusBar = 'bottom') },
+        { label: '隐藏', check: UI.statusBar === 'hidden', run: () => (UI.statusBar = 'hidden') },
+        '-',
+        { label: '显示分割线', check: UI.statusDivider, disabled: UI.statusBar === 'hidden', run: () => (UI.statusDivider = !UI.statusDivider) },
+      ],
+    },
     {
       label: UI.showMeta ? '隐藏时间、模型与用量' : '显示时间、模型与用量',
       check: UI.showMeta,

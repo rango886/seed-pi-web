@@ -57,36 +57,17 @@ test('settings use flat grouped surfaces, no helper notes, collapsible previews 
   assert.match(side, /\.brand \{[^}]*min-height: var\(--top-height\)/);
 });
 
-test('composer context ring stays visible without numbers and its popup dismisses quickly', async (t) => {
+test('composer drops the context ring for a pi-style bottom status bar; usage state still behaves', async (t) => {
   const source = await fs.readFile(new URL('../web/src/components/Composer.vue', import.meta.url), 'utf8');
-  const { descriptor } = parse(source);
-  const findRing = (nodes, ancestors = []) => {
-    for (const node of nodes) {
-      if (node.props?.some(p => p.name === 'ref' && p.value?.content === 'contextChip')) return [...ancestors, node];
-      const found = findRing(node.children || [], [...ancestors, node]);
-      if (found) return found;
-    }
-  };
-  const path = findRing(descriptor.template.ast.children);
-  assert.ok(path, 'context chip exists');
-  const chip = path.at(-1);
-  const svg = chip.children.find(node => node.tag === 'svg');
-  assert.ok(svg, 'context uses the original ring');
-  assert.ok(!chip.children.some(node => node.tag === 'span'), 'no number next to the ring');
-  assert.ok(!svg.children.some(node => node.tag === 'text'), 'no number inside the ring');
-  assert.match(source, /<svg width="16" height="16" viewBox="0 0 16 16"/);
-  assert.match(source, /class="track" cx="8" cy="8" r="6\.5"/);
-  assert.match(source, /\.context circle \{ fill: none; stroke-width: 2\.2; \}/);
+  assert.doesNotMatch(source, /ref="contextChip"/, 'context ring removed from the input bar');
+  assert.doesNotMatch(source, /class="chip cost"/, 'cost chip removed from the input bar');
+  assert.match(source, /class="cwd ellipsis"/, 'cwd sits in the bottom bar');
   assert.match(source, /placeholder="输入消息"/);
-  for (const node of path) {
-    assert.ok(!node.props?.some(p => p.type === 7 && ['if', 'else-if', 'else', 'show'].includes(p.name)), 'context chip must not depend on stats or session state');
-  }
-
   const S = vue.reactive({ composer: { text: '', attachments: [], images: [] }, stats: null, statusItems: {}, starting: false });
   const actions = Object.fromEntries('submit stop allCommands toast setThinking setDefaultThinking compact showSessionInfo takeOver openFile attachPaths uploadFiles pasteFiles removeAttachment clearAttachments moveAttachment'.split(' ').map(name => [name, () => {}]));
   const { state: s } = await setup(t, 'Composer.vue', { imports: {
-    '../store.js': { ...actions, S, BUILTINS: [], ORIGIN_LABEL: {}, hasStatus: vue.computed(() => !!S.stats), contextUsage: vue.computed(() => S.stats?.contextUsage), otherAgents: vue.ref(0), viewer: vue.ref(false) },
-    '../settings.js': { UI: {}, view: vue.reactive({ menu: null }), openMenu() {} },
+    '../store.js': { ...actions, S, BUILTINS: [], ORIGIN_LABEL: {}, openTerminal() {}, hasStatus: vue.computed(() => !!S.stats), contextUsage: vue.computed(() => S.stats?.contextUsage), otherAgents: vue.ref(0), viewer: vue.ref(false) },
+    '../settings.js': { UI: {}, view: vue.reactive({ menu: null }), openMenu() {}, togglePanel() {} },
     '../api.js': { http: {}, rawUrl() {} },
     '../util.js': { fmtTokens: String, levelName: String, joinPath() {}, fmtSize: String },
   } });
@@ -134,8 +115,8 @@ test('composer top edge resizes upward, clamps and resets without persisting hei
   const S = vue.reactive({ composer: { text: '', attachments: [], images: [] }, stats: null, statusItems: {} });
   const actions = Object.fromEntries('submit stop allCommands toast setThinking setDefaultThinking compact showSessionInfo takeOver openFile attachPaths uploadFiles pasteFiles removeAttachment clearAttachments moveAttachment'.split(' ').map(name => [name, () => {}]));
   const { state: s } = await setup(t, 'Composer.vue', { document, storage, imports: {
-    '../store.js': { ...actions, S, BUILTINS: [], ORIGIN_LABEL: {}, hasStatus: vue.ref(false), contextUsage: vue.ref(null), otherAgents: vue.ref(0), viewer: vue.ref(false) },
-    '../settings.js': { UI: {}, view: vue.reactive({ menu: null }), openMenu() {} },
+    '../store.js': { ...actions, S, BUILTINS: [], ORIGIN_LABEL: {}, openTerminal() {}, hasStatus: vue.ref(false), contextUsage: vue.ref(null), otherAgents: vue.ref(0), viewer: vue.ref(false) },
+    '../settings.js': { UI: {}, view: vue.reactive({ menu: null }), openMenu() {}, togglePanel() {} },
     '../api.js': { http: {}, rawUrl() {} },
     '../util.js': { fmtTokens: String, levelName: String, joinPath() {}, fmtSize: String },
   } });

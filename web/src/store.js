@@ -686,7 +686,7 @@ async function loadStats() {
   const id = S.agentId, revision = viewRevision;
   const stats = await rpc({ type: 'get_session_stats' }).catch(() => null);
   if (S.agentId !== id || viewRevision !== revision) return;
-  S.stats = stats ? { ...stats, contextEstimate: S.stats?.contextEstimate } : S.stats;
+  S.stats = stats ? { latestCacheHitRate: S.stats?.latestCacheHitRate, ...stats, contextEstimate: S.stats?.contextEstimate } : S.stats;
   if (S.stats && S.agent?.sessionFile) {
     S.stats.branchStats = S.conversation?.branchStats;
     rememberCtx(S.agent.sessionFile, S.stats.contextUsage, S.conversation?.leafId, S.state?.model);

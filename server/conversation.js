@@ -33,7 +33,7 @@ export function selectionOf(branch) {
 
 export function usageOf(entries) {
   const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
-  let cost = 0, userMessages = 0, assistantMessages = 0, toolCalls = 0;
+  let cost = 0, userMessages = 0, assistantMessages = 0, toolCalls = 0, latestCacheHitRate = null;
   const add = (u) => {
     if (!u) return;
     for (const k of ['input', 'output', 'cacheRead', 'cacheWrite']) tokens[k] += Number(u[k]) || 0;
@@ -48,10 +48,14 @@ export function usageOf(entries) {
       assistantMessages++;
       toolCalls += Array.isArray(m.content) ? m.content.filter((b) => b?.type === 'toolCall').length : 0;
       add(m.usage);
+      // 跟 pi 底栏一样：缓存命中率取最后一次回复的缓存读 / 当次全部输入
+      const u = m.usage || {};
+      const prompt = (Number(u.input) || 0) + (Number(u.cacheRead) || 0) + (Number(u.cacheWrite) || 0);
+      latestCacheHitRate = prompt > 0 ? ((Number(u.cacheRead) || 0) / prompt) * 100 : null;
     } else if (m?.role === 'toolResult') add(m.usage);
   }
   tokens.total = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
-  return { tokens, cost, userMessages, assistantMessages, toolCalls };
+  return { tokens, cost, userMessages, assistantMessages, toolCalls, latestCacheHitRate };
 }
 
 const textOf = (c) => typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b) => b?.type === 'text').map((b) => b.text).join('\n') : '';

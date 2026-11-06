@@ -238,6 +238,16 @@ const layoutSliders = [
                   <button v-for="mode in DISPLAY_MODES" :key="mode.value" :class="{ on: UI[key] === mode.value }" :aria-pressed="UI[key] === mode.value" @click="UI[key] = mode.value">{{ mode.label }}</button>
                 </div>
               </div>
+              <div class="item">
+                <span class="label">状态栏</span>
+                <div class="seg" aria-label="状态栏">
+                  <button v-for="[v, l] in [['top', '顶部'], ['bottom', '底部'], ['hidden', '隐藏']]" :key="v" :class="{ on: UI.statusBar === v }" :aria-pressed="UI.statusBar === v" @click="UI.statusBar = v">{{ l }}</button>
+                </div>
+              </div>
+              <label v-if="UI.statusBar !== 'hidden'" class="item">
+                <span class="label">状态栏分割线</span>
+                <input v-model="UI.statusDivider" type="checkbox" class="switch" />
+              </label>
               <label class="item">
                 <span class="label">显示时间、模型与用量</span>
                 <input v-model="UI.showMeta" type="checkbox" class="switch" />
