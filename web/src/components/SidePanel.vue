@@ -1,8 +1,9 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
-import { S, openSession, deleteSession, setSessionArchived, renameSession, sessionStatus, setSessionMode, isFav } from '../store.js';
+import { S, openSession, deleteSession, setSessionArchived, renameSession, sessionStatus, setSessionMode, isFav, newSession, newSessionIn } from '../store.js';
 import { view, toggleSide, closeDrawer, openMenu } from '../settings.js';
 import Icon from './Icon.vue';
+import DirectoryMenu from './DirectoryMenu.vue';
 import SessionDisplayMenu from './SessionDisplayMenu.vue';
 import { readSessionView, saveSessionView, matchesArchive, sessionInfo } from '../session-list.js';
 
@@ -92,9 +93,12 @@ const layoutItems = () => [
   { label: '平铺显示', check: cur.value.layout === 'flat', run: () => setLayout('flat') },
   { label: '折叠显示', check: cur.value.layout === 'group', run: () => setLayout('group') },
 ];
-function dirMenu(e) {
+function dirMenu(e, path) {
   const group = cur.value.layout === 'group';
   openMenu(e.clientX, e.clientY, [
+    path && { label: '在此目录新建会话', run: () => newIn(path) },
+    path && { label: '复制路径', run: () => navigator.clipboard.writeText(path) },
+    path && '-',
     ...layoutItems(),
     group && '-',
     group && { label: '全部展开', run: expandAll },
@@ -200,6 +204,14 @@ function open(s) {
   openSession(s.file);
   closeDrawer();
 }
+function newHere() {
+  newSession();
+  closeDrawer();
+}
+function newIn(cwd) {
+  newSessionIn(cwd);
+  closeDrawer();
+}
 function sessionMenu(e, s) {
   openMenu(e.clientX, e.clientY, [
     { label: '打开', run: () => open(s) },
@@ -223,6 +235,12 @@ function sessionMenu(e, s) {
       <button class="ib" :title="view.mobile ? '关闭' : '收起侧栏 (Ctrl+B)'" @click="toggleSide(false)"><Icon :name="view.mobile ? 'close' : 'sidebar'" /></button>
     </div>
 
+    <!-- 新建：当前目录一键新建；其他目录单独一个按钮，弹出收藏 / 最近 / 浏览 -->
+    <div class="actions">
+      <button type="button" class="abtn" :title="`在当前目录新建会话 (Alt+N)\n${S.cwd || ''}`" @click="newHere"><Icon name="newchat" :size="16" /><span class="ellipsis">新会话</span></button>
+      <DirectoryMenu @select="closeDrawer" />
+    </div>
+
     <!-- 左边只放会话；文件、进程在右边的浮动侧栏里（按钮在顶栏），终端在顶部标签页里 -->
     <div class="pane">
       <div class="search">
@@ -235,11 +253,12 @@ function sessionMenu(e, s) {
         <div v-if="!groups.length" class="empty">{{ emptyText }}</div>
         <template v-for="g in groups" :key="g.path || g.name">
           <!-- 目录：像文件夹一样，点一下折叠/展开；右键可以全部展开折叠、切路径显示 -->
-          <div v-if="g.path" class="dirhead" :class="{ closed: isCollapsed(g.path) }" :title="g.path" @click="toggleDir(g.path)" @contextmenu.prevent.stop="dirMenu($event)">
+          <div v-if="g.path" class="dirhead" :class="{ closed: isCollapsed(g.path) }" :title="g.path" @click="toggleDir(g.path)" @contextmenu.prevent.stop="dirMenu($event, g.path)">
             <span class="arrow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg></span>
             <Icon name="folder" :size="15" />
             <span class="ellipsis grow">{{ g.name }}</span>
             <span class="gcount">{{ g.items.length }}</span>
+            <button type="button" class="dir-new" :title="`在这个目录新建会话\n${g.path}`" aria-label="在这个目录新建会话" @click.stop="newIn(g.path)"><Icon name="plus" :size="14" /></button>
           </div>
           <div v-else-if="g.name" class="gname">{{ g.name }}</div>
           <template v-if="!g.path || !isCollapsed(g.path)">
@@ -283,6 +302,16 @@ function sessionMenu(e, s) {
 .ib.on { color: var(--accent-text); background: var(--accent-soft); }
 
 .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 两个新建按钮：和搜索框同一套外观，左右对齐同一条线 */
+.actions { display: flex; gap: 6px; margin: 0 var(--side-gutter) 8px; flex: none; }
+.abtn { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; transition: border-color 0.15s, color 0.15s; }
+.abtn:hover { border-color: var(--accent); color: var(--accent-text); }
+/* 目录行悬停时，计数换成「+」：一步在这个目录新建，和会话行悬停出归档/删除一个路子 */
+.dir-new { display: none; width: 24px; height: 24px; margin-left: auto; margin-right: -4px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
+.dir-new:hover { background: var(--accent-soft); color: var(--accent-text); }
+.dirhead:hover .dir-new, .dirhead:focus-within .dir-new { display: inline-flex; }
+.dirhead:hover .gcount, .dirhead:focus-within .gcount { display: none; }
+.dirhead .dir-new :deep(.icon) { color: inherit; opacity: 1; }
 .search { display: flex; align-items: center; gap: 6px; margin: 0 var(--side-gutter) 8px; padding: 0 4px 0 var(--side-inset); height: 34px; border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--text-3); flex: none; }
 .search:focus-within { border-color: var(--accent); }
 .search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-size: var(--fs-sm); }
@@ -347,6 +376,8 @@ function sessionMenu(e, s) {
 .hint { font-size: var(--fs-xs); color: var(--text-3); padding: 4px 18px 6px; }
 /* 触屏靠长按/右键菜单归档和删除，键盘聚焦仍能使用行内按钮。 */
 @media (hover: none) {
+  .dir-new { display: inline-flex; }
+  .dirhead .gcount { display: none; }
   .sess:hover:not(:focus-within) .sess-action { display: none; }
   .sess.saved:hover:not(:focus-within) .sinfo, .sess.saved:hover:not(:focus-within) .sdir { display: inline; }
 }

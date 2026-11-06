@@ -71,6 +71,23 @@ export const S = reactive({
   tick: 0, // 每来一个流式事件 +1，聊天区用它判断要不要滚到底
 });
 
+// 运行时有效用量优先；历史 JSONL 或压缩后没有有效 usage 时，用当前路径估计。
+// 换模型不能继续拿旧模型的请求 token 数，只能退回保留内容的粗估。
+export const contextUsage = computed(() => {
+  const live = S.stats?.contextUsage;
+  if (live?.tokens != null && Number.isFinite(live.percent)) return live;
+  const estimate = S.stats?.contextEstimate;
+  if (!estimate) return live;
+  const model = S.state?.model;
+  const catalogModel = S.models.find((m) => m.provider === model?.provider && m.id === model?.id);
+  const window = model?.contextWindow ?? catalogModel?.contextWindow;
+  if (!Number.isFinite(window) || window <= 0) return undefined;
+  const sameModel = estimate.usageModel?.provider === model?.provider && estimate.usageModel?.id === model?.id;
+  const tokens = sameModel ? estimate.tokens : estimate.contentTokens;
+  if (!Number.isFinite(tokens) || tokens < 0) return undefined;
+  return { tokens, contextWindow: window, percent: tokens / window * 100, estimated: true };
+});
+
 // 后台还有几个别的 pi 进程在跑（不含当前这个）
 export const otherAgents = computed(() => S.agents.filter((a) => a.running && a.id !== S.agentId).length);
 // 这个会话正在被别的窗口操作：这里只能看
@@ -451,7 +468,7 @@ function openLazy({ cwd, file, messages, state, stats, models, conversation }, {
     S.state = state || null;
     const cached = file ? readJson(CTX_KEY, {})[normPath(file)] : null;
     const matches = cached?.leafId === conversation?.leafId && cached?.model === `${state?.model?.provider}/${state?.model?.id}`;
-    S.stats = stats ? { ...stats, contextUsage: matches ? cached.usage : undefined } : null;
+    S.stats = stats ? { ...stats, contextUsage: matches && !stats.contextEstimate ? cached.usage : stats.contextUsage } : null;
     S.conversation = conversation || null;
     S.branchBack = [];
     S.edit = null;
@@ -663,7 +680,7 @@ async function loadStats() {
   const id = S.agentId, revision = viewRevision;
   const stats = await rpc({ type: 'get_session_stats' }).catch(() => null);
   if (S.agentId !== id || viewRevision !== revision) return;
-  S.stats = stats;
+  S.stats = stats ? { ...stats, contextEstimate: S.stats?.contextEstimate } : S.stats;
   if (S.stats && S.agent?.sessionFile) {
     S.stats.branchStats = S.conversation?.branchStats;
     rememberCtx(S.agent.sessionFile, S.stats.contextUsage, S.conversation?.leafId, S.state?.model);
@@ -672,7 +689,7 @@ async function loadStats() {
 
 function applyConversation(d, replaceMessages = false) {
   if (!d?.nodes) return;
-  const { messages, messageIds, contextUsage, ...conversation } = d;
+  const { messages, messageIds, contextUsage, contextEstimate, ...conversation } = d;
   if (S.conversation?.leafId !== d.leafId) viewRevision++;
   S.conversation = conversation;
   if (replaceMessages) setMessages(messages);
@@ -690,7 +707,7 @@ function applyConversation(d, replaceMessages = false) {
       if (id) m._entryId = id;
     }
   }
-  S.stats = { ...S.stats, ...d.totals, branchStats: d.branchStats, contextUsage };
+  S.stats = { ...S.stats, ...d.totals, branchStats: d.branchStats, contextUsage, contextEstimate };
 }
 
 async function loadConversation() {
@@ -1725,6 +1742,7 @@ export const showSessionInfo = guard(async () => {
   await loadStats();
   const s = S.stats || {};
   const st = S.state || {};
+  const ctx = contextUsage.value;
   const lines = [
     ['名称', st.sessionName || '(未命名)'],
     ['目录', S.cwd],
@@ -1736,7 +1754,7 @@ export const showSessionInfo = guard(async () => {
     ['费用 · 整个会话（所有分支）', s.cost != null ? `$${s.cost.toFixed(4)}` : '-'],
     ['当前路径 Tokens', s.branchStats?.tokens ? `输入 ${s.branchStats.tokens.input} · 输出 ${s.branchStats.tokens.output} · 缓存读 ${s.branchStats.tokens.cacheRead} · 缓存写 ${s.branchStats.tokens.cacheWrite}` : '-'],
     ['费用 · 当前路径', s.branchStats ? `$${s.branchStats.cost.toFixed(4)}` : '-'],
-    ['上下文', s.contextUsage ? `${s.contextUsage.tokens ?? '?'} / ${s.contextUsage.contextWindow} (${s.contextUsage.percent ?? '?'}%)` : '-'],
+    ['上下文', ctx ? `${ctx.tokens ?? '?'} / ${ctx.contextWindow} (${ctx.percent != null ? Math.round(ctx.percent) : '?'}%)${ctx.estimated ? '，根据当前路径估算' : ''}` : '-'],
   ];
   await ask({ method: 'info', title: '会话信息', rows: lines });
 });

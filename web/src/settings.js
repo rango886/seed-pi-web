@@ -55,7 +55,7 @@ export const DEFAULTS = {
   thinkingDisplay: 'collapsed', // collapsed | expanded
   toolsDisplay: 'collapsed',
   showMeta: false, // 默认不显示每条消息的时间/模型/用量（右键消息或菜单里打开）
-  showUsage: true, // 输入框上面的花费/token/上下文信息：默认展开（右键菜单 / 顶栏“⋯”里可以收起来）
+  showUsage: false, // 输入框上面那条完整的花费/token/上下文胶囊：默认收起（底栏有上下文圆环），右键菜单 / 顶栏“⋯”里可以展开
   // 附件
   uploadDir: '{tmp}/seed-pi-web/{session}', // 拖进来/粘贴的文件上传到哪：{tmp} {cwd} {session} {date} {home}，相对路径按 cwd 解析
   uploadMaxMB: 500, // 单个文件上传上限
@@ -140,7 +140,7 @@ export const MONO_PRESETS = [
 ];
 
 const KEY = 'seed-pi-web-settings';
-export const VER = 18; // v18：用户消息 / 助手回复字号分离，用户消息取消减 1px。
+export const VER = 19; // v19：输入框上方的状态胶囊改成默认隐藏（常用信息移到底栏的上下文圆环）
 // 设置结构历史：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版；<12 默认整体样式换成 GitHub（苹方 + Consolas），等宽字体统一 Consolas；<13 输入框上面的状态信息改成默认显示
 let saved = {};
 try {
@@ -218,6 +218,10 @@ if ((saved.__v || 1) < 17) {
 if ((saved.__v || 1) < 18) {
   // 原“聊天字号”继续用于助手回复；用户消息初始化为同样的大小，不再减 1px。
   saved.userFontSize ??= saved.chatFontSize ?? DEFAULTS.chatFontSize;
+}
+if ((saved.__v || 1) < 19) {
+  // 状态胶囊改成默认隐藏：旧存档里的 true 是旧默认，删掉让新默认生效
+  delete saved.showUsage;
 }
 for (const [key, oldKey] of [['thinkingDisplay', 'thinkingOpen'], ['toolsDisplay', 'toolsOpen']]) {
   if (!['collapsed', 'expanded'].includes(saved[key])) {

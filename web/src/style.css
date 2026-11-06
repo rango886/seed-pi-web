@@ -355,8 +355,11 @@ a:hover { text-decoration: underline; }
 /* 图片：保持原比例，高度封顶（不然一张竖图就占满整个屏幕，对话看着很不均衡），
    点了会打开全屏灯箱，所以鼠标是放大镜 */
 .md img { max-width: 100%; max-height: min(420px, 46vh); width: auto; height: auto; object-fit: contain; border-radius: var(--r-md); cursor: zoom-in; }
-/* 媒体比普通段落多留些上下空间；只作用于 Markdown，不影响独立文件播放器。 */
-.md img, .md .md-media { margin-block: max(1.25em, calc(var(--para) * 1.5)); }
+/* 媒体上下只留一点点：外面的段落已经有 --para 的间距了，再叠一大截就显得空。
+   独占一段的图片改成块级，去掉行内图片底下那截基线空隙；一排徽章这种多张图仍然是行内。
+   只作用于 Markdown，不影响独立文件播放器。 */
+.md img, .md .md-media { margin-block: calc(var(--para) * 0.5); }
+.md p > img:only-child { display: block; }
 
 /* ---- 数学公式（Temml 出 MathML，浏览器原生排版）----
    颜色交给 currentColor，深色主题下自动跟着变；宽度超出就横向滚，不撑破气泡 */

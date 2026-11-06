@@ -300,6 +300,44 @@ test('context cache is scoped to both current leaf and model, not merely the ses
   assert.equal(h.S.stats.contextUsage, undefined);
 });
 
+test('lazy JSONL estimates do not need pi or browser cache, and model switches use content estimates', async t => {
+  const h = await harness(t);
+  const model = { provider: 'test', id: 'model', contextWindow: 1000, thinkingLevels: ['off'] };
+  const estimate = { tokens: 400, contentTokens: 100, usageModel: { provider: 'test', id: 'model' } };
+  h.storage.set('seed-pi-web-context-usage', JSON.stringify({ session: { leafId: 'a', model: 'test/model', usage: { tokens: 800, contextWindow: 1000, percent: 80 } } }));
+  h.showLazy({ cwd: 'C:/test', file: 'session', messages: [], models: [model], state: { model }, stats: { contextEstimate: estimate }, conversation: { leafId: 'a', nodes: [] } });
+  assert.equal(h.contextUsage.value.percent, 40, 'fresh JSONL estimate wins over old browser cache');
+  assert.equal(h.contextUsage.value.estimated, true);
+  assert.equal(h.calls.length, 0, 'opening the history does not start pi');
+  await h.setModel({ provider: 'test', id: 'another', contextWindow: 2000, thinkingLevels: ['off'] });
+  assert.equal(h.contextUsage.value.percent, 5, 'a new model must not reuse the old request usage');
+  assert.equal(h.contextUsage.value.tokens, 100);
+  assert.equal(h.calls.length, 0, 'offline model selection also needs no process');
+  h.S.state.model = { provider: 'test', id: 'unknown' };
+  assert.equal(h.contextUsage.value, undefined, 'unknown window cannot produce a percentage');
+  h.S.state.model = { provider: 'test', id: 'model' };
+  assert.equal(h.contextUsage.value.percent, 40, 'window can be resolved from the model catalog');
+});
+
+test('valid runtime context wins, but null runtime usage falls back to the current snapshot estimate', async t => {
+  const h = await harness(t);
+  h.S.state.model.contextWindow = 1000;
+  const estimate = { tokens: 200, contentTokens: 50, usageModel: { provider: 'test', id: 'model' } };
+  h.dispatch({ t: 'branch_changed', agentId: 'a1', kind: 'web_label', snapshot: {
+    leafId: 'compacted', nodes: [], contextEstimate: estimate,
+    contextUsage: { tokens: null, contextWindow: 1000, percent: null },
+  } });
+  assert.equal(h.contextUsage.value.percent, 20);
+  assert.equal(h.contextUsage.value.estimated, true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.S.stats.contextEstimate.tokens, 200, 'stats refresh preserves the snapshot estimate');
+  h.S.stats.contextUsage = { tokens: 300, contextWindow: 1000, percent: 30 };
+  assert.equal(h.contextUsage.value.percent, 30);
+  assert.equal(h.contextUsage.value.estimated, undefined);
+  h.showLazy({ cwd: 'C:/test', file: 'empty', messages: [], models: [], state: null, stats: null });
+  assert.equal(h.contextUsage.value, undefined, 'switching histories cannot leak the old estimate');
+});
+
 test('label and model-restore notifications update metadata without replacing or scrolling the transcript', async t => {
   const h = await harness(t);
   const m = { _entryId: 'question', _k: 42, role: 'user', timestamp: 1, content: 'original' };
@@ -423,8 +461,8 @@ test('only context-menu switching prepares a prompt; rename and jump keep their 
 test('bubble actions stay localized; tree clicks jump and switches are explicit context-menu actions', async () => {
   const read = async name => parse(await fs.readFile(new URL('../web/src/components/' + name, import.meta.url), 'utf8')).descriptor;
   const message = await read('MessageItem.vue');
-  assert.match(message.template.content, /title="从此处分叉为新会话"[^>]*@click="forkMessage\(m\)">分叉<\/button>/);
-  assert.doesNotMatch(message.template.content, />Fork<\/button>/);
+  assert.match(message.template.content, /title="从此处分叉为新会话"[^>]*aria-label="分叉为新会话"[^>]*@click="forkMessage\(m\)"><Icon name="fork"/);
+  assert.doesNotMatch(message.template.content, />分叉<\/button>|>Fork<\/button>/, 'action labels live in title / aria-label, not visible text');
   assert.match(message.styles[0].content, /\.user-actions\.versions \{ opacity: 1; \}/);
   assert.match(message.styles[0].content, /@media \(hover: none\)/);
   const menu = await fs.readFile(new URL('../web/src/menus.js', import.meta.url), 'utf8');

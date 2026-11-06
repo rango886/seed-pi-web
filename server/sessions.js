@@ -11,6 +11,7 @@ import fsSync from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { branchOf, conversationOf, selectionOf, usageOf } from './conversation.js';
+import { estimateContext } from './context-usage.js';
 
 export function agentDir() {
   return process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
@@ -299,7 +300,7 @@ export async function readSessionSnapshot(file) {
     messages,
     state: { model, thinkingLevel, sessionName, sessionFile: file, sessionId: head?.id || null, isStreaming: false, isCompacting: false },
     conversation,
-    stats: { sessionFile: file, sessionId: head?.id || null, ...totals, branchStats: conversation.branchStats, leafId: conversation.leafId },
+    stats: { sessionFile: file, sessionId: head?.id || null, ...totals, branchStats: conversation.branchStats, leafId: conversation.leafId, contextEstimate: estimateContext(branch) },
   };
 }
 

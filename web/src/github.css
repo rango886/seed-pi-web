@@ -209,7 +209,7 @@
 :root[data-ui='github'] .chip.on { background: var(--gh-btn-h); border-color: var(--line); color: var(--text); }
 :root[data-ui='github'] .send { background: var(--gh-green); }
 :root[data-ui='github'] .send:hover { background: var(--gh-green-h); }
-:root[data-ui='github'] .send:disabled { background: var(--gh-btn); color: var(--text-3); }
+:root[data-ui='github'] .send:disabled { background: var(--gh-btn); color: var(--text-2); border-color: var(--line); }
 
 /* 思考 / 工具卡片的小标签：不再描边，跟着上面的 .blk-chip 走；只把悬停底色换成 GitHub 的 */
 :root[data-ui='github'] .blk-head:hover { background: var(--panel-2); }

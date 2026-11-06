@@ -10,7 +10,7 @@ async function setup(t, file, { props = {}, imports = {}, document = {}, storage
   const source = await fs.readFile(new URL('../web/src/components/' + file, import.meta.url), 'utf8');
   const code = compileScript(parse(source).descriptor, { id: 'test' }).content;
   const noop = () => {};
-  const context = vm.createContext({ console, document,
+  const context = vm.createContext({ console, document, setTimeout, clearTimeout,
     window: { innerWidth: 1000, innerHeight: 800, addEventListener: noop, removeEventListener: noop },
     localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) },
     ResizeObserver: class { constructor(cb) { this.cb = cb; } observe(el) { this.cb([{ contentRect: { height: el.clientHeight } }]); } disconnect() {} },
@@ -31,6 +31,71 @@ async function setup(t, file, { props = {}, imports = {}, document = {}, storage
   const state = scope.run(() => mod.namespace.default.setup(props, { expose: noop, emit: (...args) => events.push(args) }));
   return { state, events };
 }
+
+test('composer context ring stays visible without stats and updates when usage arrives', async (t) => {
+  const source = await fs.readFile(new URL('../web/src/components/Composer.vue', import.meta.url), 'utf8');
+  const { descriptor } = parse(source);
+  const findRing = (nodes, ancestors = []) => {
+    for (const node of nodes) {
+      if (node.props?.some(p => p.name === 'ref' && p.value?.content === 'ringChip')) return [...ancestors, node];
+      const found = findRing(node.children || [], [...ancestors, node]);
+      if (found) return found;
+    }
+  };
+  const path = findRing(descriptor.template.ast.children);
+  assert.ok(path, 'context ring exists');
+  for (const node of path) {
+    assert.ok(!node.props?.some(p => p.type === 7 && ['if', 'else-if', 'else', 'show'].includes(p.name)), 'ring must not depend on stats or session state');
+  }
+
+  const S = vue.reactive({ composer: { text: '', attachments: [], images: [] }, stats: null, statusItems: {}, starting: false });
+  const actions = Object.fromEntries('submit stop allCommands toast setThinking setDefaultThinking compact showSessionInfo takeOver openFile attachPaths uploadFiles pasteFiles removeAttachment clearAttachments moveAttachment'.split(' ').map(name => [name, () => {}]));
+  const { state: s } = await setup(t, 'Composer.vue', { imports: {
+    '../store.js': { ...actions, S, BUILTINS: [], ORIGIN_LABEL: {}, hasStatus: vue.computed(() => !!S.stats), contextUsage: vue.computed(() => S.stats?.contextUsage), otherAgents: vue.ref(0), viewer: vue.ref(false) },
+    '../settings.js': { UI: {}, view: vue.reactive({ menu: null }), openMenu() {} },
+    '../api.js': { http: {}, rawUrl() {} },
+    '../util.js': { fmtTokens: String, levelName: String, joinPath() {}, fmtSize: String },
+  } });
+  assert.equal(s.ctxPct.value, null, 'unknown usage is not zero');
+  assert.equal(s.usageRows.value[0].text, '暂无可用用量数据');
+  s.usageClick();
+  assert.equal(s.menu.value, 'usage', 'usage popup still opens before stats arrive');
+  S.stats = { tokens: { input: 10, output: 5 } };
+  assert.equal(s.usageRows.value[0].text, '暂无可用用量数据', 'totals alone do not establish current context');
+  S.stats.contextUsage = { tokens: 0, contextWindow: 1000, percent: 0 };
+  assert.equal(s.pctText.value, '0%');
+  S.stats.contextUsage = { tokens: 750, contextWindow: 1000, percent: 75 };
+  assert.equal(s.pctText.value, '75%');
+  assert.equal(s.ctxLevel.value, 'warn');
+  assert.match(s.usageRows.value[0].text, /750 \/ 1000/);
+  S.stats.contextUsage.estimated = true;
+  assert.equal(s.pctText.value, '75%', 'estimation details belong in the popup, not the compact percentage');
+  assert.match(s.usageRows.value[1].text, /估算/);
+  S.stats.contextUsage = { tokens: null, percent: null, contextWindow: 1000 };
+  assert.equal(s.pctText.value, '—', 'null runtime usage is not 0% or a bogus token count');
+  assert.equal(s.usageRows.value[0].text, '暂无可用用量数据');
+  S.stats = null;
+  assert.equal(s.ctxPct.value, null, 'switching to a session without stats clears old usage');
+  assert.equal(s.usageRows.value[0].text, '暂无可用用量数据');
+});
+
+test('empty composer send button matches toolbar borders and surfaces in every theme', async () => {
+  const read = path => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
+  const [composer, github, pi] = await Promise.all([read('components/Composer.vue'), read('github.css'), read('pi.css')]);
+  const disabled = composer.match(/\.send:disabled \{([^}]+)\}/)[1];
+  assert.match(disabled, /border: 1px solid var\(--line\)/);
+  assert.match(disabled, /background: var\(--panel-2\)/);
+  assert.match(disabled, /color: var\(--text-2\)/);
+  assert.match(composer, /:disabled="disabled \|\| !hasInput"/, 'empty input still cannot submit');
+  const githubDisabled = github.match(/\.send:disabled \{([^}]+)\}/)[1];
+  assert.match(githubDisabled, /background: var\(--gh-btn\)/);
+  assert.match(githubDisabled, /border-color: var\(--line\)/);
+  assert.match(githubDisabled, /color: var\(--text-2\)/);
+  const piDisabled = pi.match(/\.send:disabled \{([^}]+)\}/)[1];
+  assert.match(piDisabled, /background: transparent/);
+  assert.match(piDisabled, /border-color: var\(--pi-dim\)/);
+  assert.match(piDisabled, /color: var\(--pi-muted\)/);
+});
 
 test('file sidebar splitter drags, clamps, persists, restores cursor and supports keyboard', async (t) => {
   const document = { body: { style: { cursor: 'auto', userSelect: '' } } };

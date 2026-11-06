@@ -93,6 +93,8 @@ test('lazy reader restores the saved navigation path, ids, scopes and model with
     assert.ok(Math.abs(snap.stats.cost - 0.6) < 1e-10);
     assert.ok(Math.abs(snap.stats.branchStats.cost - 0.3) < 1e-10);
     assert.equal(snap.state.model.id, 'model');
+    assert.equal(snap.stats.contextEstimate.tokens, 135, 'latest usage on this path, not usage summed across requests or branches');
+    assert.deepEqual(snap.stats.contextEstimate.usageModel, { provider: 'test', id: 'model' });
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
 
@@ -144,6 +146,7 @@ test('extension bridge uses summary-free native navigation, persists the cursor 
   const snapshot = await m.request({ op: 'snapshot' });
   assert.ok(snapshot.data.messages.every(m => m._entryId));
   assert.equal(snapshot.data.contextUsage.percent, 5);
+  assert.equal(snapshot.data.contextEstimate.tokens, 135);
 });
 
 test('the bridge prepares an intermediate question before sending and preserves its original branch', async () => {

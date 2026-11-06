@@ -98,7 +98,7 @@ test('sidebar switches independent settings and intersects mode, archive and sea
   let menu;
   const actions = [];
   const { state: s } = await setup(t, 'SidePanel.vue', { storage, imports: {
-    '../store.js': { S, openSession() {}, newSession() {}, deleteSession() {}, setSessionArchived: (...args) => actions.push(args), renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: (cwd) => S.favorites.includes(cwd) },
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived: (...args) => actions.push(args), renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: (cwd) => S.favorites.includes(cwd) },
     '../settings.js': { view: vue.reactive({}), toggleSide() {}, closeDrawer() {}, openMenu(x, y, items) { menu = items; } },
   } });
   const files = () => s.groups.value.flatMap((g) => g.items.map((row) => row.file));
@@ -161,7 +161,7 @@ test('sidebar switches independent settings and intersects mode, archive and sea
 
 test('sidebar compensates for actual scrollbar width, including overlay scrollbars', async (t) => {
   const { state: s } = await setup(t, 'SidePanel.vue', { imports: {
-    '../store.js': { S: {}, openSession() {}, newSession() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
+    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
     '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   for (const width of [10, 8, 0, 10]) {
@@ -186,7 +186,7 @@ test('sidebar scrolling reveals the thumb and resets its idle timeout without ch
     setTimeout(callback, ms) { const id = ++nextId; pending.set(id, { callback, ms }); return id; },
     clearTimeout(id) { pending.delete(id); },
   }, imports: {
-    '../store.js': { S: {}, openSession() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
+    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
     '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   assert.equal(s.listScrolling.value, false);

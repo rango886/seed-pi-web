@@ -79,7 +79,7 @@ export function mainMenu(extra = []) {
     S.info.terminal && { label: '终端', key: 'Ctrl+`', check: !!termIdOf(S.activeTab), run: toggleTerminal },
     (S.tabs.length || S.terms.length) && { label: '关闭全部标签页', run: () => closeAllTabs() },
     '-',
-    { label: UI.showUsage ? '收起状态信息' : '展开状态信息', check: UI.showUsage, run: () => (UI.showUsage = !UI.showUsage) },
+    { label: '输入框上方显示完整状态条', check: UI.showUsage, run: () => (UI.showUsage = !UI.showUsage) },
     {
       label: UI.showMeta ? '隐藏时间、模型与用量' : '显示时间、模型与用量',
       check: UI.showMeta,

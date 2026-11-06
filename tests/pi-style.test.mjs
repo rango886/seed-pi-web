@@ -305,7 +305,7 @@ test('user and assistant message sizes are independent, persist, and share equal
   const saved = JSON.parse(s.storage.get('seed-pi-web-settings'));
   assert.equal(saved.userFontSize, 20);
   assert.equal(saved.chatFontSize, 24);
-  assert.equal(saved.__v, 18);
+  assert.equal(saved.__v, 19);
   for (const style of s.STYLES) {
     s.useStyle(style.value);
     await vue.nextTick();

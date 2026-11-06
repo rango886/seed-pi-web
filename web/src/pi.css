@@ -124,7 +124,7 @@
 :root[data-ui='pi'] .btn.primary,
 :root[data-ui='pi'] .send { color: var(--pi-page); background: var(--accent); border-color: var(--accent); }
 :root[data-ui='pi'] .btn.danger { color: var(--err); }
-:root[data-ui='pi'] .send:disabled { background: var(--pi-pending); color: var(--pi-dim); }
+:root[data-ui='pi'] .send:disabled { background: transparent; color: var(--pi-muted); border-color: var(--pi-dim); }
 :root[data-ui='pi'] .box { background: var(--pi-card); box-shadow: none; }
 :root[data-ui='pi'] .box.focused,
 :root[data-ui='pi'] .input:focus { border-color: var(--accent); box-shadow: none; }

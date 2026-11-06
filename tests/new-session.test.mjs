@@ -6,16 +6,16 @@ import test from 'node:test';
 import * as vue from 'vue';
 import { parse } from 'vue/compiler-sfc';
 
-test('new session lives before the composer directory picker, and sidebar controls move into display menu', async () => {
+test('new session lives in the sidebar before the directory picker, and the composer stays message-only', async () => {
   const load = async (name) => parse(await fs.readFile(new URL('../web/src/components/' + name, import.meta.url), 'utf8')).descriptor;
   const composer = await load('Composer.vue');
   const template = composer.template.content;
-  assert.match(template, /<button[^>]*title="在当前目录开始新会话"[^>]*@click="newSession">新会话<\/button>\s*<DirectoryMenu\s*\/>/);
-  assert.ok(template.indexOf('fileInput.click()') < template.indexOf('@click="newSession"'), 'upload keeps its original leftmost position');
-  assert.match(composer.styles[0].content, /\.bar > \.new-session \{ flex-shrink: 0; white-space: nowrap; \}/, 'new session text does not shrink or wrap');
+  assert.ok(!template.includes('newSession'), 'the composer bar no longer hosts new session');
+  assert.ok(!template.includes('<DirectoryMenu'), 'the composer bar no longer hosts the directory picker');
   const sidebar = (await load('SidePanel.vue')).template.content;
-  assert.ok(!sidebar.includes('<DirectoryMenu'));
-  assert.ok(!sidebar.includes('新会话'));
+  // 新会话按钮（图标 + 文案）在侧栏 actions 行里，紧跟目录选择器
+  assert.match(sidebar, /@click="newHere"><Icon name="newchat"[^>]*\/><span class="ellipsis">新会话<\/span><\/button>\s*<DirectoryMenu @select="closeDrawer" \/>/);
+  assert.ok(sidebar.indexOf('@click="newHere"') < sidebar.indexOf('class="search"'), 'new session sits above the session list');
   assert.ok(!sidebar.includes('class="modes"'));
   assert.match(sidebar, /<SessionDisplayMenu[^>]*@mode-change="setSessionMode"/);
 });

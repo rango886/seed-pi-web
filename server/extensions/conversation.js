@@ -1,6 +1,7 @@
 // Loaded explicitly by seed-pi-web, not installed into the user's global extensions.
 // Only documented extension APIs; notify is our correlated, non-persisted RPC reply.
 import { BRIDGE_COMMAND, BRIDGE_REPLY, NAVIGATION_TYPE, conversationOf, selectionOf } from '../conversation.js';
+import { estimateContext } from '../context-usage.js';
 
 export default function conversationExtension(pi) {
   let navigating = false;
@@ -77,7 +78,7 @@ export default function conversationExtension(pi) {
           const messages = req.includeMessages === false ? undefined : projection.entries.flatMap((e) => e.messages.map((m) => ({ ...m, _entryId: e.sourceEntry.id })));
           const messageIds = projection.entries.flatMap((e) => e.messages.map((m) => ({ role: m.role, timestamp: m.timestamp, _entryId: e.sourceEntry.id })));
           const checkpoint = sm.getBranch().findLast((e) => e.type === 'custom' && e.customType === NAVIGATION_TYPE);
-          reply({ ok: true, data: { ...conversationOf(entries, sm.getLeafId()), messages, messageIds, contextUsage: ctx.getContextUsage(), historicalSelection: checkpoint?.data?.previousSelection } });
+          reply({ ok: true, data: { ...conversationOf(entries, sm.getLeafId()), messages, messageIds, contextUsage: ctx.getContextUsage(), contextEstimate: estimateContext(sm.getBranch()), historicalSelection: checkpoint?.data?.previousSelection } });
         } else throw new Error('未知的分支操作');
       } catch (error) {
         reply({ ok: false, error: error.message });

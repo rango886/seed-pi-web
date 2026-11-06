@@ -1,11 +1,10 @@
 <script setup>
 import { ref, toRef, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, submit, stop, newSession, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, otherAgents, viewer, takeOver, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL } from '../store.js';
+import { S, submit, stop, allCommands, BUILTINS, toast, setThinking, setDefaultThinking, compact, showSessionInfo, hasStatus, contextUsage, otherAgents, viewer, takeOver, openFile, attachPaths, uploadFiles, pasteFiles, removeAttachment, clearAttachments, moveAttachment, ORIGIN_LABEL } from '../store.js';
 import { UI, view, openMenu } from '../settings.js';
 import { http, rawUrl } from '../api.js';
 import { fmtTokens, levelName, joinPath, fmtSize } from '../util.js';
 import ModelMenu from './ModelMenu.vue';
-import DirectoryMenu from './DirectoryMenu.vue';
 import AttTooltip from './AttTooltip.vue';
 import Icon from './Icon.vue';
 
@@ -312,9 +311,10 @@ const model = computed(() => S.state?.model);
 watch(() => S.composerFocus, () => nextTick(() => ta.value?.focus()));
 const modelLabel = computed(() => (model.value ? model.value.name || model.value.id : '选择模型'));
 const thinking = computed(() => S.state?.thinkingLevel);
-const ctx = computed(() => S.stats?.contextUsage);
-const ctxPct = computed(() => (ctx.value?.percent != null ? Math.min(100, Math.max(0, ctx.value.percent)) : null));
-const pctText = computed(() => (ctxPct.value != null ? Math.round(ctxPct.value) + '%' : '?'));
+const ctx = contextUsage;
+const ctxPct = computed(() => (Number.isFinite(ctx.value?.percent) ? Math.min(100, Math.max(0, ctx.value.percent)) : null));
+const pctText = computed(() => (ctxPct.value != null ? `${Math.round(ctxPct.value)}%` : '—'));
+const ctxEmpty = computed(() => S.stats?.contextEstimate ? '模型窗口未知，无法计算占比' : '暂无可用用量数据');
 const busy = computed(() => S.running || !!S.bashLive);
 // 输入框上面那一行小字：花费、缓存命中、token
 const usage = computed(() => {
@@ -342,11 +342,11 @@ const statusItems = computed(() => {
     if (u.hit != null) out.push({ label: '缓存率', text: `${u.hit}%`, title: '所有分支累计缓存读 / 累计全部输入，不代表下一次请求的命中率' });
     if (u.cost) out.push({ label: '累计花费', text: u.cost, title: '整个会话的实际消耗，包含所有分支；点击比较当前路径', run: showSessionInfo });
   }
-  if (ctx.value) {
+  if (ctx.value?.tokens != null) {
     out.push({ label: '当前上下文', text: pctText.value, title: `当前路径上下文占用 ${pctText.value}，点击压缩`, run: compact });
     out.push({ text: `${fmtTokens(ctx.value.tokens)} / ${fmtTokens(ctx.value.contextWindow)}`, title: '当前上下文 tokens / 窗口大小' });
   }
-  if (!ctx.value && S.stats) out.push({ label: '当前上下文', text: '待更新', title: '尚无当前路径的有效上下文估计，不沿用其他分支的数值' });
+  if (ctx.value?.tokens == null && S.stats) out.push({ label: '当前上下文', text: ctxEmpty.value, title: '尚无当前路径的有效上下文估计，不沿用其他分支的数值' });
   if (otherAgents.value) out.push({ label: '后台', text: `${otherAgents.value} 个在跑`, title: '其他会话还有几个 pi 进程在跑' });
   for (const [k, v] of Object.entries(S.statusItems)) out.push({ text: v, title: `${k}: ${v}` });
   return out;
@@ -366,19 +366,84 @@ const composerEl = ref(null);
 const boxEl = ref(null);
 const modelChip = ref(null);
 const thinkChip = ref(null);
-const popPos = ref({ right: 0, bottom: 0 });
-const POP_W = { model: 400, thinking: 220 }; // 和各自 CSS 里的 width 对齐
+const ringChip = ref(null);
+
+// ---- 底栏的上下文圆环：始终显示，暂无数据时显示「—」，悬停 / 点击弹出明细 ----
+const RING_C = 2 * Math.PI * 6.5; // 圆环周长（半径 6.5）
+const ringDash = computed(() => `${((ctxPct.value ?? 0) / 100) * RING_C} ${RING_C}`);
+// 超过 70% 变黄、超过 90% 变红：提醒该压缩或者开新会话了
+const ctxLevel = computed(() => (ctxPct.value == null ? '' : ctxPct.value >= 90 ? 'danger' : ctxPct.value >= 70 ? 'warn' : ''));
+const usageRows = computed(() => {
+  const rows = [];
+  if (ctx.value?.tokens != null) rows.push({ label: '当前上下文', text: `${pctText.value} · ${fmtTokens(ctx.value.tokens)} / ${fmtTokens(ctx.value.contextWindow)}` });
+  else rows.push({ label: '当前上下文', text: ctxEmpty.value });
+  if (ctx.value?.estimated) rows.push({ label: '数据来源', text: '会话记录估算，非精确分词', title: '按当前分支及压缩后保留内容估算；未记录的系统提示、工具定义和图片实际开销可能带来偏差' });
+  const u = usage.value;
+  if (u) {
+    rows.push({ label: '累计输入', text: u.inTok, sep: true });
+    rows.push({ label: '累计输出', text: u.outTok });
+    rows.push({ label: '缓存读', text: u.hit != null ? `${u.cacheTok} · 命中 ${u.hit}%` : u.cacheTok });
+    if (u.cost) rows.push({ label: '累计花费', text: u.cost });
+  }
+  if (otherAgents.value) rows.push({ label: '后台', text: `${otherAgents.value} 个会话在跑`, sep: true });
+  Object.entries(S.statusItems).forEach(([k, v], i) => rows.push({ label: k, text: v, sep: i === 0 }));
+  return rows;
+});
+// 鼠标移上去就弹、移开就收（留一点时间让鼠标走到浮层上）；点一下就钉住，再点收起。触屏没有悬停，靠点击
+let usagePinned = false;
+let usageTimer;
+function usageEnter() {
+  clearTimeout(usageTimer);
+  if (!menu.value) {
+    usagePinned = false;
+    menu.value = 'usage';
+  }
+}
+function usageLeave() {
+  if (menu.value !== 'usage' || usagePinned) return;
+  clearTimeout(usageTimer);
+  usageTimer = setTimeout(() => {
+    if (menu.value === 'usage' && !usagePinned) menu.value = null;
+  }, 200);
+}
+function usageClick() {
+  clearTimeout(usageTimer);
+  if (menu.value === 'usage' && usagePinned) menu.value = null;
+  else {
+    usagePinned = true;
+    menu.value = 'usage';
+  }
+}
+function usageAction(fn) {
+  menu.value = null;
+  fn();
+}
+const popPos = ref({ left: 0, bottom: 0 });
+// 「启动 pi」：大多数时候一下就启动好了，立刻显示只会一闪；过 350ms 还没好才在发送按钮上转圈
+const startingShown = ref(false);
+let startingTimer;
+watch(
+  () => !!S.starting,
+  (v) => {
+    clearTimeout(startingTimer);
+    if (v) startingTimer = setTimeout(() => (startingShown.value = true), 350);
+    else startingShown.value = false;
+  },
+  { immediate: true },
+);
+onUnmounted(() => clearTimeout(startingTimer));
+const POP_W = { model: 400, thinking: 220, usage: 270 }; // 和各自 CSS 里的 width 对齐
 const POP_GAP = 6; // 弹窗底边到 chip 上边的距离
 function alignPop() {
   const name = menu.value;
-  const chip = name === 'model' ? modelChip.value : name === 'thinking' ? thinkChip.value : null;
+  const chip = name === 'model' ? modelChip.value : name === 'thinking' ? thinkChip.value : name === 'usage' ? ringChip.value : null;
   const box = boxEl.value?.getBoundingClientRect();
   const root = composerEl.value?.getBoundingClientRect();
   if (!chip || !box || !root) return;
   const r = chip.getBoundingClientRect();
   const w = Math.min(POP_W[name], box.width);
   popPos.value = {
-    right: Math.max(0, Math.min(root.right - r.right, box.width - w)),
+    left: Math.max(0, Math.min(r.left - root.left, box.width - w)),
     bottom: Math.max(0, root.bottom - r.top + POP_GAP),
   };
 }
@@ -459,12 +524,24 @@ async function onTakeOver() {
     </div>
 
     <ModelMenu v-if="menu === 'model'" :pos="popPos" @close="menu = null" />
-    <div v-if="menu === 'thinking'" class="pop think-pop" :style="{ right: popPos.right + 'px', bottom: popPos.bottom + 'px' }">
+    <div v-if="menu === 'thinking'" class="pop think-pop" :style="{ left: popPos.left + 'px', bottom: popPos.bottom + 'px' }">
       <div class="pop-title">思考强度 · 右键可设为默认</div>
       <div v-for="l in S.thinkingLevels" :key="l" class="lv" :class="{ cur: l === thinking }" @click="chooseThinking(l)" @contextmenu.prevent.stop="thinkMenu($event, l)">
         <span class="check">{{ l === thinking ? '✓' : '' }}</span>
         <span class="grow">{{ levelName(l) }}</span>
         <span class="dim small">{{ l }}</span>
+      </div>
+    </div>
+
+    <!-- 上下文圆环的明细：常看的用量都在这，外加压缩 / 会话详情两个动作 -->
+    <div v-if="menu === 'usage'" class="pop usage-pop" :style="{ left: popPos.left + 'px', bottom: popPos.bottom + 'px' }" @mouseenter="usageEnter" @mouseleave="usageLeave">
+      <div v-for="(r, i) in usageRows" :key="i" class="ur" :class="{ divide: r.sep && i }">
+        <span class="ul ellipsis">{{ r.label }}</span>
+        <span class="uv ellipsis" :title="r.title || r.text">{{ r.text }}</span>
+      </div>
+      <div class="uact">
+        <button class="btn sm" :disabled="!ctx || busy" title="把前面的对话压缩成摘要，腾出上下文空间" @click="usageAction(compact)">压缩上下文</button>
+        <button class="btn sm" @click="usageAction(showSessionInfo)">会话详情</button>
       </div>
     </div>
 
@@ -552,13 +629,23 @@ async function onTakeOver() {
         </button>
         <input ref="fileInput" type="file" multiple hidden @change="onPickFiles" />
 
-        <!-- 新会话 / 工作目录 / 模型 / 思考强度靠右，和发送按钮排在一起 -->
-        <div class="grow" />
-        <span v-if="S.starting" class="dim small starting" title="这个会话之前没有 pi 进程，正在启动">启动 pi…</span>
-
-        <button type="button" class="ibtn new-session" title="在当前目录开始新会话" aria-label="新会话" @click="newSession"><Icon name="newchat" :size="18" /></button>
-        <DirectoryMenu />
-
+        <!-- 左边放不会变的：附件、上下文、模型、思考强度；右边放会变的：发送 / 插话 / 排队 / 停止。
+             右边的按钮出现、消失只占中间的空白，左边一排位置始终不动 -->
+        <button
+          ref="ringChip"
+          class="chip ring"
+          :class="[ctxLevel, { on: menu === 'usage' }]"
+          :aria-label="ctxPct != null ? `当前上下文 ${pctText}，点击查看用量` : `${ctxEmpty}，点击查看用量`"
+          @mouseenter="usageEnter"
+          @mouseleave="usageLeave"
+          @click="usageClick"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <circle class="track" cx="8" cy="8" r="6.5" />
+            <circle v-if="ctxPct" class="arc" cx="8" cy="8" r="6.5" :stroke-dasharray="ringDash" transform="rotate(-90 8 8)" />
+          </svg>
+          <span>{{ pctText }}</span>
+        </button>
         <button ref="modelChip" class="chip" :class="{ on: menu === 'model' }" title="切换模型 (Ctrl+L)" :disabled="disabled" @click="toggleMenu('model')">
           <span class="ellipsis">{{ modelLabel }}</span>
           <Icon name="caret" :size="14" class="caret" />
@@ -568,6 +655,8 @@ async function onTakeOver() {
           <Icon name="caret" :size="14" class="caret" />
         </button>
 
+        <div class="grow" />
+
         <template v-if="busy">
           <button v-if="hasInput" class="btn sm" title="Alt+Enter：等全部做完再发" @click="send(true)">排队</button>
           <button v-if="hasInput" class="btn sm primary" title="当前这步做完后插进去" @click="send(false)">插话</button>
@@ -575,8 +664,9 @@ async function onTakeOver() {
             <svg width="12" height="12" viewBox="0 0 12 12"><rect width="12" height="12" rx="2.5" fill="currentColor" /></svg>
           </button>
         </template>
-        <button v-else class="round send" :disabled="disabled || !hasInput" title="发送" @click="send(false)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+        <button v-else class="round send" :class="{ starting: startingShown }" :disabled="disabled || !hasInput" :title="startingShown ? '正在启动 pi…' : '发送'" @click="send(false)">
+          <span v-if="startingShown" class="spin" />
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
         </button>
       </div>
     </div>
@@ -608,7 +698,6 @@ async function onTakeOver() {
 .bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .bar > * { flex-shrink: 0; }
 .bar > .chip { flex-shrink: 1; min-width: 0; }
-.bar > .new-session { flex-shrink: 0; white-space: nowrap; }
 /* 和右边那几个 chip 一个观感：浅底 + 细边，悬停换成主题色 */
 .ibtn { width: 30px; height: 30px; border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--r-pill); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: border-color 0.15s, color 0.15s, background 0.15s; }
 .ibtn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-softer); }
@@ -637,7 +726,9 @@ async function onTakeOver() {
 .round:active { transform: scale(0.94); }
 .send { background: var(--accent); color: #fff; }
 .send:hover { background: var(--accent-hover); }
-.send:disabled { background: var(--line); color: var(--text-3); cursor: default; transform: none; }
+.send:disabled { border: 1px solid var(--line); background: var(--panel-2); color: var(--text-2); cursor: default; transform: none; }
+/* 启动 pi 时发送按钮里转圈：圈跟着按钮文字颜色走，蓝底、灰底上都看得见 */
+.send.starting .spin { border-color: currentColor; border-right-color: transparent; }
 .stop { background: var(--text); color: var(--panel); }
 .stop:hover { background: var(--err); color: #fff; }
 
@@ -681,7 +772,23 @@ async function onTakeOver() {
 .desc { color: var(--text-2); font-size: var(--fs-sm); }
 .src { font-size: 11px; color: var(--text-3); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 0 6px; line-height: 18px; flex: none; }
 
-.think-pop { bottom: 0; right: 0; left: auto; width: 220px; }
+/* 上下文圆环：沿用 chip 的外观，里面是一个小进度环 + 百分比 */
+.ring { gap: 5px; padding: 0 9px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.ring circle { fill: none; stroke-width: 2.2; }
+.ring .track { stroke: var(--line); }
+.ring .arc { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 0.3s; }
+.ring.warn { color: var(--warn); }
+.ring.warn .arc { stroke: var(--warn); }
+.ring.danger { color: var(--err); }
+.ring.danger .arc { stroke: var(--err); }
+.usage-pop { right: auto; width: 270px; padding: 8px 6px; }
+.ur { display: flex; align-items: center; gap: 12px; height: 26px; padding: 0 8px; font-size: var(--fs-sm); }
+.ur.divide { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line-2); height: 30px; }
+.ul { flex: none; max-width: 45%; color: var(--text-3); }
+.uv { flex: 1; min-width: 0; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.uact { display: flex; gap: 6px; margin-top: 6px; padding: 8px 8px 0; border-top: 1px solid var(--line-2); }
+.uact .btn { flex: 1; }
+.think-pop { bottom: 0; left: 0; right: auto; width: 220px; }
 .pop-title { font-size: var(--fs-xs); color: var(--text-3); padding: 4px 8px 6px; }
 .lv { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 6px; border-radius: var(--r-sm); cursor: pointer; }
 .lv:hover { background: var(--hover); }
