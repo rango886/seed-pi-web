@@ -208,6 +208,9 @@ function onServerMsg(msg) {
       for (const s of S.sessions) if (normPath(s.file) === normPath(msg.file)) s.archived = msg.archived;
       loadSessionsSoon();
       break;
+    case 'session_star':
+      for (const s of S.sessions) if (normPath(s.file) === normPath(msg.file)) s.starred = msg.starred;
+      break;
     case 'agents': {
       const prev = new Map(S.agents.map((a) => [a.id, a]));
       S.agents = msg.list;
@@ -1362,54 +1365,100 @@ function pastedName(f) {
 
 /** 浏览器里的文件（拿不到路径）：上传到后端的临时目录，用上传后的路径。pasted：剪贴板里的截图，没有像样的文件名 */
 export function uploadFiles(files, { pasted = false } = {}) {
-  const max = (Number(UI.uploadMaxMB) || 0) * 1048576;
-  for (const f of files) {
-    if (max && f.size > max) {
-      toast(`${f.name} 太大了（上限 ${UI.uploadMaxMB}MB，可以在设置里改）`, 'warning');
-      continue;
-    }
-    const name = !f.name || (pasted && /^image\.\w+$/i.test(f.name)) ? pastedName(f) : f.name;
-    const item = makeAtt({ name, size: f.size, origin: 'upload', status: 'uploading', preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : '' });
-    S.composer.attachments.push(item);
-    upload(f, { name, dir: UI.uploadDir, cwd: S.cwd, session: S.state?.sessionId, maxMB: UI.uploadMaxMB }, (p) => (item.progress = p))
-      .then((r) => Object.assign(item, { path: r.path, name: r.name, size: r.size, status: 'ready' }))
-      .catch((e) => {
-        toast(`${name} 上传失败：${e.message}`, 'error');
-        removeAttachment(item);
-      });
-  }
+  for (const f of files) startUpload(pendingAtt(f, pasted), f);
 }
 
+// 先把附件卡片摆出来（图片直接用本地 blob 做缩略图），再慢慢决定是用原路径还是上传
+function pendingAtt(f, pasted) {
+  const name = !f.name || (pasted && /^image\.\w+$/i.test(f.name)) ? pastedName(f) : f.name;
+  const item = makeAtt({ name, size: f.size, origin: 'upload', status: 'uploading', preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : '' });
+  S.composer.attachments.push(item);
+  S.activeTab = 'chat';
+  return S.composer.attachments.at(-1);
+}
+
+// 正在上传的附件 → 它的 AbortController。剪贴板查到原文件、或者卡片被删掉时用来停掉上传
+const uploads = new WeakMap();
+const cancelUpload = (item) => {
+  uploads.get(item)?.abort();
+  uploads.delete(item);
+};
+
+function startUpload(item, f) {
+  const max = (Number(UI.uploadMaxMB) || 0) * 1048576;
+  if (max && f.size > max) {
+    toast(`${item.name} 太大了（上限 ${UI.uploadMaxMB}MB，可以在设置里改）`, 'warning');
+    removeAttachment(item);
+    return;
+  }
+  const name = item.name;
+  const ctrl = new AbortController();
+  uploads.set(item, ctrl);
+  upload(f, { name, dir: UI.uploadDir, cwd: S.cwd, session: S.state?.sessionId, maxMB: UI.uploadMaxMB }, (p) => (item.progress = p), ctrl.signal)
+    .then((r) => {
+      // 上传期间剪贴板已经查到原文件、卡片换成了原路径：上传结果不要再覆盖回去
+      if (item.origin === 'upload') Object.assign(item, { path: r.path, name: r.name, size: r.size, status: 'ready' });
+    })
+    .catch((e) => {
+      if (ctrl.signal.aborted) return;
+      toast(`${name} 上传失败：${e.message}`, 'error');
+      removeAttachment(item);
+    })
+    .finally(() => uploads.get(item) === ctrl && uploads.delete(item));
+}
+
+// 浏览器给剪贴板位图（截图、网页里复制的图片）起的都是 image.png 这种名字。
+// 资源管理器里真叫 image.png 的文件也长这样，所以这类先直接上传，剪贴板查到原文件再取消上传换成原路径
+const looksLikeBitmap = (f) => f.type.startsWith('image/') && (!f.name || /^image\.\w+$/i.test(f.name));
+
 /**
- * Ctrl+V 粘贴了文件。本机打开的网页：先问后端剪贴板里的路径列表（资源管理器复制文件时放进去的），
- * 按文件名 + 大小跟浏览器给的文件对上了就直接用原路径；对不上的（截图之类）照常上传。
- * files 为空：浏览器没给文件也没给文字，只看后端剪贴板
+ * Ctrl+V 粘贴了文件。卡片立刻显示，不等后端。
+ * 本机打开的网页：再问后端剪贴板里的路径列表（资源管理器复制文件时放进去的），
+ * 按文件名 + 大小跟浏览器给的文件对上了就把卡片换成原路径；对不上的照常上传。
+ * 看着像截图的不等这一步，先开始上传。files 为空：浏览器没给文件也没给文字，只看后端剪贴板
  */
 export async function pasteFiles(files) {
-  let list = [];
-  if (S.info.local) list = await http.get('/api/clipboard/files').then((r) => r.files || [], () => []);
-  if (!list.length) return files.length ? uploadFiles(files, { pasted: true }) : false;
+  if (!S.info.local) {
+    if (!files.length) return false;
+    uploadFiles(files, { pasted: true });
+    return true;
+  }
+  const pending = files.map((f) => ({ f, item: pendingAtt(f, true) }));
+  for (const p of pending) if (looksLikeBitmap(p.f)) startUpload(p.item, p.f);
+  const list = await http.get('/api/clipboard/files').then((r) => r.files || [], () => []);
+  const alive = (item) => S.composer.attachments.includes(item); // 等的时候用户可能已经点掉了
   const used = new Set();
   const rest = [];
-  for (const f of files) {
-    const i = list.findIndex((c, j) => !used.has(j) && c.name === f.name && (c.dir || c.size === f.size));
-    if (i >= 0) used.add(i);
-    else rest.push(f);
+  for (const p of pending) {
+    const i = list.findIndex((c, j) => !used.has(j) && c.name === p.f.name && (c.dir || c.size === p.f.size));
+    if (i < 0) {
+      rest.push(p);
+      continue;
+    }
+    used.add(i);
+    const c = list[i];
+    cancelUpload(p.item);
+    if (!alive(p.item)) continue;
+    if (S.composer.attachments.some((a) => a !== p.item && a.path && normPath(a.path) === normPath(c.path))) removeAttachment(p.item);
+    else Object.assign(p.item, { path: c.path, name: c.name, size: c.dir ? null : c.size, kind: attachKind(c.name, c.dir), origin: 'clipboard', status: 'ready', progress: 0 });
   }
-  // 浏览器给的全对上了：剪贴板里的全部文件都加上（有的浏览器只给第一个，或者不给文件夹）
-  const pick = rest.length ? list.filter((_, j) => used.has(j)) : list;
-  attachPaths(pick.map((c) => ({ path: c.path, name: c.name, size: c.dir ? null : c.size, dir: c.dir })), 'clipboard');
-  if (rest.length) uploadFiles(rest, { pasted: true });
-  return true;
+  for (const p of rest) if (alive(p.item) && !looksLikeBitmap(p.f)) startUpload(p.item, p.f);
+  // 浏览器给的全对上了：剪贴板里剩下的文件也加上（有的浏览器只给第一个，或者不给文件夹）
+  if (list.length && !rest.length) attachPaths(list.filter((_, j) => !used.has(j)).map((c) => ({ path: c.path, name: c.name, size: c.dir ? null : c.size, dir: c.dir })), 'clipboard');
+  return files.length > 0 || list.length > 0;
 }
 
 export function removeAttachment(a) {
+  cancelUpload(a);
   const i = S.composer.attachments.indexOf(a);
   if (i >= 0) S.composer.attachments.splice(i, 1);
   if (a.preview) URL.revokeObjectURL(a.preview);
 }
 export function clearAttachments() {
-  for (const a of S.composer.attachments) if (a.preview) URL.revokeObjectURL(a.preview);
+  for (const a of S.composer.attachments) {
+    cancelUpload(a);
+    if (a.preview) URL.revokeObjectURL(a.preview);
+  }
   S.composer.attachments = [];
 }
 export function moveAttachment(from, to) {
@@ -1936,6 +1985,20 @@ export const setSessionArchived = guard(async (s, archived) => {
   }
 });
 
+// 星标只是个标记，点一下就切换，不弹撤销提示（再点一次就是撤销）。
+const starring = new Set();
+export const setSessionStarred = guard(async (s, starred) => {
+  const key = normPath(s.file);
+  if (starring.has(key)) return;
+  starring.add(key);
+  try {
+    await http.post('/api/sessions/star', { file: s.file, starred });
+    for (const row of S.sessions) if (normPath(row.file) === key) row.starred = starred;
+  } finally {
+    starring.delete(key);
+  }
+});
+
 function sessionDeleted(file) {
   const key = normPath(file);
   S.sessions = S.sessions.filter((s) => normPath(s.file) !== key);
@@ -1945,7 +2008,7 @@ function sessionDeleted(file) {
   localStorage.setItem(LAST_KEY, JSON.stringify(last));
   if ([S.agent?.sessionFile, S.lazy?.file, S.detached?.file].some((f) => f && normPath(f) === key)) {
     openLazy({ cwd: S.cwd, file: null, messages: [] });
-  } else loadSessions();
+  } else loadSessionsSoon(); // 批量删除会连着收到很多条通知，合并成一次刷新
 }
 
 const deletingSessions = new Set();
@@ -1963,6 +2026,101 @@ export const deleteSession = guard(async (s, event) => {
   } finally {
     deletingSessions.delete(key);
   }
+});
+
+// ---------------- 目录批量操作 ----------------
+// 作用于这个目录下的全部已保存会话（不管搜索和归档筛选），正在运行 / 等你操作 / 别的窗口在用的跳过。
+const busySession = (s) => {
+  const st = sessionStatus(s.file);
+  return !!(st && (st.running || st.waiting || st.elsewhere));
+};
+const dirKey = (p) => normPath(p || '').replace(/\/+$/, '').toLowerCase();
+export const dirSessions = (cwd) => S.sessions.filter((s) => dirKey(s.cwd) === dirKey(cwd));
+/** 每个目录的会话数 / 已归档数：整个列表只扫一遍，侧栏每个目录行直接查表（会话上千时逐行扫会卡） */
+const dirArchiveIndex = computed(() => {
+  const m = new Map();
+  for (const s of S.sessions) {
+    const k = dirKey(s.cwd);
+    const v = m.get(k) || { total: 0, archived: 0 };
+    v.total++;
+    if (s.archived) v.archived++;
+    m.set(k, v);
+  }
+  return m;
+});
+export function dirAllArchived(cwd) {
+  const v = dirArchiveIndex.value.get(dirKey(cwd));
+  return !!v && v.total > 0 && v.archived === v.total;
+}
+
+const skippedText = (n) => (n ? `，跳过 ${n} 个正在使用的会话` : '');
+
+async function setArchivedMany(files, archived) {
+  const done = [];
+  for (const file of files) {
+    try {
+      await http.post('/api/sessions/archive', { file, archived });
+      done.push(file);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+  const keys = new Set(done.map(normPath));
+  for (const row of S.sessions) if (keys.has(normPath(row.file))) row.archived = archived;
+  loadSessions();
+  return done;
+}
+
+/** 目录上的归档按钮：目录里全都归档了就全部取消归档，否则把没归档的都归档 */
+export const setDirArchived = guard(async (cwd, archived) => {
+  const all = dirSessions(cwd);
+  const targets = all.filter((s) => s.archived !== archived);
+  const free = targets.filter((s) => !busySession(s));
+  const skipped = targets.length - free.length;
+  if (!free.length) {
+    toast(skipped ? '这个目录里的会话都在使用中，没有可操作的' : '没有需要处理的会话', 'info');
+    return;
+  }
+  const done = await setArchivedMany(free.map((s) => s.file), archived);
+  if (!done.length) return;
+  toast(`${archived ? '已归档' : '已取消归档'} ${done.length} 个会话${skippedText(skipped)}`, 'info', 6000, {
+    label: '撤销', run: guard(() => setArchivedMany(done, !archived)),
+  });
+});
+
+/** 目录上的删除按钮：删掉目录下全部会话，Ctrl+点击跳过确认 */
+export const deleteDirSessions = guard(async (cwd, event) => {
+  const all = dirSessions(cwd);
+  const free = all.filter((s) => !busySession(s));
+  const skipped = all.length - free.length;
+  if (!free.length) {
+    toast(skipped ? '这个目录里的会话都在使用中，没有可删除的' : '这个目录没有会话', 'info');
+    return;
+  }
+  if (!event?.ctrlKey) {
+    const r = await ask({
+      method: 'confirm',
+      title: '删除目录下的会话',
+      message: `确定删除 ${cwd} 下的 ${free.length} 个会话？文件会被永久删除${skipped ? `\n（${skipped} 个正在使用的会话会跳过）` : ''}`,
+    });
+    if (!r.confirmed) return;
+  }
+  let ok = 0;
+  for (const s of free) {
+    const key = normPath(s.file);
+    if (deletingSessions.has(key)) continue;
+    deletingSessions.add(key);
+    try {
+      await http.del('/api/sessions', { file: s.file });
+      sessionDeleted(s.file);
+      ok++;
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      deletingSessions.delete(key);
+    }
+  }
+  if (ok) toast(`已删除 ${ok} 个会话${skippedText(skipped)}`, 'info');
 });
 
 // ---------------- 终端 ----------------

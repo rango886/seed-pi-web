@@ -53,6 +53,7 @@ export function mainMenu(extra = []) {
       label: '当前会话',
       children: [
         { label: '重命名', run: () => renameSession() },
+        ...(S.cwd ? [{ label: '复制工作目录路径', run: () => navigator.clipboard.writeText(S.cwd).then(() => toast('已复制路径', 'success', 1500)) }] : []),
         { label: '对话分支', run: openBranches },
         { label: '复制为新会话', run: cloneSession, disabled: !idle },
         { label: '压缩上下文', run: () => compact(), disabled: !idle },

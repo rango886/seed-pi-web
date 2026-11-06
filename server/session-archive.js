@@ -56,14 +56,24 @@ export function createSessionArchive(file) {
   };
 }
 
-export function registerSessionArchive(app, wrap, { archive, roots, changed }) {
-  app.post('/api/sessions/archive', wrap(async (req, res) => {
-    const { file, archived } = req.body || {};
-    if (typeof file !== 'string' || !path.isAbsolute(file) || !file.endsWith('.jsonl') || !isInside(file, await roots())) throw new Error('不允许归档这个文件');
-    if (typeof archived !== 'boolean') throw new Error('归档状态必须是布尔值');
+// 归档和星标都是“给会话文件打标记”，只是字段名和存储文件不同。
+function registerSessionMark(app, wrap, { route, field, label, store, roots, changed }) {
+  app.post(route, wrap(async (req, res) => {
+    const file = req.body?.file;
+    const value = req.body?.[field];
+    if (typeof file !== 'string' || !path.isAbsolute(file) || !file.endsWith('.jsonl') || !isInside(file, await roots())) throw new Error(`不允许${label}这个文件`);
+    if (typeof value !== 'boolean') throw new Error(`${label}状态必须是布尔值`);
     if (!(await fs.stat(file)).isFile()) throw new Error('不是会话文件');
-    await archive.set(file, archived);
-    changed({ file, archived });
-    res.json({ ok: true, file, archived });
+    await store.set(file, value);
+    changed({ file, [field]: value });
+    res.json({ ok: true, file, [field]: value });
   }));
+}
+
+export function registerSessionArchive(app, wrap, { archive, roots, changed }) {
+  registerSessionMark(app, wrap, { route: '/api/sessions/archive', field: 'archived', label: '归档', store: archive, roots, changed });
+}
+
+export function registerSessionStar(app, wrap, { stars, roots, changed }) {
+  registerSessionMark(app, wrap, { route: '/api/sessions/star', field: 'starred', label: '星标', store: stars, roots, changed });
 }

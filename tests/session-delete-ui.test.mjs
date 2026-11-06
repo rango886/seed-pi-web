@@ -129,6 +129,27 @@ test('context menu forwards the actual click event, including Ctrl, before closi
   assert.match(source, /@click="run\(c, j, \$event\)"/);
 });
 
+test('directory delete removes every session in the folder, skips busy ones, confirms once and Ctrl skips the dialog', async () => {
+  const h = await store();
+  const a = { file: '/sessions/a.jsonl', cwd: '/repo/', title: 'a' };
+  const b = { file: '/sessions/b.jsonl', cwd: '\\repo', title: 'b', archived: true };
+  const busy = { file: '/sessions/busy.jsonl', cwd: '/repo', title: 'busy' };
+  const other = { file: '/sessions/other.jsonl', cwd: '/other', title: 'other' };
+  h.S.sessions = [a, b, busy, other];
+  h.S.agents = [{ id: 'x', sessionFile: busy.file, running: true }];
+  const pending = h.deleteDirSessions('/repo');
+  assert.equal(h.S.dialogs.length, 1);
+  assert.match(h.S.dialogs[0].message, /2 个会话/);
+  assert.match(h.S.dialogs[0].message, /1 个正在使用/);
+  h.S.dialogs.pop()._resolve({ confirmed: false });
+  await pending;
+  assert.equal(h.deletes.length, 0);
+  await h.deleteDirSessions('/repo', { ctrlKey: true });
+  assert.equal(h.S.dialogs.length, 0);
+  assert.deepEqual(h.deletes.map((d) => d[1].file), [a.file, b.file]);
+  assert.deepEqual(h.S.sessions.map((s) => s.file), [busy.file, other.file]);
+});
+
 test('Pi Markdown links are not underlined normally or on hover', async () => {
   const css = await fs.readFile(new URL('../web/src/pi.css', import.meta.url), 'utf8');
   assert.match(css, /:root\[data-md='pi'\] \.md a,\s*:root\[data-md='pi'\] \.md a:hover \{[^}]*text-decoration: none;/);

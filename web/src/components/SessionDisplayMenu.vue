@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import Icon from './Icon.vue';
 
 const props = defineProps({ mode: String, settings: Object, sorting: Boolean });
 const menuLabel = computed(() => props.sorting ? '会话和文件夹排序' : '会话筛选和显示设置');
@@ -24,6 +23,9 @@ const sections = computed(() => props.sorting ? [
   ] },
   { label: '归档筛选', key: 'archive', options: [
     { value: 'active', label: '仅未归档' }, { value: 'archived', label: '仅已归档' }, { value: 'all', label: '全部会话' },
+  ] },
+  { label: '星标筛选', key: 'star', options: [
+    { value: 'all', label: '不限' }, { value: 'starred', label: '仅星标会话' },
   ] },
   ...(props.mode === 'dir' ? [] : [
     { label: '列表布局', key: 'layout', options: [{ value: 'flat', label: '平铺显示' }, { value: 'group', label: '按目录折叠' }] },
@@ -100,7 +102,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <button ref="trigger" type="button" class="display-trigger" :class="{ on: opened || (!sorting && settings.archive !== 'active') }" :title="`${menuLabel}（当前模式单独保存）`" :aria-label="menuLabel" aria-haspopup="menu" :aria-expanded="opened" @click="opened ? close() : open()" @keydown.down.prevent="open()" @keydown.up.prevent="open(true)">
+  <button ref="trigger" type="button" class="display-trigger" :class="{ on: opened || (!sorting && (settings.archive !== 'active' || settings.star === 'starred')) }" :title="`${menuLabel}（当前模式单独保存）`" :aria-label="menuLabel" aria-haspopup="menu" :aria-expanded="opened" @click="opened ? close() : open()" @keydown.down.prevent="open()" @keydown.up.prevent="open(true)">
     {{ sorting ? '排序' : '显示' }}
   </button>
   <Teleport to="body">
@@ -108,10 +110,9 @@ onUnmounted(() => {
       <div v-for="section in sections" :key="section.label" class="section" role="group" :aria-label="section.label">
         <div class="section-label">{{ section.label }}</div>
         <button v-for="option in section.options" :key="option.key || option.value" type="button" class="option" :class="{ current: checked(section, option) }" :role="section.toggle ? 'menuitemcheckbox' : 'menuitemradio'" :aria-checked="checked(section, option)" @click="choose(section, option)">
-          <span>{{ option.label }}</span><Icon v-if="checked(section, option)" name="check" :size="14" />
+          <span>{{ option.label }}</span>
         </button>
       </div>
-      <div v-if="sorting && mode !== 'dir' && settings.folderSort === 'custom'" class="sort-hint">按住文件夹行拖动调整顺序；需在“显示”中选择按目录折叠。也可聚焦文件夹后按 Alt + ↑ / ↓。</div>
     </div>
   </Teleport>
 </template>
@@ -122,7 +123,6 @@ onUnmounted(() => {
 .display-trigger:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
 .display-menu { position: fixed; z-index: 75; width: 216px; max-width: calc(100vw - 16px); overflow-y: auto; padding: 5px; background: var(--elev); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); color: var(--text); font-size: var(--fs-sm); }
 .section + .section { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 5px; }
-.sort-hint { padding: 6px 8px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.5; }
 .section-label { padding: 3px 8px; color: var(--text-3); font-size: var(--fs-xs); }
 .option { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; min-height: 29px; padding: 5px 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
 .option:hover, .option:focus-visible { background: var(--hover); outline: none; }

@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import { archiveKey, createSessionArchive, registerSessionArchive } from '../server/session-archive.js';
+import { archiveKey, createSessionArchive, registerSessionArchive, registerSessionStar } from '../server/session-archive.js';
 
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'seed-session-archive-'));
@@ -97,4 +97,32 @@ test('archive HTTP validates requests, handles restore, and notifies other clien
   assert.equal((await archive.read()).size, 0);
   assert.equal(changes[1].archived, false);
   assert.equal(await fs.readFile(session, 'utf8'), 'session content');
+});
+
+test('star HTTP uses its own field and store without touching archive state', async (t) => {
+  const { root, file } = await fixture(t);
+  const sessions = path.join(root, 'sessions');
+  await fs.mkdir(sessions);
+  const session = path.join(sessions, 'chat.jsonl');
+  await fs.writeFile(session, 'x');
+  const stars = createSessionArchive(path.join(root, 'state', 'stars.json'));
+  const archive = createSessionArchive(file);
+  const changes = [];
+  const app = express();
+  app.use(express.json());
+  registerSessionStar(app, (fn) => (req, res) => fn(req, res).catch((e) => res.status(400).json({ error: e.message })), {
+    stars, roots: async () => [sessions], changed: (change) => changes.push(change),
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const post = (body) => fetch(`http://127.0.0.1:${server.address().port}/api/sessions/star`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal((await post({ file: session, archived: true })).status, 400);
+  assert.equal((await post({ file: path.join(root, 'outside.jsonl'), starred: true })).status, 400);
+  const result = await post({ file: session, starred: true });
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).starred, true);
+  assert.deepEqual(changes, [{ file: session, starred: true }]);
+  assert.equal((await stars.read()).has(archiveKey(session)), true);
+  assert.equal((await archive.read()).size, 0);
 });

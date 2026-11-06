@@ -61,7 +61,7 @@ async function tool(t, UI, props, file = 'ToolCard.vue') {
   return scope.run(() => mod.namespace.default.setup(props, { expose() {} }));
 }
 
-test('pi preset restores the export font, 12px/18px typography and 800px column without changing disclosure preferences', async (t) => {
+test('pi preset restores the export font, 12px/18px typography and 980px column without changing disclosure preferences', async (t) => {
   const s = await settings(t, { __v: 13, toolsOpen: true });
   assert.deepEqual(Array.from(s.STYLES, (style) => style.value), ['github-warm', 'github', 'pi']);
   s.useStyle('pi');
@@ -71,7 +71,7 @@ test('pi preset restores the export font, 12px/18px typography and 800px column 
   assert.equal(s.UI.fontSize, 12);
   assert.equal(s.UI.codeFontSize, 12);
   assert.equal(s.UI.lineHeight, 1.5);
-  assert.equal(s.UI.chatWidth, 800);
+  assert.equal(s.UI.chatWidth, 980);
   assert.equal(s.UI.mdStyle, 'pi');
   assert.equal(s.UI.toolsDisplay, 'expanded');
   assert.equal(s.values.get('--fs'), '12px');

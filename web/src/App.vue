@@ -70,7 +70,7 @@ function tabMenu(e, key) {
 const sideOpen = computed(() => (view.mobile ? view.drawer : view.side));
 const title = computed(() => sessionTitle());
 
-// 标题下面那行路径：只给看、不给改（换目录 = 新会话，入口在侧栏）
+// 工作目录收进标题的悬浮提示和右键菜单；换目录仍从侧栏新建会话。
 function copyCwd() {
   if (!S.cwd) return;
   navigator.clipboard.writeText(S.cwd).then(() => toast('已复制路径', 'success', 1500));
@@ -195,11 +195,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
           <DirectoryMenu variant="icon" />
         </template>
         <div class="ttl">
-          <div class="t1 ellipsis" title="点击重命名" @click="renameSession()">{{ title }}</div>
-          <div v-if="S.cwd" class="t2">
-            <span class="cwd ellipsis" :title="`${S.cwd}\n点击查看更多操作`" @click="cwdMenu">{{ S.cwd }}</span>
-            <button class="cp" title="复制路径" aria-label="复制路径" @click="copyCwd"><Icon name="copy" :size="12" /></button>
-          </div>
+          <div class="t1 ellipsis" :title="[S.cwd, '点击重命名 · 右键查看目录操作'].filter(Boolean).join('\n')" @click="renameSession()" @contextmenu.prevent.stop="cwdMenu">{{ title }}</div>
         </div>
         <!-- 顶栏放文件 / 终端 / 分支 / ⋯；进程、状态信息收在“⋯”菜单里 -->
         <template v-if="!compact">
@@ -287,17 +283,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 
 /* 顶部标题栏 */
 .top { min-height: var(--top-height); flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 6px 6px 8px; border-bottom: 1px solid var(--line); background: var(--chat-bg); }
-.ttl { flex: 1; min-width: 0; text-align: center; padding: 0 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+.ttl { flex: 1; min-width: 0; text-align: center; padding: 0 6px; display: flex; align-items: center; justify-content: center; }
 /* 顶栏和侧栏顶部同高，压缩上下留白，字号较大时仍可自然撑开。 */
 .t1 { font-size: calc(var(--fs) - 1px); font-weight: 600; line-height: 1.25; max-width: 100%; cursor: pointer; }
-/* 路径：小号灰字，居中在标题下面；复制按钮悬停才出来（绝对定位，不挤歪居中） */
-.t2 { position: relative; max-width: calc(100% - 22px); display: flex; align-items: center; font-size: 10.5px; line-height: 1.25; color: var(--text-3); font-family: var(--font-code); }
-.t2 .cwd { cursor: pointer; border-radius: var(--r-xs); padding: 0 2px; }
-.t2 .cwd:hover { color: var(--text); }
-.t2 .cp { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 2px; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.12s; }
-.t2:hover .cp, .t2 .cp:focus-visible { opacity: 1; }
-.t2 .cp:hover { color: var(--text); background: var(--active); }
-@media (hover: none) { .t2 .cp { opacity: 1; } }
 .ib { width: 30px; height: 30px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .ib:hover { background: var(--active); color: var(--text); }
 .ib.on { color: var(--accent-text); background: var(--accent-soft); }

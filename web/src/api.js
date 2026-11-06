@@ -90,9 +90,12 @@ export const proxyDownloadUrl = (u) => `/api/download?url=${encodeURIComponent(u
 export const archiveUrl = (id) => `/api/fs/archive/${encodeURIComponent(id)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 
 /** 上传一个文件：请求体就是文件本身。用 XHR 是为了拿上传进度（fetch 拿不到） */
-export function upload(file, query, onProgress) {
+export function upload(file, query, onProgress, signal) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    if (signal?.aborted) return reject(new DOMException('已取消上传', 'AbortError'));
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.onabort = () => reject(new DOMException('已取消上传', 'AbortError'));
     xhr.open('POST', '/api/upload?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v != null && v !== '')));
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     if (token) xhr.setRequestHeader('x-seed-pi-web-token', token);

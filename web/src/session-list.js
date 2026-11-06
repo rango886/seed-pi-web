@@ -12,6 +12,7 @@ export function readSessionView(storage, mode) {
     folderSort: ['time', 'time-asc', 'name', 'name-desc', 'custom'].includes(data.folderSort) ? data.folderSort : 'time',
     folderOrder: Array.isArray(data.folderOrder) ? [...new Set(data.folderOrder.filter((p) => typeof p === 'string'))] : [],
     archive: ['active', 'archived', 'all'].includes(data.archive) ? data.archive : 'active',
+    star: data.star === 'starred' ? 'starred' : 'all',
     layout: (data.layout ?? get('session-layout') ?? (mode === 'fav' ? 'group' : 'flat')) === 'group' ? 'group' : 'flat',
     dirLabel: (data.dirLabel ?? get('dir-label')) === 'path' ? 'path' : 'name',
     showCount: data.showCount !== false,
@@ -58,6 +59,8 @@ export function moveSessionFolder(order, visiblePaths, source, target, after = f
 }
 
 export const matchesArchive = (session, filter) => filter === 'all' || (filter === 'archived' ? !!session.archived : !session.archived);
+// 星标筛选和归档筛选是“并且”的关系，两者互不干扰。
+export const matchesStar = (session, filter) => filter !== 'starred' || !!session.starred;
 
 export function sessionInfo(session, settings, formatTime) {
   if (session.unsaved) return '未保存';

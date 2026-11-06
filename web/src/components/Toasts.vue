@@ -29,7 +29,7 @@ function dismiss(id) {
 .toast-icon { color: var(--notice-color); margin-top: 2px; }
 .toast-content { flex: 1; min-width: 0; }
 .toast-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.toast-action { display: inline-block; margin-top: 6px; padding: 0; border: 0; background: transparent; color: var(--accent-text); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.toast-action { display: inline-block; margin-top: 6px; padding: 0; border: 0; background: transparent; color: var(--accent-text); font: inherit; cursor: pointer; text-decoration: none; }
 .toast-close { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; margin: -2px -2px 0 0; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; }
 .toast-close:hover { background: var(--hover); color: var(--text); }
 .toast-close:focus-visible, .toast-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

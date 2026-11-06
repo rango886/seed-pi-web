@@ -15,7 +15,7 @@ import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSession
 import { TerminalManager, terminalAvailable } from './terminal.js';
 import { gitStatus, gitDiff } from './git.js';
 import { registerDownloads } from './downloads.js';
-import { archiveKey, createSessionArchive, registerSessionArchive } from './session-archive.js';
+import { archiveKey, createSessionArchive, registerSessionArchive, registerSessionStar } from './session-archive.js';
 import { APP, HOME_DIR, STATE_FILE, readState } from './config.js';
 import { isLocalRequest, readClipboardFiles, resolveUploadDir, saveUpload, listProjectFiles, warmClipboard } from './attachments.js';
 
@@ -329,6 +329,13 @@ registerSessionArchive(app, wrap, {
   roots: liveRoots,
   changed: (change) => clients.forEach((c) => send(c, { t: 'session_archive', ...change })),
 });
+// 星标和归档互不影响：一个会话可以既是星标又已归档。
+const sessionStars = createSessionArchive(path.join(HOME_DIR, 'session-stars.json'));
+registerSessionStar(app, wrap, {
+  stars: sessionStars,
+  roots: liveRoots,
+  changed: (change) => clients.forEach((c) => send(c, { t: 'session_star', ...change })),
+});
 app.get('/api/models', wrap(async (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json(await readModelCatalog(req.query.cwd ? path.resolve(String(req.query.cwd)) : undefined));
@@ -350,8 +357,8 @@ app.get(
     const all = req.query.all === '1' || req.query.all === 'true';
     const cwd = all ? null : String(req.query.cwd || '');
     if (!all && !cwd) throw new Error('缺少 cwd 参数');
-    const [list, archived] = await Promise.all([listSessions({ cwd, roots }), sessionArchive.read()]);
-    res.json(list.map((s) => ({ ...s, archived: archived.has(archiveKey(s.file)) })));
+    const [list, archived, starred] = await Promise.all([listSessions({ cwd, roots }), sessionArchive.read(), sessionStars.read()]);
+    res.json(list.map((s) => ({ ...s, archived: archived.has(archiveKey(s.file)), starred: starred.has(archiveKey(s.file)) })));
   }),
 );
 
@@ -372,7 +379,7 @@ app.delete(
         return a.stop();
       }));
       await fsp.unlink(file);
-      await sessionArchive.set(file, false);
+      await Promise.all([sessionArchive.set(file, false), sessionStars.set(file, false)]);
       for (const c of clients) {
         if (active.some((a) => a.id === c.agentId)) c.agentId = null;
         send(c, { t: 'session_deleted', file });

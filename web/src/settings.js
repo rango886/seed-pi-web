@@ -17,7 +17,7 @@ export const GITHUB_CODE = "'Consolas'";
 export const PI_FONT = "'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', ui-monospace, monospace";
 export const PI_SETTINGS = {
   accent: '#7459b4', mdStyle: 'pi', font: PI_FONT, chatFont: '', codeFont: PI_FONT,
-  radius: 4, chatWidth: 800, spacing: 1, fontSize: 12, userFontSize: 12, chatFontSize: 12, codeFontSize: 12,
+  radius: 4, chatWidth: 980, spacing: 1, fontSize: 12, userFontSize: 12, chatFontSize: 12, codeFontSize: 12,
   toolFontSize: 12, thinkingFontSize: 12,
   lineHeight: 1.5, letterSpacing: 0, paraGap: 1.5,
 };
@@ -112,7 +112,7 @@ export const MONO_PRESETS = [
 ];
 
 const KEY = 'seed-pi-web-settings';
-export const VER = 20; // v20：素白去掉黄褐强调色，换成清新的青绿；只迁移旧预设色。
+export const VER = 21; // v21：pi 样式的聊天区宽度 800 → 980；只迁移还是旧默认值的。
 // 设置结构历史：<2 的那批默认字体是 Sarasa，升级时跟着换成系统字体；<3 去掉了头像开关；<4 气泡圆角改成了全局圆角；<5 正文默认不带边框；<6 气泡色固定跟随主题色；<7 系统字体栈不再把 system-ui 放第一位；<8 字体下拉改成一款一个（不再打包好几家字体）；<9 去掉更纱黑体，加霞鹜文楷；<10 系统字体栈的中文首选换成霞鹜文楷屏幕阅读版；<11 等宽字体栈里也加上了霞鹜文楷等宽屏幕阅读版；<12 默认整体样式换成 GitHub（苹方 + Consolas），等宽字体统一 Consolas；<13 输入框上面的状态信息改成默认显示
 let saved = {};
 try {
@@ -194,6 +194,10 @@ if ((saved.__v || 1) < 19) {
 if ((saved.__v || 1) < 20 && saved.uiStyle === 'github-warm' && saved.accent === '#82704e') {
   // 已经选过素白的用户刷新即可看到新配色；自选颜色、字体和其他偏好保持不变。
   saved.accent = '#32827b';
+}
+if ((saved.__v || 1) < 21 && saved.uiStyle === 'pi' && saved.chatWidth === 800) {
+  // pi 预设的聊天区宽度改成 980，跟其他样式一致；手动调过的宽度保持不变。
+  saved.chatWidth = 980;
 }
 for (const [key, oldKey] of [['thinkingDisplay', 'thinkingOpen'], ['toolsDisplay', 'toolsOpen']]) {
   if (!['collapsed', 'expanded'].includes(saved[key])) {

@@ -50,11 +50,16 @@ test('three views default to unarchived, migrate old preferences, and persist in
 });
 
 test('archive filtering treats legacy/unsaved sessions as active; count and time have independent separators', () => {
-  const { matchesArchive, sessionInfo } = preferences;
+  const { matchesArchive, matchesStar, sessionInfo } = preferences;
   const list = [{ file: 'old' }, { file: 'archived', archived: true }, { file: 'new', unsaved: true }];
   assert.deepEqual(list.filter((s) => matchesArchive(s, 'active')).map((s) => s.file), ['old', 'new']);
   assert.deepEqual(list.filter((s) => matchesArchive(s, 'archived')).map((s) => s.file), ['archived']);
   assert.equal(list.filter((s) => matchesArchive(s, 'all')).length, 3);
+  const starred = [{ file: 'plain' }, { file: 'star', starred: true }, { file: 'both', starred: true, archived: true }];
+  assert.equal(starred.filter((s) => matchesStar(s, 'all')).length, 3);
+  assert.deepEqual(starred.filter((s) => matchesStar(s, 'starred') && matchesArchive(s, 'active')).map((s) => s.file), ['star']);
+  assert.deepEqual(starred.filter((s) => matchesStar(s, 'starred') && matchesArchive(s, 'all')).map((s) => s.file), ['star', 'both']);
+  assert.equal(preferences.readSessionView(storageOf(), 'all').star, 'all');
   const s = { messages: 0, modified: 'today' };
   assert.equal(sessionInfo(s, { showCount: true, showTime: true }, () => '12:30'), '0 条 · 12:30');
   assert.equal(sessionInfo(s, { showCount: true, showTime: false }, () => '12:30'), '0 条');
@@ -98,7 +103,7 @@ test('sidebar switches independent settings and intersects mode, archive and sea
   let menu;
   const actions = [];
   const { state: s } = await setup(t, 'SidePanel.vue', { storage, imports: {
-    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession: (...args) => actions.push(args), setSessionArchived: (...args) => actions.push(args), renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: (cwd) => S.favorites.includes(cwd) },
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession: (...args) => actions.push(args), setSessionArchived: (...args) => actions.push(args), setSessionStarred: (...args) => actions.push(['star', ...args]), dirAllArchived: () => false, setDirArchived: (...args) => actions.push(['dir-archive', ...args]), deleteDirSessions: (...args) => actions.push(['dir-delete', ...args]), renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: (cwd) => S.favorites.includes(cwd) },
     '../settings.js': { view: vue.reactive({}), toggleSide() {}, closeDrawer() {}, openMenu(x, y, items) { menu = items; } },
   } });
   const files = () => s.groups.value.flatMap((g) => g.items.map((row) => row.file));
@@ -163,9 +168,34 @@ test('sidebar switches independent settings and intersects mode, archive and sea
   assert.equal(preferences.readSessionView(storage, 'fav').archive, 'archived');
 });
 
+test('star filter intersects archive filter, explains hidden archived stars, and toggles from the session menu', async (t) => {
+  const now = new Date().toISOString();
+  const S = vue.reactive({ sessionMode: 'dir', cwd: '/repo', favorites: [], agents: [], sessions: [
+    { file: 'a', title: 'A', cwd: '/repo', modified: now, messages: 1 },
+    { file: 'b', title: 'B', cwd: '/repo', modified: now, messages: 1, starred: true, archived: true },
+  ] });
+  let menu;
+  const actions = [];
+  const { state: s } = await setup(t, 'SidePanel.vue', { storage: storageOf(), imports: {
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred: (...args) => actions.push(args), dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => false },
+    '../settings.js': { view: vue.reactive({}), toggleSide() {}, closeDrawer() {}, openMenu(x, y, items) { menu = items; } },
+  } });
+  const files = () => s.groups.value.flatMap((g) => g.items.map((row) => row.file));
+  s.saveUI({ star: 'starred' });
+  assert.deepEqual([...files()], []);
+  assert.match(s.emptyText.value, /都已归档/);
+  s.saveUI({ archive: 'all' });
+  assert.deepEqual([...files()], ['b']);
+  s.sessionMenu({ clientX: 0, clientY: 0 }, S.sessions[0]);
+  menu.find((it) => it.label === '加星标').run();
+  assert.deepEqual(actions[0], [S.sessions[0], true]);
+  s.sessionMenu({ clientX: 0, clientY: 0 }, S.sessions[1]);
+  assert.ok(menu.some((it) => it.label === '取消星标'));
+});
+
 test('sidebar compensates for actual scrollbar width, including overlay scrollbars', async (t) => {
   const { state: s } = await setup(t, 'SidePanel.vue', { imports: {
-    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
+    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
     '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   for (const width of [10, 8, 0, 10]) {
@@ -190,7 +220,7 @@ test('sidebar scrolling reveals the thumb and resets its idle timeout without ch
     setTimeout(callback, ms) { const id = ++nextId; pending.set(id, { callback, ms }); return id; },
     clearTimeout(id) { pending.delete(id); },
   }, imports: {
-    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
+    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
     '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   assert.equal(s.listScrolling.value, false);
@@ -249,7 +279,7 @@ test('display dropdown hides directory-only options, emits patches, stays open a
   const props = vue.reactive({ mode: 'all', settings: preferences.readSessionView(storageOf(), 'all') });
   const document = { activeElement: null };
   const { state: s, events } = await setup(t, 'SessionDisplayMenu.vue', { props, document });
-  assert.equal(s.sections.value.length, 5);
+  assert.equal(s.sections.value.length, 6);
   const scope = s.sections.value[0];
   assert.equal(scope.label, '会话范围');
   assert.deepEqual([...scope.options.map((option) => option.value)], ['all', 'dir', 'fav']);
@@ -263,7 +293,7 @@ test('display dropdown hides directory-only options, emits patches, stays open a
   assert.equal(events.pop()[1].showPath, false);
   props.mode = 'dir';
   await vue.nextTick();
-  assert.deepEqual([...s.sections.value.map((section) => section.label)], ['会话范围', '归档筛选', '会话信息']);
+  assert.deepEqual([...s.sections.value.map((section) => section.label)], ['会话范围', '归档筛选', '星标筛选', '会话信息']);
   assert.ok(!s.sections.value.at(-1).options.some((option) => option.key === 'showPath'));
   const buttons = Array.from({ length: 5 }, () => ({ focus() { document.activeElement = this; } }));
   const trigger = { getBoundingClientRect: () => ({ right: 990, top: 100, bottom: 126 }), focus() { document.activeElement = trigger; }, contains: () => false };
@@ -295,7 +325,7 @@ test('display dropdown hides directory-only options, emits patches, stays open a
   props.mode = 'fav';
   await vue.nextTick();
   assert.equal(s.opened.value, false, 'switching mode dismisses the previous settings menu');
-  assert.equal(s.sections.value.length, 5);
+  assert.equal(s.sections.value.length, 6);
   assert.ok(s.sections.value.at(-1).options.some((option) => option.key === 'showPath'));
   await s.open();
   const scopeAfterSwitch = s.sections.value[0];
@@ -395,7 +425,7 @@ test('sidebar drags folders above and below targets, persists custom order and s
   ] });
   const storage = storageOf();
   const { state: s } = await setup(t, 'SidePanel.vue', { storage, imports: {
-    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
     '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   const paths = () => [...s.groups.value.map((g) => g.path)];
@@ -461,7 +491,7 @@ test('active session also highlights its directory, including collapsed groups a
     { file: 'c:/sessions/b.jsonl', cwd: '/other', title: 'Second', modified: now },
   ] });
   const { state: s } = await setup(t, 'SidePanel.vue', { imports: {
-    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
     '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   s.saveUI({ layout: 'group' });

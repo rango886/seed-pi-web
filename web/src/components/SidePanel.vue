@@ -1,11 +1,11 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
-import { S, openSession, deleteSession, setSessionArchived, renameSession, sessionStatus, setSessionMode, isFav, newSession, newSessionIn } from '../store.js';
+import { S, openSession, deleteSession, setSessionArchived, setSessionStarred, renameSession, sessionStatus, setSessionMode, isFav, newSession, newSessionIn, dirAllArchived, setDirArchived, deleteDirSessions } from '../store.js';
 import { view, toggleSide, closeDrawer, openMenu } from '../settings.js';
 import Icon from './Icon.vue';
 import DirectoryMenu from './DirectoryMenu.vue';
 import SessionDisplayMenu from './SessionDisplayMenu.vue';
-import { readSessionView, saveSessionView, matchesArchive, sessionInfo, compareSessions, compareSessionFolders, moveSessionFolder } from '../session-list.js';
+import { readSessionView, saveSessionView, matchesArchive, matchesStar, sessionInfo, compareSessions, compareSessionFolders, moveSessionFolder } from '../session-list.js';
 
 const q = ref('');
 const listElement = ref(null);
@@ -68,6 +68,30 @@ function stat(s) {
   return null;
 }
 
+// 目录折叠时，把里面会话的状态汇总到文件夹图标上：按“谁更需要你管”取最紧急的那个
+const DIR_STATES = [
+  ['wait', '在等你操作'],
+  ['run', '正在回复'],
+  ['new', '有新回复'],
+  ['busy', '在别的窗口使用'],
+];
+function dirStat(g) {
+  const count = {};
+  for (const s of g.items) {
+    const c = stat(s)?.cls;
+    if (c) count[c] = (count[c] || 0) + 1;
+  }
+  const hit = DIR_STATES.filter(([c]) => count[c]);
+  if (!hit.length) return null;
+  return { cls: hit[0][0], tip: hit.map(([c, t]) => `${count[c]} 个${t}`).join(' · ') };
+}
+// 只算折叠着的目录，每次渲染算一遍，模板里直接查表
+const dirStats = computed(() => {
+  const m = new Map();
+  for (const g of groups.value) if (g.path && isCollapsed(g.path)) m.set(g.path, dirStat(g));
+  return m;
+});
+
 // 全部 / 当前目录 / 收藏各记一套。当前目录不用布局和目录名称选项。
 const modeUI = reactive(Object.fromEntries(['all', 'dir', 'fav'].map((m) => [m, readSessionView(localStorage, m)])));
 const cur = computed(() => modeUI[S.sessionMode] || modeUI.dir);
@@ -102,6 +126,11 @@ function dirMenu(e, path) {
   openMenu(e.clientX, e.clientY, [
     path && { label: '在此目录新建会话', run: () => newIn(path) },
     path && { label: '复制路径', run: () => navigator.clipboard.writeText(path) },
+    path && '-',
+    path && (dirAllArchived(path)
+      ? { label: '全部取消归档', run: () => setDirArchived(path, false) }
+      : { label: '全部归档', run: () => setDirArchived(path, true) }),
+    path && { label: '全部删除', danger: true, hint: 'Ctrl 跳过确认', run: (event) => deleteDirSessions(path, event) },
     path && '-',
     ...layoutItems(),
     group && '-',
@@ -168,6 +197,10 @@ function moveFolderKey(e, path) {
 // 列表空的时候说人话：搜了关键词就说没搜到，否则说这个看法下为什么没东西
 const emptyText = computed(() => {
   if (q.value.trim()) return '当前筛选下没有匹配的会话';
+  if (cur.value.star === 'starred') {
+    const hidden = cur.value.archive === 'active' && S.sessions.some((s) => inMode(s.cwd) && s.starred && s.archived);
+    return hidden ? '星标会话都已归档，可在“显示”里把归档筛选改成全部会话' : '当前范围内没有星标会话：鼠标移到会话上，点右边的☆就能加星标';
+  }
   if (cur.value.archive === 'archived') return '当前范围内没有已归档会话';
   if (cur.value.archive === 'active' && [...unsaved.value, ...S.sessions].some((s) => inMode(s.cwd) && s.archived)) return '当前范围内没有未归档会话，可在“显示”中查看已归档会话';
   if (S.sessionMode === 'all') return '还没有历史会话';
@@ -178,7 +211,7 @@ const emptyText = computed(() => {
 // 会话分组：按目录看（全部 / 收藏）时按目录分组，只看当前目录时按时间分组；组内再按当前排序方式排
 const groups = computed(() => {
   const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
-  const list = [...unsaved.value, ...S.sessions].filter((s) => inMode(s.cwd) && matchesArchive(s, cur.value.archive) && words.every((w) => `${s.title} ${s.cwd || ''}`.toLowerCase().includes(w)));
+  const list = [...unsaved.value, ...S.sessions].filter((s) => inMode(s.cwd) && matchesArchive(s, cur.value.archive) && matchesStar(s, cur.value.star) && words.every((w) => `${s.title} ${s.cwd || ''}`.toLowerCase().includes(w)));
   const cmp = compareSessions(sortBy.value);
 
   if (byDir.value) {
@@ -188,19 +221,10 @@ const groups = computed(() => {
       if (!by.has(k)) by.set(k, []);
       by.get(k).push(s);
     }
-    // 不同路径重名（比如两个 switch）时，用上一级目录区分
-    const seen = new Set();
-    const dup = new Set();
-    for (const cwd of by.keys()) {
-      const n = (base(cwd) || '').toLowerCase();
-      if (seen.has(n)) dup.add(n);
-      seen.add(n);
-    }
+    // 名称模式只显示最后一级目录名；完整路径可在悬停提示或“显示完整路径”里看。
     const label = (cwd) => {
       if (cur.value.dirLabel === 'path') return cwd || '(未知目录)';
-      const parts = (cwd || '').split(/[\\/]/).filter(Boolean);
-      const n = parts.pop() || '(未知目录)';
-      return dup.has(n.toLowerCase()) && parts.length ? `${parts.pop()}/${n}` : n;
+      return (cwd || '').split(/[\\/]/).filter(Boolean).pop() || '(未知目录)';
     };
     return [...by.entries()]
       .map(([cwd, items]) => ({
@@ -264,6 +288,7 @@ function sessionMenu(e, s) {
     s.file === S.agent?.sessionFile && { label: '重命名', run: () => renameSession() },
     { label: '复制文件路径', run: () => navigator.clipboard.writeText(s.file) },
     ...(s.unsaved ? [] : ['-',
+      { label: s.starred ? '取消星标' : '加星标', run: () => setSessionStarred(s, !s.starred) },
       { label: s.archived ? '取消归档' : '归档', run: () => setSessionArchived(s, !s.archived) },
       { label: '删除', danger: true, hint: 'Ctrl 跳过确认', run: (event) => deleteSession(s, event) },
     ]),
@@ -301,17 +326,20 @@ function sessionMenu(e, s) {
           <!-- 目录：像文件夹一样，点一下折叠/展开；右键可以全部展开折叠、切路径显示 -->
           <div v-if="g.path" class="dirhead"
             :class="{ active: isActiveGroup(g), closed: isCollapsed(g.path), draggable: customFolders, dragging: draggingFolder === g.path, 'drop-before': folderDrop?.path === g.path && !folderDrop.after, 'drop-after': folderDrop?.path === g.path && folderDrop.after }"
-            :title="customFolders ? `${g.path}\n按住拖动排序，或按 Alt + ↑ / ↓` : g.path"
+            :title="g.path"
             :draggable="customFolders" :tabindex="customFolders ? 0 : undefined"
             @dragstart="startFolderDrag($event, g.path)" @dragover="overFolder($event, g.path)" @drop="dropFolder($event, g.path)" @dragend="endFolderDrag"
             @dragleave="folderDrop?.path === g.path && !$event.currentTarget.contains($event.relatedTarget) && (folderDrop = null)"
             @keydown="moveFolderKey($event, g.path)" @keydown.enter.self.prevent="toggleDir(g.path)" @keydown.space.self.prevent="toggleDir(g.path)"
             @click="toggleDir(g.path)" @contextmenu.prevent.stop="dirMenu($event, g.path)">
             <span class="arrow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg></span>
-            <Icon name="folder" :size="15" />
+            <span v-if="dirStats.get(g.path)" class="st-slot" :title="dirStats.get(g.path).tip"><span class="st" :class="dirStats.get(g.path).cls" /></span>
+            <Icon v-else name="folder" :size="15" />
             <span class="ellipsis grow">{{ g.name }}</span>
             <span class="gcount">{{ g.items.length }}</span>
-            <button type="button" class="dir-new" :title="`在这个目录新建会话\n${g.path}`" aria-label="在这个目录新建会话" @click.stop="newIn(g.path)"><Icon name="plus" :size="14" /></button>
+            <button type="button" class="dir-act arch first" :title="dirAllArchived(g.path) ? '全部取消归档' : '归档目录下全部会话'" :aria-label="dirAllArchived(g.path) ? '全部取消归档' : '全部归档'" @click.stop="setDirArchived(g.path, !dirAllArchived(g.path))"><Icon :name="dirAllArchived(g.path) ? 'unarchive' : 'archive'" :size="14" /></button>
+            <button type="button" class="dir-act del" title="删除目录下全部会话（Ctrl+点击跳过确认）" aria-label="全部删除" @click.stop="deleteDirSessions(g.path, $event)"><Icon name="trash" :size="14" /></button>
+            <button type="button" class="dir-act dir-new" :title="`在这个目录新建会话\n${g.path}`" aria-label="在这个目录新建会话" @click.stop="newIn(g.path)"><Icon name="plus" :size="14" /></button>
           </div>
           <div v-else-if="g.name" class="gname">{{ g.name }}</div>
           <template v-if="!g.path || !isCollapsed(g.path)">
@@ -319,18 +347,22 @@ function sessionMenu(e, s) {
               v-for="s in g.items"
               :key="s.file"
               class="sess"
-              :class="{ active: isActiveSession(s), child: !!g.path, 'has-st': !!g.path && !!stat(s)?.cls, saved: !s.unsaved }"
+              :class="{ active: isActiveSession(s), child: !!g.path, saved: !s.unsaved }"
               :title="s.title"
               tabindex="0"
               @keydown.enter.self.prevent="open(s)"
               @click="open(s)"
               @contextmenu.prevent.stop="sessionMenu($event, s)"
             >
-              <span v-if="stat(s)?.cls" class="st" :class="stat(s).cls" :title="stat(s).tip" />
+              <!-- 目录下的会话：状态放在和文件夹图标同一列的固定格子里，标题位置不随状态变化 -->
+              <span v-if="g.path" class="st-slot"><span v-if="stat(s)?.cls" class="st" :class="stat(s).cls" :title="stat(s).tip" /></span>
+              <span v-else-if="stat(s)?.cls" class="st" :class="stat(s).cls" :title="stat(s).tip" />
+              <Icon v-if="s.starred" name="star" :size="13" class="star-mark" title="已加星标" />
               <Icon v-if="s.archived" name="archive" :size="13" class="archive-mark" title="已归档" />
               <span class="ellipsis grow stitle">{{ s.title }}</span>
               <span v-if="showSessionPath" class="sdir" :title="s.cwd">{{ cur.dirLabel === 'path' ? s.cwd : base(s.cwd) }}</span>
               <span v-if="sessionInfo(s, cur, timeOf)" class="sinfo">{{ sessionInfo(s, cur, timeOf) }}</span>
+              <button v-if="!s.unsaved" type="button" class="sess-action star" :class="{ on: s.starred }" :title="s.starred ? '取消星标' : '加星标'" :aria-label="s.starred ? '取消星标' : '加星标'" :aria-pressed="!!s.starred" @click.stop="setSessionStarred(s, !s.starred)"><Icon name="star" :size="14" /></button>
               <button v-if="!s.unsaved" type="button" class="sess-action arch" :title="s.archived ? '取消归档' : '归档'" :aria-label="s.archived ? '取消归档' : '归档'" @click.stop="setSessionArchived(s, !s.archived)"><Icon :name="s.archived ? 'unarchive' : 'archive'" :size="14" /></button>
               <button v-if="!s.unsaved" type="button" class="sess-action del" title="删除（Ctrl+点击跳过确认）" aria-label="删除" @click.stop="deleteSession(s, $event)"><Icon name="trash" :size="14" /></button>
             </div>
@@ -359,12 +391,15 @@ function sessionMenu(e, s) {
 .actions { display: flex; gap: 6px; margin: 0 var(--side-gutter) 8px; flex: none; }
 .abtn { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; transition: border-color 0.15s, color 0.15s; }
 .abtn:hover { border-color: var(--accent); color: var(--accent-text); }
-/* 目录行悬停时，计数换成「+」：一步在这个目录新建，和会话行悬停出归档/删除一个路子 */
-.dir-new { display: none; width: 24px; height: 24px; margin-left: auto; margin-right: -4px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
+/* 目录行悬停时，计数换成「归档 / 删除 / +」，和会话行悬停出归档/删除一个路子 */
+.dir-act.first { margin-left: auto; }
+.dir-new { margin-right: -4px; }
+.dir-act { display: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); cursor: pointer; align-items: center; justify-content: center; flex: none; }
 .dir-new:hover { background: var(--accent-soft); color: var(--accent-text); }
-.dirhead:hover .dir-new, .dirhead:focus-within .dir-new { display: inline-flex; }
-.dirhead:hover .gcount, .dirhead:focus-within .gcount { display: none; }
-.dirhead .dir-new :deep(.icon) { color: inherit; opacity: 1; }
+/* 和会话行一样：鼠标点击留下的焦点不保留按钮，键盘 Tab 聚焦仍然可操作。 */
+.dirhead:is(:hover, :focus-visible, :has(:focus-visible)) .dir-act { display: inline-flex; }
+.dirhead:is(:hover, :focus-visible, :has(:focus-visible)) .gcount { display: none; }
+.dirhead .dir-act :deep(.icon) { color: inherit; opacity: 1; }
 .search { display: flex; align-items: center; gap: 6px; margin: 0 var(--side-gutter) 8px; padding: 0 4px 0 var(--side-inset); height: 34px; border-radius: var(--r-sm); background: var(--panel); border: 1px solid var(--line); color: var(--text-3); flex: none; }
 .search:focus-within { border-color: var(--accent); }
 .search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-size: var(--fs-sm); }
@@ -387,23 +422,30 @@ function sessionMenu(e, s) {
 .tree { padding: 2px 6px 12px; }
 .gname { font-size: var(--fs-xs); color: var(--text-3); padding: 12px var(--side-inset) 4px; display: flex; align-items: center; gap: 6px; }
 .gname:first-child { padding-top: 4px; }
-.dirhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; margin: 2px 0; }
+.dirhead { position: relative; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; margin: 2px 0; }
 .dirhead:first-child { margin-top: 0; }
 .dirhead:hover { background: var(--active); }
 .dirhead.draggable { cursor: grab; }
 .dirhead.dragging { opacity: 0.45; cursor: grabbing; }
-.dirhead.drop-before { box-shadow: 0 -2px 0 var(--accent); }
-.dirhead.drop-after { box-shadow: 0 2px 0 var(--accent); }
+/* 拖动插入位置：一条直线画在两行之间（不跟着圆角弯），左端带个小圆点标出起点 */
+.dirhead.drop-before::before, .dirhead.drop-after::before { content: ''; position: absolute; left: 4px; right: 4px; height: 2px; border-radius: 1px; background: var(--accent); pointer-events: none; }
+.dirhead.drop-before::before { top: -2px; }
+.dirhead.drop-after::before { bottom: -2px; }
+.dirhead.drop-before::after, .dirhead.drop-after::after { content: ''; position: absolute; left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); pointer-events: none; }
+.dirhead.drop-before::after { top: -4px; }
+.dirhead.drop-after::after { bottom: -4px; }
 .dirhead:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: -2px; }
 .dirhead .arrow { width: 12px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); transform: rotate(90deg); transition: transform 0.15s; }
 /* 折叠的时候箭头朝右（就是 svg 本身的样子），展开的时候转 90° 朝下 */
 .dirhead.closed .arrow { transform: rotate(0deg); }
 .dirhead :deep(.icon) { color: var(--accent-text); opacity: 0.85; }
 .dirhead .gcount { margin-left: auto; }
-/* 目录名和子会话对齐：8(内边距) + 12(箭头) + 6 + 15(图标) + 6 = 47px。 */
-.sess.child { padding-left: var(--session-indent); }
-/* 状态点和间隔共占 14px，抵消这部分宽度，避免标题左右跳动。 */
-.sess.child.has-st { padding-left: calc(var(--session-indent) - 14px); }
+/* 目录名和子会话对齐：8(内边距) + 12(箭头) + 6 = 26px 处是文件夹图标列（宽 15），标题从 47px 开始。
+   子会话的状态格子正好放在文件夹图标那一列：26 + 15 - 2 + 8(gap) = 47。 */
+.sess.child { padding-left: calc(var(--session-indent) - 21px); }
+.sess.child .st-slot { margin-right: -2px; }
+.st-slot { width: 15px; height: 15px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+.st-slot .st, .st-slot .st.run { margin: 0; }
 .gcount { font-size: var(--fs-xs); min-width: 20px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; padding: 0 5px; border-radius: var(--r-pill); background: var(--active); color: var(--text-3); }
 .list > .sess, .list > .gname { content-visibility: auto; contain-intrinsic-size: auto 30px; }
 .sess { display: flex; align-items: center; gap: 8px; height: 30px; margin-bottom: 2px; padding: 0 var(--side-inset); border-radius: var(--r-sm); cursor: pointer; position: relative; font-size: calc(var(--fs) - 1px); }
@@ -421,6 +463,10 @@ function sessionMenu(e, s) {
 .arch:hover { background: var(--accent-soft); color: var(--accent-text); }
 .del:hover { background: var(--err); color: #fff; }
 .archive-mark { color: var(--text-3); }
+/* 星标：不用彩色，已加星标的直接画成实心星（描边和填充同色）。 */
+.star-mark { color: var(--text-3); }
+.star-mark :deep(path), .star.on :deep(path) { fill: currentColor; }
+.star:hover { background: var(--accent-soft); color: var(--accent-text); }
 .sess:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: -2px; }
 /* 会话前面的状态点：没状态时整个不画（见模板里的 v-if），标题直接顶到左边，不留一块空白 */
 .st { width: 8px; height: 8px; flex: none; margin-right: -2px; border-radius: 50%; position: relative; }
