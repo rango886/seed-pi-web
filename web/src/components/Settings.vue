@@ -3,36 +3,27 @@ import { ref, watch } from 'vue';
 import { UI, DEFAULTS, STYLES, useStyle, ACCENTS, ACCENT_NAMES, FONT_PRESETS, MONO_PRESETS, view, resetSettings } from '../settings.js';
 import { toast, readBackup, restoreBackup } from '../store.js';
 import { DISPLAY_MODES } from '../block-display.js';
+import { flushPrefs, freezePrefs } from '../prefs.js';
 
 const close = () => (view.settingsOpen = false);
 const fileInput = ref(null); // 导入用的隐藏文件框
 
 // ---- 导出 / 导入 ----
-// 备份分两部分：
-//   store：浏览器 localStorage 里那些 seed-pi-web-* 键（界面设置、会话列表的怎么看/怎么摆、侧栏宽度…），原样打包
-//   favorites / archived / starred：后端数据目录里的收藏的目录、归档、星标
-// seed-pi-web-token 是访问令牌，不往文件里写（导出的东西可能会发给别人）。运行时内存里的东西不导。
-const SKIP_KEYS = new Set(['seed-pi-web-token']);
-function dumpStore() {
-  const store = {};
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (!k || !k.startsWith('seed-pi-web-') || SKIP_KEYS.has(k)) continue;
-    store[k] = localStorage.getItem(k);
-  }
-  return store;
-}
-
+// 要备份的东西全在后端数据目录（~/.seed-pi-web）里：
+//   prefs：偏好设置（界面设置、会话列表怎么看/怎么摆、侧栏宽度…，见 prefs.js）
+//   favorites / archived / starred：收藏的目录、归档、星标
+// 访问令牌只在浏览器里，不会导出（导出的东西可能会发给别人）。
 async function exportSettings() {
   let backup;
   try {
+    await flushPrefs(); // 刚改的设置可能还没发到后端，先发掉
     backup = await readBackup();
   } catch (err) {
-    toast(`导出失败：读不到后端的收藏 / 归档 / 星标（${err.message}）`, 'error');
+    toast(`导出失败：${err.message}`, 'error');
     return;
   }
   const name = `seed-pi-web-settings-${new Date().toISOString().slice(0, 10)}.json`;
-  const data = { app: 'seed-pi-web', kind: 'settings', version: 3, exportedAt: new Date().toISOString(), favorites: backup.favorites, archived: backup.archived, starred: backup.starred, store: dumpStore() };
+  const data = { app: 'seed-pi-web', kind: 'settings', version: 4, exportedAt: new Date().toISOString(), ...backup };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
@@ -42,7 +33,7 @@ async function exportSettings() {
   toast(`已导出 ${name}`);
 }
 
-/** 导入：localStorage 的键写回去，收藏 / 归档 / 星标整份发回后端替换，然后刷一次页面让各处重新读一遍 */
+/** 导入：整份发回后端替换，然后刷一次页面让各处重新读一遍 */
 async function importSettings(e) {
   const file = e.target.files?.[0];
   e.target.value = ''; // 清掉，同一个文件还能再导一次
@@ -54,20 +45,19 @@ async function importSettings(e) {
     toast('导入失败：这个文件不是 JSON', 'error');
     return;
   }
-  if (data?.app !== 'seed-pi-web' || data.version !== 3) {
+  if (data?.app !== 'seed-pi-web' || data.version !== 4) {
     toast('导入失败：不是当前版本 seed-pi-web 导出的设置文件', 'error');
     return;
   }
   const backup = {};
-  for (const k of ['favorites', 'archived', 'starred']) if (Array.isArray(data[k])) backup[k] = data[k];
+  for (const k of ['prefs', 'favorites', 'archived', 'starred']) if (data[k] !== undefined) backup[k] = data[k];
+  freezePrefs(); // 这一刻起本页不再往后端写设置，免得把导入的内容盖回去
   try {
-    if (Object.keys(backup).length) await restoreBackup(backup);
+    await restoreBackup(backup);
   } catch (err) {
-    toast(`导入失败：收藏 / 归档 / 星标没存上（${err.message}）`, 'error');
+    toast(`导入失败：${err.message}，正在重新载入…`, 'error');
+    setTimeout(() => location.reload(), 1500);
     return;
-  }
-  for (const [k, v] of Object.entries(data.store || {})) {
-    if (k.startsWith('seed-pi-web-') && !SKIP_KEYS.has(k) && typeof v === 'string') localStorage.setItem(k, v);
   }
   toast('已导入，正在重新载入…', 'info', 3000);
   setTimeout(() => location.reload(), 700);

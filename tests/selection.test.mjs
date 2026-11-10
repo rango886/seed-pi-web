@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 const read = file => fs.readFile(new URL('../web/src/' + file, import.meta.url), 'utf8');
 
 test('active rows, parent folders and menu highlights share user-bubble colors across themes', async () => {
-  const [css, main] = await Promise.all([read('selection.css'), read('main.js')]);
+  const [css, main] = await Promise.all([read('selection.css'), read('boot.js')]);
   assert.match(css, /--selection-bg: var\(--bubble-me\)/);
   assert.match(css, /--selection-text: var\(--bubble-me-text\)/);
   assert.match(css, /background: var\(--selection-bg\)/);

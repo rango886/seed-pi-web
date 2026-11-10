@@ -1,4 +1,4 @@
-// 界面设置：保存在 localStorage，改了立刻生效（写到 <html> 的 CSS 变量上）
+// 界面设置：保存在 localStorage（实际存在后端，见 prefs.js），改了立刻生效（写到 <html> 的 CSS 变量上）
 import { reactive, watch } from 'vue';
 import { resetDiagramCache } from './util.js';
 

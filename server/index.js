@@ -14,6 +14,7 @@ import { modelModules, readModelCatalog } from './models.js';
 import { listSessions, recentDirs, sessionRoots, sessionCwds, isInside, samePath, readSessionSnapshot, agentDir } from './sessions.js';
 import { createTempDir, cleanupTempDirs, listHas } from './temp-dirs.js';
 import { createFavorites, registerFavorites } from './favorites.js';
+import { createPrefs, registerPrefs } from './prefs.js';
 import { TerminalManager, terminalAvailable } from './terminal.js';
 import { gitStatus, gitDiff, gitBranch } from './git.js';
 import { registerDownloads } from './downloads.js';
@@ -344,7 +345,10 @@ registerFavorites(app, wrap, {
   favorites,
   changed: (list) => clients.forEach((c) => send(c, { t: 'favorites', list })),
 });
-// 设置里的导入导出：后端数据目录里的收藏、归档、星标一起备份。导入是整份替换，缺的字段不动
+// 网页的偏好设置（以前在浏览器 localStorage 里的那些键）
+const prefs = createPrefs(path.join(HOME_DIR, 'prefs.json'));
+registerPrefs(app, wrap, { prefs });
+// 设置里的导入导出：偏好设置、收藏、归档、星标一起备份。导入是整份替换，缺的字段不动
 const strList = (v, label) => {
   if (!Array.isArray(v) || !v.every((p) => typeof p === 'string')) throw new Error(`${label}必须是路径数组`);
   return v;
@@ -352,8 +356,8 @@ const strList = (v, label) => {
 app.get(
   '/api/backup',
   wrap(async (req, res) => {
-    const [fav, archived, starred] = await Promise.all([favorites.read(), sessionArchive.read(), sessionStars.read()]);
-    res.json({ favorites: fav, archived: [...archived], starred: [...starred] });
+    const [p, fav, archived, starred] = await Promise.all([prefs.read(), favorites.read(), sessionArchive.read(), sessionStars.read()]);
+    res.json({ prefs: p, favorites: fav, archived: [...archived], starred: [...starred] });
   }),
 );
 app.post(
@@ -363,6 +367,7 @@ app.post(
     const fav = b.favorites === undefined ? null : strList(b.favorites, '收藏');
     const archived = b.archived === undefined ? null : strList(b.archived, '归档');
     const starred = b.starred === undefined ? null : strList(b.starred, '星标');
+    if (b.prefs !== undefined) await prefs.replace(b.prefs);
     await Promise.all([fav && favorites.write(fav), archived && sessionArchive.replace(archived), starred && sessionStars.replace(starred)]);
     res.json({ ok: true });
   }),

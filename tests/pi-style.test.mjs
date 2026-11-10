@@ -125,7 +125,7 @@ test('warm GitHub preset keeps GitHub layout, uses PingFang for UI and chat, and
 
 test('warm palette reuses GitHub controls without changing geometry, typography or other Markdown styles', async () => {
   const read = (path) => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
-  const [warm, github, main] = await Promise.all([read('github-warm.css'), read('github.css'), read('main.js')]);
+  const [warm, github, main] = await Promise.all([read('github-warm.css'), read('github.css'), read('boot.js')]);
   assert.match(main, /import '\.\/github-warm\.css';/);
   assert.ok(main.indexOf("import './github.css'") < main.indexOf("import './github-warm.css'"));
   assert.match(github, /:root\[data-ui\^='github'\] \.btn/);
@@ -311,7 +311,7 @@ test('font selectors support independent custom values, following UI, and preset
   const code = compileScript(parse(source).descriptor, { id: 'test-font-settings' }).content;
   const context = vm.createContext({});
   const mod = new vm.SourceTextModule(code, { context });
-  const imports = { vue, '../settings.js': s, '../store.js': { toast() {}, readBackup: async () => ({}), restoreBackup: async () => ({}) }, '../block-display.js': { DISPLAY_MODES } };
+  const imports = { vue, '../settings.js': s, '../store.js': { toast() {}, readBackup: async () => ({}), restoreBackup: async () => ({}) }, '../block-display.js': { DISPLAY_MODES }, '../prefs.js': { flushPrefs: async () => {}, freezePrefs() {} } };
   await mod.link((name) => {
     const exports = imports[name];
     assert.ok(exports, name);
@@ -714,7 +714,7 @@ test('expanded diffs retain all edits without an extra expansion step', async (t
 test('pi styles preserve renderer enhancements and remove only the requested options', async () => {
   const read = (path) => fs.readFile(new URL('../web/src/' + path, import.meta.url), 'utf8');
   const [css, settings, message, main, github, util] = await Promise.all([
-    read('pi.css'), read('components/Settings.vue'), read('components/MessageItem.vue'), read('main.js'), read('github.css'), read('util.js'),
+    read('pi.css'), read('components/Settings.vue'), read('components/MessageItem.vue'), read('boot.js'), read('github.css'), read('util.js'),
   ]);
   assert.match(settings, /\[\['default', '经典'\], \['github', 'GitHub'\], \['pi', 'pi'\]\]/);
   assert.match(settings, /<span class="label">正文排版<\/span>/);

@@ -55,7 +55,7 @@ export const S = reactive({
   sessions: [],
   // 侧栏会话列表的三种看法：dir 只看当前目录 / all 全部目录 / fav 只看收藏的目录
   sessionMode: localStorage.getItem('seed-pi-web-session-mode') || 'dir',
-  // 收藏的文件夹（目录选择窗口和右侧文件树右键都能加），存 localStorage
+  // 收藏的文件夹（目录选择窗口和右侧文件树右键都能加），存在后端 favorites.json
   favorites: [],
   terms: [],
   activeTerm: null, // 最近一次看的终端（Ctrl+` 切回去用）
