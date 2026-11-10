@@ -17,6 +17,13 @@ const sbw = ref(0); // 滚动条占的宽度：输入框那栏也要让出同样
 let stick = true;
 const away = ref(false); // 离底部比较远时显示回到底部按钮
 const shortcutsOpen = ref(false);
+// π 图标的“招呼”动画只放给第一次见面的人看：点开过快捷键就写进 localStorage，之后 π 回归静态。
+const welcomeSeen = ref((() => { try { return localStorage.getItem('seed-pi-web-welcome-seen') === '1'; } catch { return false; } })());
+watch(shortcutsOpen, (open) => {
+  if (!open || welcomeSeen.value) return;
+  welcomeSeen.value = true;
+  try { localStorage.setItem('seed-pi-web-welcome-seen', '1'); } catch {}
+});
 let ro, roDock;
 
 /** 离底部还剩多少像素 */
@@ -174,6 +181,7 @@ const shortcutGroups = computed(() => [
   { title: '会话与界面', rows: [
     ['Alt+N', '新会话'],
     ['Alt+Shift+N', '选目录新建'],
+    ['Alt+T', '临时会话'],
     ['Ctrl+P', '切换会话'],
     ['Ctrl+L', '切换模型'],
     ['Ctrl+B', '显示 / 隐藏会话侧栏'],
@@ -236,7 +244,7 @@ const shortcutGroups = computed(() => [
         </div>
 
         <div v-if="!S.messages.length && !S.agentExited" class="welcome">
-          <button type="button" class="big" :aria-expanded="shortcutsOpen" aria-controls="welcome-shortcuts" :aria-label="shortcutsOpen ? '收起快捷键' : '显示快捷键'" :title="shortcutsOpen ? '收起快捷键' : '显示快捷键'" @click="shortcutsOpen = !shortcutsOpen"><Icon name="pi" :size="34" /></button>
+          <button type="button" class="big" :class="{ idle: !welcomeSeen }" :aria-expanded="shortcutsOpen" aria-controls="welcome-shortcuts" :aria-label="shortcutsOpen ? '收起快捷键' : '显示快捷键'" :title="shortcutsOpen ? '收起快捷键' : '显示快捷键'" @click="shortcutsOpen = !shortcutsOpen"><Icon name="pi" :size="34" /></button>
           <div class="wtitle">有什么可以帮你</div>
           <div v-if="shortcutsOpen" id="welcome-shortcuts" class="tips">
             <section v-for="group in shortcutGroups" :key="group.title" class="tip-group">
@@ -300,9 +308,24 @@ const shortcutGroups = computed(() => [
 .scroll.welcoming { display: flex; flex-direction: column; }
 .welcoming .inner { width: 100%; flex: 1 0 auto; display: flex; flex-direction: column; }
 .welcome { flex: 1; text-align: center; padding: 32px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-.welcome .big { border: 0; padding: 0; cursor: pointer; width: 64px; height: 64px; border-radius: var(--r-xl); background: var(--accent); color: #fff; font-size: 34px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px var(--accent-soft); margin-bottom: 10px; }
+.welcome .big { border: 0; padding: 0; cursor: pointer; width: 64px; height: 64px; border-radius: var(--r-xl); background: var(--accent); color: #fff; font-size: 34px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px var(--accent-soft); margin-bottom: 10px; position: relative; overflow: hidden; transition: transform 0.15s ease; }
 .wtitle { font-size: calc(var(--fs) + 6px); font-weight: 600; }
 .welcome .big:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+/* 首次见面时 π 的待机动画：轻轻浮动 + 呼吸光圈示意“这里能点”，π 每几秒歪一下头、一道高光扫过，像在跟你打招呼。
+   点开过快捷键后 localStorage 记下来，之后一直是静态图标，不再打扰老用户。 */
+.welcome .big.idle { animation: pi-bob 3.2s ease-in-out infinite, pi-glow 3.2s ease-in-out infinite; }
+.welcome .big.idle:hover { animation-play-state: paused, running; } /* 悬停时停住浮动让它定住好点，光圈继续呼吸 */
+.welcome .big.idle svg { animation: pi-tilt 3.6s ease-in-out infinite; }
+.welcome .big.idle::after { content: ''; position: absolute; top: -30%; bottom: -30%; left: -70%; width: 45%; background: linear-gradient(105deg, transparent, color-mix(in srgb, #fff 40%, transparent), transparent); transform: skewX(-18deg); animation: pi-shine 3.6s ease-in-out infinite; }
+@keyframes pi-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes pi-glow { 0%, 100% { box-shadow: 0 8px 24px var(--accent-soft); } 50% { box-shadow: 0 8px 24px var(--accent-soft), 0 0 0 9px color-mix(in srgb, var(--accent) 14%, transparent); } }
+@keyframes pi-tilt { 0%, 58%, 94%, 100% { transform: rotate(0); } 66% { transform: rotate(-10deg); } 76% { transform: rotate(9deg); } 86% { transform: rotate(-4deg); } }
+@keyframes pi-shine { 0%, 52%, 100% { left: -70%; } 74% { left: 130%; } }
+.welcome .big:not(.idle):hover { transform: scale(1.05); }
+.welcome .big:active { animation: none; transform: scale(0.94); } /* 按下的瞬间结束动画（首次点击也是），给个回弹手感 */
+@media (prefers-reduced-motion: reduce) {
+  .welcome .big.idle, .welcome .big.idle svg, .welcome .big.idle::after { animation: none; }
+}
 .tips { width: 100%; max-width: 780px; margin-top: 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; font-size: var(--fs-sm); color: var(--text-2); text-align: left; }
 .tip-group { min-width: 0; }
 .tip-group h3 { margin: 0 0 10px; color: var(--text-3); font-size: var(--fs-xs); font-weight: 500; }

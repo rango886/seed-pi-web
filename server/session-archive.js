@@ -32,28 +32,39 @@ export function createSessionArchive(file) {
       await queue;
       return new Set(await read());
     },
+    /** 整份替换（导入备份用） */
+    replace(files) {
+      return commit(() => new Set(files.map(archiveKey)));
+    },
     set(session, archived) {
-      // 串行 + 临时文件替换：并发归档不丢记录，写盘失败不改变内存状态。
-      const task = queue.then(async () => {
+      return commit(async () => {
         const next = new Set(await read());
         const key = archiveKey(session);
-        if (next.has(key) === archived) return;
+        if (next.has(key) === archived) return null;
         if (archived) next.add(key);
         else next.delete(key);
-        await fs.mkdir(path.dirname(file), { recursive: true });
-        const temp = file + '.tmp';
-        try {
-          await fs.writeFile(temp, JSON.stringify([...next], null, 2) + '\n', 'utf8');
-          await fs.rename(temp, file);
-        } finally {
-          await fs.rm(temp, { force: true }).catch(() => {});
-        }
-        saved = next;
+        return next;
       });
-      queue = task.catch(() => {});
-      return task;
     },
   };
+  // 串行 + 临时文件替换：并发修改不丢记录，写盘失败不改变内存状态。build 返回 null 表示不用写
+  function commit(build) {
+    const task = queue.then(async () => {
+      const next = await build();
+      if (!next) return;
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      const temp = file + '.tmp';
+      try {
+        await fs.writeFile(temp, JSON.stringify([...next], null, 2) + '\n', 'utf8');
+        await fs.rename(temp, file);
+      } finally {
+        await fs.rm(temp, { force: true }).catch(() => {});
+      }
+      saved = next;
+    });
+    queue = task.catch(() => {});
+    return task;
+  }
 }
 
 // 归档和星标都是“给会话文件打标记”，只是字段名和存储文件不同。

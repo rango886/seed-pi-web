@@ -4,15 +4,7 @@ import { connect, call, fire, http, rawUrl, upload, CID } from './api.js';
 import { stripAnsi, joinPath, normPath, isAbsPath, attachKind, baseName, buildAttachmentBlock, splitAttachments, stripAttachments, setAssetBase, levelName, textOf, imagesOf } from './util.js';
 import { view, UI } from './settings.js';
 
-const FAV_KEY = 'seed-pi-web-favorites';
-function readFavorites() {
-  try {
-    const list = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
-    return Array.isArray(list) ? list.filter((p) => typeof p === 'string' && p.trim()) : [];
-  } catch {
-    return [];
-  }
-}
+// 收藏的目录存在后端数据目录（~/.seed-pi-web/favorites.json），连上后端后拉下来
 
 export const S = reactive({
   connected: false,
@@ -64,7 +56,7 @@ export const S = reactive({
   // 侧栏会话列表的三种看法：dir 只看当前目录 / all 全部目录 / fav 只看收藏的目录
   sessionMode: localStorage.getItem('seed-pi-web-session-mode') || 'dir',
   // 收藏的文件夹（目录选择窗口和右侧文件树右键都能加），存 localStorage
-  favorites: readFavorites(),
+  favorites: [],
   terms: [],
   activeTerm: null, // 最近一次看的终端（Ctrl+` 切回去用）
   connEpoch: 0,
@@ -156,6 +148,7 @@ export function start() {
           cwd = recent[0]?.cwd || S.info.home;
         }
         S.connEpoch++;
+        syncFavorites();
         // 会话列表不依赖 pi 进程，先拉，不用等 pi 启动完
         if (S.cwd) loadSessions();
         try {
@@ -207,6 +200,9 @@ function onServerMsg(msg) {
     case 'session_archive':
       for (const s of S.sessions) if (normPath(s.file) === normPath(msg.file)) s.archived = msg.archived;
       loadSessionsSoon();
+      break;
+    case 'favorites':
+      if (Array.isArray(msg.list)) S.favorites = msg.list;
       break;
     case 'session_star':
       for (const s of S.sessions) if (normPath(s.file) === normPath(msg.file)) s.starred = msg.starred;
@@ -935,7 +931,29 @@ export async function loadSessions() {
 }
 
 // ---------------- 收藏的文件夹 ----------------
-const saveFavorites = () => localStorage.setItem(FAV_KEY, JSON.stringify(S.favorites));
+// 整份发给后端存；后端存好了会广播给所有标签页（包括自己），失败就提示一下并拉回后端那份
+export async function setFavorites(list) {
+  const { list: saved } = await http.post('/api/favorites', { list });
+  S.favorites = saved;
+  return saved;
+}
+function saveFavorites() {
+  setFavorites(S.favorites).catch((e) => {
+    toast(`收藏没存上：${e.message}`, 'error');
+    syncFavorites();
+  });
+}
+/** 连上后端时拉一次 */
+async function syncFavorites() {
+  try {
+    S.favorites = (await http.get('/api/favorites')).list;
+  } catch {}
+}
+
+/** 设置里导出用：后端存的收藏、归档、星标 */
+export const readBackup = () => http.get('/api/backup');
+/** 设置里导入用：整份替换后端的收藏、归档、星标（缺哪个字段就不动哪个） */
+export const restoreBackup = (data) => http.post('/api/backup', data);
 
 /** 这个目录是不是已经收藏了（大小写、末尾分隔符不算区别） */
 export const isFav = (p) => !!p && S.favorites.some((f) => normPath(f) === normPath(p));
@@ -951,7 +969,7 @@ export function toggleFavorite(p) {
 
 /**
  * 拖动收藏列表调整顺序：把 from 这一条挪到 to 那一行；after 为真就插在它后面。
- * 顺序本身就存在 localStorage 的数组里，改完写回去就行
+ * 顺序就是数组本身的顺序，改完整份发给后端存
  */
 export function moveFavorite(from, to, after = false) {
   const key = (p) => normPath(p);
@@ -1625,6 +1643,12 @@ async function newSessionRaw(cwd) {
   S.composerFocus++;
 }
 export const newSessionIn = guard(newSessionRaw);
+
+/** 临时会话：让后端在设置里的根目录下建个新文件夹，再在里面开新会话 */
+export const newTempSession = guard(async () => {
+  const { path } = await http.post('/api/fs/temp-dir', { root: UI.tempRoot, name: UI.tempName });
+  await newSessionRaw(path);
+});
 
 /** 输入前换目录：保留正在写的内容；已有消息时，明确另开一个会话。 */
 export const chooseDirectory = guard(async (cwd) => {

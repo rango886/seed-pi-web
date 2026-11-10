@@ -1,14 +1,16 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { UI, DEFAULTS, VER, STYLES, useStyle, ACCENTS, ACCENT_NAMES, FONT_PRESETS, MONO_PRESETS, view, resetSettings } from '../settings.js';
-import { toast } from '../store.js';
+import { UI, DEFAULTS, STYLES, useStyle, ACCENTS, ACCENT_NAMES, FONT_PRESETS, MONO_PRESETS, view, resetSettings } from '../settings.js';
+import { toast, readBackup, restoreBackup } from '../store.js';
 import { DISPLAY_MODES } from '../block-display.js';
 
 const close = () => (view.settingsOpen = false);
 const fileInput = ref(null); // 导入用的隐藏文件框
 
 // ---- 导出 / 导入 ----
-// 能备份的就是 localStorage 里那些 seed-pi-web-* 键：界面设置、收藏的目录、会话列表的怎么看/怎么摆、侧栏宽度…
+// 备份分两部分：
+//   store：浏览器 localStorage 里那些 seed-pi-web-* 键（界面设置、会话列表的怎么看/怎么摆、侧栏宽度…），原样打包
+//   favorites / archived / starred：后端数据目录里的收藏的目录、归档、星标
 // seed-pi-web-token 是访问令牌，不往文件里写（导出的东西可能会发给别人）。运行时内存里的东西不导。
 const SKIP_KEYS = new Set(['seed-pi-web-token']);
 function dumpStore() {
@@ -21,12 +23,16 @@ function dumpStore() {
   return store;
 }
 
-// 导出成 JSON：settings 那份人能看懂、也方便手工改；store 是原样打包（含 __v 和那些只有代码认得的键）
-function exportSettings() {
-  const settings = {};
-  for (const k of Object.keys(DEFAULTS)) settings[k] = UI[k];
+async function exportSettings() {
+  let backup;
+  try {
+    backup = await readBackup();
+  } catch (err) {
+    toast(`导出失败：读不到后端的收藏 / 归档 / 星标（${err.message}）`, 'error');
+    return;
+  }
   const name = `seed-pi-web-settings-${new Date().toISOString().slice(0, 10)}.json`;
-  const data = { app: 'seed-pi-web', kind: 'settings', version: 2, exportedAt: new Date().toISOString(), settings, store: dumpStore() };
+  const data = { app: 'seed-pi-web', kind: 'settings', version: 3, exportedAt: new Date().toISOString(), favorites: backup.favorites, archived: backup.archived, starred: backup.starred, store: dumpStore() };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
@@ -36,7 +42,7 @@ function exportSettings() {
   toast(`已导出 ${name}`);
 }
 
-/** 导入：把文件里的 seed-pi-web-* 键写回 localStorage，然后刷一次页面让各处重新读一遍 */
+/** 导入：localStorage 的键写回去，收藏 / 归档 / 星标整份发回后端替换，然后刷一次页面让各处重新读一遍 */
 async function importSettings(e) {
   const file = e.target.files?.[0];
   e.target.value = ''; // 清掉，同一个文件还能再导一次
@@ -48,24 +54,22 @@ async function importSettings(e) {
     toast('导入失败：这个文件不是 JSON', 'error');
     return;
   }
-  if (data?.app !== 'seed-pi-web') {
-    toast('导入失败：不是 seed-pi-web 导出的设置文件', 'error');
+  if (data?.app !== 'seed-pi-web' || data.version !== 3) {
+    toast('导入失败：不是当前版本 seed-pi-web 导出的设置文件', 'error');
     return;
   }
-  const store = { ...(data.store || {}) };
-  // 老格式（v1）只有 settings 那一份：包成设置键，版本号写当前的，免得再去跑一遍老的迁移
-  if (!data.store && data.settings) store['seed-pi-web-settings'] = JSON.stringify({ ...data.settings, __v: VER });
-  let n = 0;
-  for (const [k, v] of Object.entries(store)) {
-    if (!k.startsWith('seed-pi-web-') || SKIP_KEYS.has(k) || typeof v !== 'string') continue;
-    localStorage.setItem(k, v);
-    n++;
-  }
-  if (!n) {
-    toast('导入失败：文件里没有能用的设置', 'error');
+  const backup = {};
+  for (const k of ['favorites', 'archived', 'starred']) if (Array.isArray(data[k])) backup[k] = data[k];
+  try {
+    if (Object.keys(backup).length) await restoreBackup(backup);
+  } catch (err) {
+    toast(`导入失败：收藏 / 归档 / 星标没存上（${err.message}）`, 'error');
     return;
   }
-  toast(`已导入 ${n} 项，正在重新载入…`, 'info', 3000);
+  for (const [k, v] of Object.entries(data.store || {})) {
+    if (k.startsWith('seed-pi-web-') && !SKIP_KEYS.has(k) && typeof v === 'string') localStorage.setItem(k, v);
+  }
+  toast('已导入，正在重新载入…', 'info', 3000);
   setTimeout(() => location.reload(), 700);
 }
 // 按用途分三项：界面、聊天正文、代码 / 终端。聊天可选择跟随界面。
@@ -266,6 +270,27 @@ const layoutSliders = [
                 <input v-model.number="UI.uploadMaxMB" aria-label="单个文件上传上限" type="number" min="1" class="input num" />
                 <span class="val">MB</span>
               </div>
+            </div>
+          </section>
+
+          <!-- 临时会话 -->
+          <section>
+            <h3>临时会话</h3>
+            <div class="card">
+              <label class="item">
+                <span class="label">侧栏显示「临时聊」按钮</span>
+                <input v-model="UI.tempShow" type="checkbox" class="switch" />
+              </label>
+              <template v-if="UI.tempShow">
+                <div class="item col">
+                  <span class="label">临时文件夹建在哪</span>
+                  <input v-model.lazy.trim="UI.tempRoot" aria-label="临时文件夹建在哪" class="input mono" :placeholder="DEFAULTS.tempRoot" title="{data} = ~/.seed-pi-web，还能用 {home} {tmp}，~ 开头按用户目录。放 {tmp} 的话系统清理时可能被删" @change="!UI.tempRoot && (UI.tempRoot = DEFAULTS.tempRoot)" />
+                </div>
+                <div class="item col">
+                  <span class="label">文件夹名</span>
+                  <input v-model.lazy.trim="UI.tempName" aria-label="临时文件夹名" class="input mono" :placeholder="DEFAULTS.tempName" title="{date} 日期、{time} 时分秒、{rand} 4 位随机字符，重名自动加 -1、-2。没用上的空文件夹过一天自动清掉" @change="!UI.tempName && (UI.tempName = DEFAULTS.tempName)" />
+                </div>
+              </template>
             </div>
           </section>
         </div>

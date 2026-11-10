@@ -40,7 +40,7 @@ test('settings use flat grouped surfaces, no helper notes, collapsible previews 
   const { descriptor, errors } = parse(source);
   assert.deepEqual(errors, []);
   const template = descriptor.template.content;
-  assert.deepEqual([...template.matchAll(/<h3>(.*?)<\/h3>/g)].map(m => m[1]), ['外观', '布局', '文字', '使用习惯', '附件']);
+  assert.deepEqual([...template.matchAll(/<h3>(.*?)<\/h3>/g)].map(m => m[1]), ['外观', '布局', '文字', '使用习惯', '附件', '临时会话']);
   assert.doesNotMatch(template, /small-tip|class="dim tip"|（默认|下一轮接着|用户气泡自动/);
   assert.match(template, /<details class="text-preview">/);
   assert.doesNotMatch(template, /<details[^>]*\bopen\b/);

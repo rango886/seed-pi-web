@@ -311,7 +311,7 @@ test('font selectors support independent custom values, following UI, and preset
   const code = compileScript(parse(source).descriptor, { id: 'test-font-settings' }).content;
   const context = vm.createContext({});
   const mod = new vm.SourceTextModule(code, { context });
-  const imports = { vue, '../settings.js': s, '../store.js': { toast() {} }, '../block-display.js': { DISPLAY_MODES } };
+  const imports = { vue, '../settings.js': s, '../store.js': { toast() {}, readBackup: async () => ({}), restoreBackup: async () => ({}) }, '../block-display.js': { DISPLAY_MODES } };
   await mod.link((name) => {
     const exports = imports[name];
     assert.ok(exports, name);

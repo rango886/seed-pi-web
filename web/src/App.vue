@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { S, closeTab, closeAllTabs, pickSession, pickModel, stop, newSession, toggleTerminal, openTerminal, termTab, termIdOf, openBranches, openDirPicker, toast } from './store.js';
+import { S, closeTab, closeAllTabs, pickSession, pickModel, stop, newSession, newTempSession, toggleTerminal, openTerminal, termTab, termIdOf, openBranches, openDirPicker, toast } from './store.js';
 import { view, toggleSide, openMenu, togglePanel, UI } from './settings.js';
 import { mainMenu, contextExtras, openModelMenu } from './menus.js';
 import SidePanel from './components/SidePanel.vue';
@@ -127,6 +127,12 @@ function onKey(e) {
     e.preventDefault();
     if (e.shiftKey) openDirPicker('new');
     else newSession();
+    return;
+  }
+  // Alt+T 临时会话（设置里关掉了按钮就不响应）
+  if (e.altKey && !mod && !e.shiftKey && e.code === 'KeyT' && !inTerm && UI.tempShow) {
+    e.preventDefault();
+    newTempSession();
     return;
   }
   if (e.key === 'Escape') {

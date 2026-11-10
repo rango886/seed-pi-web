@@ -11,7 +11,9 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { PiAgent } from './pi-agent.js';
 import { modelModules, readModelCatalog } from './models.js';
-import { listSessions, recentDirs, sessionRoots, isInside, samePath, readSessionSnapshot, agentDir } from './sessions.js';
+import { listSessions, recentDirs, sessionRoots, sessionCwds, isInside, samePath, readSessionSnapshot, agentDir } from './sessions.js';
+import { createTempDir, cleanupTempDirs, listHas } from './temp-dirs.js';
+import { createFavorites, registerFavorites } from './favorites.js';
 import { TerminalManager, terminalAvailable } from './terminal.js';
 import { gitStatus, gitDiff, gitBranch } from './git.js';
 import { registerDownloads } from './downloads.js';
@@ -336,6 +338,35 @@ registerSessionStar(app, wrap, {
   roots: liveRoots,
   changed: (change) => clients.forEach((c) => send(c, { t: 'session_star', ...change })),
 });
+// 收藏的目录：改了就通知所有标签页，大家看到的是同一份
+const favorites = createFavorites(path.join(HOME_DIR, 'favorites.json'));
+registerFavorites(app, wrap, {
+  favorites,
+  changed: (list) => clients.forEach((c) => send(c, { t: 'favorites', list })),
+});
+// 设置里的导入导出：后端数据目录里的收藏、归档、星标一起备份。导入是整份替换，缺的字段不动
+const strList = (v, label) => {
+  if (!Array.isArray(v) || !v.every((p) => typeof p === 'string')) throw new Error(`${label}必须是路径数组`);
+  return v;
+};
+app.get(
+  '/api/backup',
+  wrap(async (req, res) => {
+    const [fav, archived, starred] = await Promise.all([favorites.read(), sessionArchive.read(), sessionStars.read()]);
+    res.json({ favorites: fav, archived: [...archived], starred: [...starred] });
+  }),
+);
+app.post(
+  '/api/backup',
+  wrap(async (req, res) => {
+    const b = req.body || {};
+    const fav = b.favorites === undefined ? null : strList(b.favorites, '收藏');
+    const archived = b.archived === undefined ? null : strList(b.archived, '归档');
+    const starred = b.starred === undefined ? null : strList(b.starred, '星标');
+    await Promise.all([fav && favorites.write(fav), archived && sessionArchive.replace(archived), starred && sessionStars.replace(starred)]);
+    res.json({ ok: true });
+  }),
+);
 app.get('/api/models', wrap(async (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json(await readModelCatalog(req.query.cwd ? path.resolve(String(req.query.cwd)) : undefined));
@@ -497,6 +528,22 @@ app.post(
     }
     await fsp.mkdir(p, { recursive: true });
     res.json({ path: p, created: true });
+  }),
+);
+
+// 临时会话：在设置里的根目录下按文件夹名模板建一个新文件夹，前端拿到路径后在里面开会话。
+// 建完顺手清一下以前留下的空文件夹（规则见 temp-dirs.js），不让前端等
+app.post(
+  '/api/fs/temp-dir',
+  wrap(async (req, res) => {
+    const dir = await createTempDir({ root: String(req.body?.root || ''), name: String(req.body?.name || '') });
+    res.json({ path: dir });
+    let cwds = null;
+    cleanupTempDirs(async (d) => {
+      if ([...agents.values()].some((a) => a.alive && samePath(a.cwd, d))) return true;
+      cwds ??= await sessionCwds(await liveRoots());
+      return listHas(cwds, d);
+    }).catch((e) => console.warn('[temp-dir] 清理失败：', e.message));
   }),
 );
 

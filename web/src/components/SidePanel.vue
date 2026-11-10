@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
-import { S, openSession, deleteSession, setSessionArchived, setSessionStarred, renameSession, sessionStatus, setSessionMode, isFav, newSession, newSessionIn, dirAllArchived, setDirArchived, deleteDirSessions } from '../store.js';
-import { view, toggleSide, closeDrawer, openMenu } from '../settings.js';
+import { S, openSession, deleteSession, setSessionArchived, setSessionStarred, renameSession, sessionStatus, setSessionMode, isFav, newSession, newSessionIn, newTempSession, dirAllArchived, setDirArchived, deleteDirSessions } from '../store.js';
+import { UI, view, toggleSide, closeDrawer, openMenu } from '../settings.js';
 import Icon from './Icon.vue';
 import DirectoryMenu from './DirectoryMenu.vue';
 import SessionDisplayMenu from './SessionDisplayMenu.vue';
@@ -282,6 +282,10 @@ function newIn(cwd) {
   newSessionIn(cwd);
   closeDrawer();
 }
+function newTemp() {
+  newTempSession();
+  closeDrawer();
+}
 function sessionMenu(e, s) {
   openMenu(e.clientX, e.clientY, [
     { label: '打开', run: () => open(s) },
@@ -310,6 +314,7 @@ function sessionMenu(e, s) {
     <div class="actions">
       <button type="button" class="abtn" :title="`在当前目录新建会话 (Alt+N)\n${S.cwd || ''}`" @click="newHere"><Icon name="newchat" :size="16" /><span class="ellipsis">新会话</span></button>
       <DirectoryMenu @select="closeDrawer" />
+      <button v-if="UI.tempShow" type="button" class="abtn" title="新建一个临时文件夹，在里面开会话 (Alt+T)，位置和命名在设置里改" @click="newTemp"><Icon name="tempchat" :size="16" /><span class="ellipsis">临时聊</span></button>
     </div>
 
     <!-- 左边只放会话；文件、进程在右边的浮动侧栏里（按钮在顶栏），终端在顶部标签页里 -->

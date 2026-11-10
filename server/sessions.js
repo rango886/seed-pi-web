@@ -366,6 +366,19 @@ export async function recentDirs(roots) {
   return [...seen.values()].slice(0, 30);
 }
 
+/** 所有会话用过的工作目录（不截断，临时目录清理时用来判断“还有没有会话指着它”） */
+export async function sessionCwds(roots) {
+  const files = await allFiles(roots);
+  const cwds = [];
+  await mapLimit(files, 32, async (f) => {
+    try {
+      const e = await getEntry(f, false);
+      if (e?.head.cwd) cwds.push(e.head.cwd);
+    } catch {}
+  });
+  return cwds;
+}
+
 export function isInside(file, roots) {
   const f = path.resolve(file);
   return roots.some((r) => {

@@ -103,8 +103,8 @@ test('sidebar switches independent settings and intersects mode, archive and sea
   let menu;
   const actions = [];
   const { state: s } = await setup(t, 'SidePanel.vue', { storage, imports: {
-    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession: (...args) => actions.push(args), setSessionArchived: (...args) => actions.push(args), setSessionStarred: (...args) => actions.push(['star', ...args]), dirAllArchived: () => false, setDirArchived: (...args) => actions.push(['dir-archive', ...args]), deleteDirSessions: (...args) => actions.push(['dir-delete', ...args]), renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: (cwd) => S.favorites.includes(cwd) },
-    '../settings.js': { view: vue.reactive({}), toggleSide() {}, closeDrawer() {}, openMenu(x, y, items) { menu = items; } },
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, newTempSession() {}, deleteSession: (...args) => actions.push(args), setSessionArchived: (...args) => actions.push(args), setSessionStarred: (...args) => actions.push(['star', ...args]), dirAllArchived: () => false, setDirArchived: (...args) => actions.push(['dir-archive', ...args]), deleteDirSessions: (...args) => actions.push(['dir-delete', ...args]), renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: (cwd) => S.favorites.includes(cwd) },
+    '../settings.js': { UI: {}, view: vue.reactive({}), toggleSide() {}, closeDrawer() {}, openMenu(x, y, items) { menu = items; } },
   } });
   const files = () => s.groups.value.flatMap((g) => g.items.map((row) => row.file));
   assert.deepEqual([...files()], ['a', 'c']);
@@ -177,8 +177,8 @@ test('star filter intersects archive filter, explains hidden archived stars, and
   let menu;
   const actions = [];
   const { state: s } = await setup(t, 'SidePanel.vue', { storage: storageOf(), imports: {
-    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred: (...args) => actions.push(args), dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => false },
-    '../settings.js': { view: vue.reactive({}), toggleSide() {}, closeDrawer() {}, openMenu(x, y, items) { menu = items; } },
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, newTempSession() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred: (...args) => actions.push(args), dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => false },
+    '../settings.js': { UI: {}, view: vue.reactive({}), toggleSide() {}, closeDrawer() {}, openMenu(x, y, items) { menu = items; } },
   } });
   const files = () => s.groups.value.flatMap((g) => g.items.map((row) => row.file));
   s.saveUI({ star: 'starred' });
@@ -195,8 +195,8 @@ test('star filter intersects archive filter, explains hidden archived stars, and
 
 test('sidebar compensates for actual scrollbar width, including overlay scrollbars', async (t) => {
   const { state: s } = await setup(t, 'SidePanel.vue', { imports: {
-    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
-    '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
+    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, newTempSession() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
+    '../settings.js': { UI: {}, view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   for (const width of [10, 8, 0, 10]) {
     s.listElement.value = { offsetWidth: 272, clientWidth: 272 - width };
@@ -220,8 +220,8 @@ test('sidebar scrolling reveals the thumb and resets its idle timeout without ch
     setTimeout(callback, ms) { const id = ++nextId; pending.set(id, { callback, ms }); return id; },
     clearTimeout(id) { pending.delete(id); },
   }, imports: {
-    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
-    '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
+    '../store.js': { S: {}, openSession() {}, newSession() {}, newSessionIn() {}, newTempSession() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav() {} },
+    '../settings.js': { UI: {}, view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   assert.equal(s.listScrolling.value, false);
   s.listElement.value = { offsetWidth: 272, clientWidth: 262 };
@@ -425,8 +425,8 @@ test('sidebar drags folders above and below targets, persists custom order and s
   ] });
   const storage = storageOf();
   const { state: s } = await setup(t, 'SidePanel.vue', { storage, imports: {
-    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
-    '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, newTempSession() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
+    '../settings.js': { UI: {}, view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   const paths = () => [...s.groups.value.map((g) => g.path)];
   s.saveUI({ layout: 'group', folderSort: 'name-desc' });
@@ -491,8 +491,8 @@ test('active session also highlights its directory, including collapsed groups a
     { file: 'c:/sessions/b.jsonl', cwd: '/other', title: 'Second', modified: now },
   ] });
   const { state: s } = await setup(t, 'SidePanel.vue', { imports: {
-    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
-    '../settings.js': { view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
+    '../store.js': { S, openSession() {}, newSession() {}, newSessionIn() {}, newTempSession() {}, deleteSession() {}, setSessionArchived() {}, setSessionStarred() {}, dirAllArchived: () => false, setDirArchived() {}, deleteDirSessions() {}, renameSession() {}, sessionStatus() {}, setSessionMode() {}, isFav: () => true },
+    '../settings.js': { UI: {}, view: {}, toggleSide() {}, closeDrawer() {}, openMenu() {} },
   } });
   s.saveUI({ layout: 'group' });
   const activeGroups = () => [...s.groups.value.filter(s.isActiveGroup).map((g) => g.path)];

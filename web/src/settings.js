@@ -62,6 +62,10 @@ export const DEFAULTS = {
   uploadDir: '{tmp}/seed-pi-web/{session}', // 拖进来/粘贴的文件上传到哪：{tmp} {cwd} {session} {date} {home}，相对路径按 cwd 解析
   uploadMaxMB: 500, // 单个文件上传上限
   keepAttachments: true, // 发送后附件留在输入框上面，下一轮接着带
+  // 临时会话：侧栏「临时聊」按钮在 tempRoot 下新建一个文件夹，会话开在里面
+  tempShow: true, // 侧栏显示「临时聊」按钮
+  tempRoot: '{data}/temp', // 根目录：{data}（~/.seed-pi-web）{home} {tmp}，~ 开头按用户目录
+  tempName: '{date}_{time}', // 文件夹名：{date} {time} {rand}，重名自动加 -1、-2
 };
 
 /** 整体样式：每个样式就是一整套设置（配色名、Markdown 排版、字体、字号行高、圆角…）。
