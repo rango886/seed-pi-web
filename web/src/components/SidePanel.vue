@@ -311,9 +311,9 @@ function sessionMenu(e, s) {
     </div>
 
     <!-- 新建：当前目录一键新建；其他目录单独一个按钮，弹出收藏 / 最近 / 浏览 -->
-    <div class="actions">
-      <button type="button" class="abtn" :title="`在当前目录新建会话 (Alt+N)\n${S.cwd || ''}`" @click="newHere"><Icon name="newchat" :size="16" /><span class="ellipsis">新会话</span></button>
-      <DirectoryMenu @select="closeDrawer" />
+    <div v-if="UI.newShow || UI.dirShow || UI.tempShow" class="actions">
+      <button v-if="UI.newShow" type="button" class="abtn" :title="`在当前目录新建会话 (Alt+N)\n${S.cwd || ''}`" @click="newHere"><Icon name="newchat" :size="16" /><span class="ellipsis">新会话</span></button>
+      <DirectoryMenu v-if="UI.dirShow" @select="closeDrawer" />
       <button v-if="UI.tempShow" type="button" class="abtn" title="新建一个临时文件夹，在里面开会话 (Alt+T)，位置和命名在设置里改" @click="newTemp"><Icon name="tempchat" :size="16" /><span class="ellipsis">临时聊</span></button>
     </div>
 

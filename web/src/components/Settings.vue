@@ -263,15 +263,29 @@ const layoutSliders = [
             </div>
           </section>
 
-          <!-- 临时会话 -->
+          <!-- 侧栏按钮 -->
           <section>
-            <h3>临时会话</h3>
+            <h3>侧栏按钮</h3>
             <div class="card">
+              <label class="item" title="隐藏后 Alt+N 照样能用">
+                <span class="label">显示「新会话」按钮</span>
+                <input v-model="UI.newShow" type="checkbox" class="switch" />
+              </label>
+              <label class="item" title="隐藏后 Alt+Shift+N 照样能用">
+                <span class="label">显示「选目录」按钮</span>
+                <input v-model="UI.dirShow" type="checkbox" class="switch" />
+              </label>
               <label class="item">
-                <span class="label">侧栏显示「临时聊」按钮</span>
+                <span class="label">显示「临时聊」按钮</span>
                 <input v-model="UI.tempShow" type="checkbox" class="switch" />
               </label>
-              <template v-if="UI.tempShow">
+            </div>
+          </section>
+
+          <!-- 临时会话 -->
+          <section v-if="UI.tempShow">
+            <h3>临时会话</h3>
+            <div class="card">
                 <div class="item col">
                   <span class="label">临时文件夹建在哪</span>
                   <input v-model.lazy.trim="UI.tempRoot" aria-label="临时文件夹建在哪" class="input mono" :placeholder="DEFAULTS.tempRoot" title="{data} = ~/.seed-pi-web，还能用 {home} {tmp}，~ 开头按用户目录。放 {tmp} 的话系统清理时可能被删" @change="!UI.tempRoot && (UI.tempRoot = DEFAULTS.tempRoot)" />
@@ -280,7 +294,6 @@ const layoutSliders = [
                   <span class="label">文件夹名</span>
                   <input v-model.lazy.trim="UI.tempName" aria-label="临时文件夹名" class="input mono" :placeholder="DEFAULTS.tempName" title="{date} 日期、{time} 时分秒、{rand} 4 位随机字符，重名自动加 -1、-2。没用上的空文件夹过一天自动清掉" @change="!UI.tempName && (UI.tempName = DEFAULTS.tempName)" />
                 </div>
-              </template>
             </div>
           </section>
         </div>
