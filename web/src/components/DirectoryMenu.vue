@@ -121,7 +121,7 @@ onUnmounted(() => {
 <template>
   <button ref="trigger" type="button" class="directory-trigger" :class="[variant, { on: opened }]" title="选择其他目录并新建会话 (Alt+Shift+N)" aria-haspopup="dialog" :aria-expanded="opened" aria-label="选择目录新建会话" @click="toggle">
     <Icon name="folderplus" :size="variant === 'side' ? 16 : 18" />
-    <span v-if="variant === 'side'" class="ellipsis">选目录</span>
+    <span v-if="variant === 'side'" class="ellipsis">其他</span>
   </button>
   <Teleport to="body">
     <div v-if="opened" ref="panel" class="directory-menu" :style="position" role="dialog" :aria-label="mode === 'new' ? '选择目录并新建会话' : '选择工作目录'" @keydown="keydown">

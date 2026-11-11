@@ -268,15 +268,15 @@ const layoutSliders = [
             <h3>侧栏按钮</h3>
             <div class="card">
               <label class="item" title="隐藏后 Alt+N 照样能用">
-                <span class="label">显示「新会话」按钮</span>
+                <span class="label">显示「当前」按钮</span>
                 <input v-model="UI.newShow" type="checkbox" class="switch" />
               </label>
               <label class="item" title="隐藏后 Alt+Shift+N 照样能用">
-                <span class="label">显示「选目录」按钮</span>
+                <span class="label">显示「其他」按钮</span>
                 <input v-model="UI.dirShow" type="checkbox" class="switch" />
               </label>
               <label class="item">
-                <span class="label">显示「临时聊」按钮</span>
+                <span class="label">显示「临时」按钮</span>
                 <input v-model="UI.tempShow" type="checkbox" class="switch" />
               </label>
             </div>

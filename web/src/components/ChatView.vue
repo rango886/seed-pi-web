@@ -180,7 +180,7 @@ const shortcutGroups = computed(() => [
   ] },
   { title: '会话与界面', rows: [
     ['Alt+N', '新会话'],
-    ['Alt+Shift+N', '选目录新建'],
+    ['Alt+Shift+N', '其他新建'],
     ['Alt+T', '临时会话'],
     ['Ctrl+P', '切换会话'],
     ['Ctrl+L', '切换模型'],
