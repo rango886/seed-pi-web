@@ -489,6 +489,7 @@ function openLazy({ cwd, file, messages, state, stats, models, conversation }, {
  */
 let ensuring = null;
 let adoptDraft = false; // 新会话起了进程以后有了会话文件：输入框上已经加的附件跟着它走
+let adoptTabs = false; // 同上，打开的文件标签也跟着走
 export function ensureAgent() {
   if (S.agentId) return Promise.resolve();
   if (!S.lazy) return Promise.reject(new Error('还没有打开目录'));
@@ -514,11 +515,11 @@ export function ensureAgent() {
       call('leave', { agentId: res.agent.id }).catch(() => {});
       return;
     }
-    adoptDraft = !lz.file;
+    adoptDraft = adoptTabs = !lz.file;
     try {
       await attachResult(res, { keep: true });
     } finally {
-      adoptDraft = false;
+      adoptDraft = adoptTabs = false;
     }
   })().finally(() => {
     ensuring = null;
@@ -581,7 +582,6 @@ function openDetached({ file, cwd, messages }) {
   setAssetBase(cwd);
   S.fsEpoch++;
   setMessages(messages);
-  S.activeTab = 'chat';
   syncTitle();
 }
 
@@ -1530,6 +1530,60 @@ watch(attKeyOf, (k) => {
   S.composer.attachments = attLive.get(k) || (attSaved[k] || []).map(makeAtt);
 });
 watch(() => S.composer.attachments.map((a) => a.status + a.path).join('|'), saveAtt);
+
+// 顶部的文件标签页也是每个会话各一份：打开了哪些、正在看哪个。
+// 内存里留着整个标签对象（切回来不用重新读文件），localStorage 里只存路径，刷新页面也还在。
+// 这是“这个浏览器怎么看这个会话”的界面状态，不写进会话文件，也不放后端（多个窗口各看各的）
+const TABS_KEY = 'seed-pi-web-tabs';
+const tabsSaved = readJson(TABS_KEY, {});
+const tabsLive = new Map(); // key -> { tabs, active }
+let tabsCur = '';
+const tabOf = (t) => (t.diff ? { diff: true, path: t.path, cwd: t.cwd, mode: t.mode } : { path: t.path });
+function reviveTab(t) {
+  const name = t.path.split(/[\\/]/).pop();
+  if (t.diff) return { id: `diff:${t.mode}:${normPath(t.cwd)}:${normPath(t.path)}`, path: t.path, cwd: t.cwd, mode: t.mode, diff: true, name, data: null, error: null };
+  // 内容等切到这个标签时再读（见下面的 watch），恢复十几个标签不会一下子发十几个请求
+  return { id: t.path, path: t.path, name, data: null, error: null, loading: false, line: 0, jump: 0 };
+}
+function saveTabs() {
+  if (!tabsCur) return;
+  delete tabsSaved[tabsCur];
+  if (S.tabs.length) tabsSaved[tabsCur] = { tabs: S.tabs.map(tabOf), active: termIdOf(S.activeTab) ? 'chat' : S.activeTab };
+  const keys = Object.keys(tabsSaved);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 80))) delete tabsSaved[k];
+  localStorage.setItem(TABS_KEY, JSON.stringify(tabsSaved));
+}
+watch(attKeyOf, (k) => {
+  if (k === tabsCur) return;
+  // 新会话第一次说话有了会话文件：标签跟着它走，只是换个地方存
+  if (adoptTabs && tabsCur.startsWith('draft:')) {
+    adoptTabs = false;
+    delete tabsSaved[tabsCur];
+    tabsLive.delete(tabsCur);
+    tabsCur = k;
+    saveTabs();
+    return;
+  }
+  if (tabsCur) tabsLive.set(tabsCur, { tabs: S.tabs, active: S.activeTab });
+  tabsCur = k;
+  const live = tabsLive.get(k);
+  const saved = tabsSaved[k];
+  const tabs = live?.tabs || (saved?.tabs || []).filter((t) => t?.path).map(reviveTab);
+  let active = live?.active ?? saved?.active ?? 'chat';
+  // 记着的标签已经不在了（终端关了之类）：回对话
+  const tid = termIdOf(active);
+  if (tid ? !S.terms.some((t) => t.id === tid) : active !== 'chat' && !tabs.some((t) => t.id === active)) active = 'chat';
+  S.tabs = tabs;
+  S.activeTab = active;
+});
+watch(() => [S.tabs.map((t) => t.id).join('|'), S.activeTab], saveTabs);
+// 切到一个还没读过内容的标签（刚恢复出来的）：现在读
+watch(
+  () => S.tabs.find((t) => t.id === S.activeTab),
+  (tab) => {
+    if (tab && tab.data == null && !tab.loading && !tab.error) loadFile(tab);
+  },
+);
 
 async function runBash(text) {
   const exclude = text.startsWith('!!');

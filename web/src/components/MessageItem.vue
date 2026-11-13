@@ -3,7 +3,7 @@ import { computed, ref, watchEffect, onUnmounted } from 'vue';
 import { S, openFile, beginEdit, forkMessage, switchVersion, conversationNodes, branchDisabled } from '../store.js';
 import { UI } from '../settings.js';
 import { rawUrl } from '../api.js';
-import { renderMarkdown, textOf, imagesOf, stripAnsi, fmtTokens, setMsgText, delMsgText, splitAttachments } from '../util.js';
+import { renderMarkdown, textOf, imagesOf, imageSrc, stripAnsi, fmtTokens, setMsgText, delMsgText, splitAttachments } from '../util.js';
 import { vMarkdownHtml } from '../markdown-html.js';
 import ToolCard from './ToolCard.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
@@ -103,7 +103,7 @@ const md = (b, i) => renderMarkdown(b.text, undefined, { live: streaming.value &
         </div>
         <div v-if="userText.trim()" class="pre">{{ userText }}</div>
         <div v-if="images.length" class="imgs">
-          <img v-for="(im, i) in images" :key="i" :src="`data:${im.mimeType};base64,${im.data}`" />
+          <img v-for="(im, i) in images" :key="i" :src="imageSrc(im)" />
         </div>
       </div>
       <div v-if="m._entryId && !editing && !S.detached" class="user-actions" :class="{ versions: node?.versions.length > 1 }" aria-label="用户消息操作">

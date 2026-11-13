@@ -14,7 +14,7 @@ test('new session lives in the sidebar before the directory picker, and the comp
   assert.ok(!template.includes('<DirectoryMenu'), 'the composer bar no longer hosts the directory picker');
   const sidebar = (await load('SidePanel.vue')).template.content;
   // 新会话按钮（图标 + 文案）在侧栏 actions 行里，紧跟目录选择器
-  assert.match(sidebar, /@click="newHere"><Icon name="newchat"[^>]*\/><span class="ellipsis">新会话<\/span><\/button>\s*<DirectoryMenu @select="closeDrawer" \/>/);
+  assert.match(sidebar, /@click="newHere"><Icon name="newchat"[^>]*\/><span class="ellipsis">当前<\/span><\/button>\s*<DirectoryMenu v-if="UI\.dirShow" @select="closeDrawer" \/>/);
   assert.ok(sidebar.indexOf('@click="newHere"') < sidebar.indexOf('class="search"'), 'new session sits above the session list');
   assert.ok(!sidebar.includes('class="modes"'));
   assert.match(sidebar, /<SessionDisplayMenu[^>]*@mode-change="setSessionMode"/);

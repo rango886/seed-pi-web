@@ -21,6 +21,7 @@ import { registerDownloads } from './downloads.js';
 import { archiveKey, createSessionArchive, registerSessionArchive, registerSessionStar } from './session-archive.js';
 import { APP, HOME_DIR, STATE_FILE, readState } from './config.js';
 import { isLocalRequest, readClipboardFiles, resolveUploadDir, saveUpload, listProjectFiles, warmClipboard } from './attachments.js';
+import { blobReplacer, getBlob } from './blobs.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 8787);
@@ -56,7 +57,7 @@ const OWNER_GRACE_MS = 10_000; // 操作者断线后，过这么久才放开操�
 const UNSAVED_IDLE_MS = 2 * 60_000; // 一句话都没说的新会话，早点关掉
 const DIALOG_METHODS = new Set(['select', 'confirm', 'input', 'editor']);
 
-const send = (ws, msg) => ws.readyState === 1 && ws.send(JSON.stringify(msg));
+const send = (ws, msg) => ws.readyState === 1 && ws.send(JSON.stringify(msg, blobReplacer));
 const agentList = () => [...agents.values()].map((a) => a.info());
 const broadcastAgents = () => clients.forEach((c) => send(c, { t: 'agents', list: agentList() }));
 const watchers = (a) => [...clients].filter((c) => c.agentId === a.id);
@@ -595,6 +596,14 @@ app.get(
 app.get('/api/fs/raw', (req, res) => {
   const file = path.resolve(String(req.query.path || ''));
   res.sendFile(file, { dotfiles: 'allow' }, (err) => err && !res.headersSent && res.status(404).end());
+});
+
+// 工具返回的大图（见 blobs.js）：编号就是内容的 sha1，内容不会变，浏览器可以一直缓存
+app.get('/api/blob/:id', (req, res) => {
+  const b = getBlob(req.params.id);
+  if (!b) return res.status(404).end();
+  res.set('Cache-Control', 'private, max-age=31536000, immutable');
+  res.type(b.mimeType || 'application/octet-stream').send(Buffer.from(b.data, 'base64'));
 });
 
 // 代下载：网页里的链接右键“下载”，跨域地址浏览器不让直接存成文件，由后端取回来再以附件形式转给浏览器

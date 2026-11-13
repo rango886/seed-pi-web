@@ -3,7 +3,7 @@ import { computed, watch } from 'vue';
 import { S, openFile } from '../store.js';
 import { UI } from '../settings.js';
 import { useBlockDisplay } from '../block-display.js';
-import { toolSummary, toolPath, textOf, imagesOf, stripAnsi, isAbsPath, joinPath } from '../util.js';
+import { toolSummary, toolPath, textOf, imagesOf, imageSrc, stripAnsi, isAbsPath, joinPath } from '../util.js';
 
 const props = defineProps({ call: Object, exec: Object, streaming: Boolean });
 const status = computed(() => props.exec?.status || (props.streaming ? 'pending' : 'unknown'));
@@ -87,7 +87,7 @@ function openPath() {
       <pre v-else-if="argText" class="blk-body out args">{{ argText }}</pre>
       <pre v-if="resultText" class="blk-body out" :class="{ errout: status === 'error' }">{{ resultText }}</pre>
       <div v-if="resultImages.length" class="imgs">
-        <img v-for="(im, i) in resultImages" :key="i" :src="`data:${im.mimeType};base64,${im.data}`" alt="工具返回的图片" />
+        <img v-for="(im, i) in resultImages" :key="i" :src="imageSrc(im)" alt="工具返回的图片" />
       </div>
     </div>
   </div>

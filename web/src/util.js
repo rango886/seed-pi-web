@@ -59,6 +59,12 @@ export function textOf(content) {
     .map((c) => c.text)
     .join('\n');
 }
+/** 消息里图片的地址：后端换成编号的大图（见 server/blobs.js）走 /api/blob，其余还是 base64 */
+export function imageSrc(im) {
+  if (!im?.blob) return `data:${im?.mimeType};base64,${im?.data}`;
+  const token = localStorage.getItem('seed-pi-web-token');
+  return `/api/blob/${encodeURIComponent(im.blob)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+}
 export const imagesOf = (content) => (Array.isArray(content) ? content.filter((c) => c.type === 'image') : []);
 
 /** 消息文本登记表：右键菜单统一在 App 层弹，靠 DOM 上的消息 key 回来取要复制的内容 */

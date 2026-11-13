@@ -45,6 +45,7 @@ async function tool(t, UI, props, file = 'ToolCard.vue') {
       toolSummary: (args) => args.command || '', toolPath: () => '',
       textOf: (blocks) => (blocks || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n'),
       imagesOf: (blocks) => (blocks || []).filter((b) => b.type === 'image'),
+      imageSrc: (im) => `data:${im.mimeType};base64,${im.data}`,
       stripAnsi: (text) => text, isAbsPath: () => false, joinPath: (...parts) => parts.join('/'),
     },
   };
