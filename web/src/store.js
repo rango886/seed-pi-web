@@ -677,6 +677,16 @@ async function loadState() {
   } catch {}
 }
 
+// 运行中按消息刷新用量，合并短时间内的多次触发，避免频繁请求
+let statsTimer = null;
+function scheduleStats() {
+  if (statsTimer) return;
+  statsTimer = setTimeout(() => {
+    statsTimer = null;
+    loadStats();
+  }, 300);
+}
+
 async function loadStats() {
   if (!S.agentId) return;
   const id = S.agentId, revision = viewRevision;
@@ -1184,6 +1194,8 @@ function onRec(rec) {
       if (cur && cur.role === m.role) S.messages[liveIdx] = { ...m, _k: cur._k };
       else S.messages.push(withKey(m));
       liveIdx = -1;
+      // 每次模型请求结束就刷新顶栏的花费/token，不用等整轮任务跑完
+      if (m.role === 'assistant' && m.usage) scheduleStats();
       break;
     }
     case 'tool_execution_start':
